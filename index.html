@@ -742,7 +742,7 @@
 </script>
 <script>
 /* ---- modules/spheres.js ---- */
-/* Модуль «Сферы и дела» (СД), этап 1: ТОЛЬКО ПРОСМОТР. Данные из Supabase через LifeCore.
+/* Модуль «Сферы и дела» (СД), этап 2: просмотр и правки (таймеры, записи времени/денег и связь с вещицей — этап 3). Данные из Supabase через LifeCore.
    Точка входа: LifeModules.spheres.mount(элемент, {core}). Возвращает {unmount, reload}.
    Хранение (миграция 0003): spheres, sphere_groups, sphere_items; время, деньги и связи дел лежат в общих таблицах
    time_entries / money_entries / entity_links (subject_module='spheres', subject_kind='item').
@@ -923,7 +923,31 @@
 .d-sum{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}.d-sum div{background:#f6f6f6;border:1px solid var(--line);border-radius:7px;padding:8px 10px}.d-sum small{display:block}
 .d-et{width:100%;border-collapse:collapse;font-size:13px}.d-et td,.d-et th{padding:5px 6px;border-bottom:1px solid #eee;text-align:left;vertical-align:top}.d-et th{font-weight:600;font-size:12px}
 .d-neg{color:#c62828}.d-pos{color:#2e7d32}
-@media (max-width:640px){.d-col{flex-basis:88vw;min-width:88vw}.d-sum{grid-template-columns:1fr}}`;
+.d-btn.primary{background:var(--dark);border-color:var(--dark);color:#fff !important}.d-btn.primary:hover{background:#2b2b2b}.d-btn.danger{border-color:#b3261e;color:#b3261e !important}
+.d-ib{border:0;background:rgba(255,255,255,.3);color:inherit !important;border-radius:3px;height:12px;padding:0 4px;font-size:6.5px;letter-spacing:0}.d-ib:hover{background:rgba(255,255,255,.55)}
+.d-addrow{display:flex;gap:6px}.d-addrow button{flex:1;border:1px dashed #9a9a9a;background:transparent;border-radius:6px;padding:6px}.d-addrow button:hover{background:rgba(255,255,255,.6)}
+.d-grph{cursor:grab}.d-more{margin-left:auto;letter-spacing:0}
+.d-ct .d-sm{font-size:10px;padding:2px 6px;min-height:18px;border-radius:4px;flex:none}.d-ct .d-more-t{font-size:12.5px;padding:2px 8px;min-height:22px;margin:0 0 0 4px;opacity:.75}
+.d-imp[data-act]{cursor:pointer}
+.d-menu{position:fixed;z-index:1100;background:#fff;border:1px solid #c4c4c4;border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.2);padding:3px;min-width:150px}
+.d-menu button{display:block;width:100%;text-align:left;border:0;background:transparent;padding:6px 10px;border-radius:4px}.d-menu button:hover{background:#eee}
+.dz-before{box-shadow:0 -4px 0 0 var(--dark) !important}.dz-after{box-shadow:0 4px 0 0 var(--dark) !important}.dz-into{outline:2px dashed var(--dark);outline-offset:-2px}
+.d-col.dz-left{box-shadow:inset 6px 0 0 var(--dark)}.d-col.dz-right{box-shadow:inset -6px 0 0 var(--dark)}
+.d-back{--text:#404040;--line:#dcdcdc;--dark:#404040;font:14px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:var(--text)}.d-back *{box-sizing:border-box}.d-back button{font:inherit;cursor:pointer;color:var(--text)}
+.d-mf{display:flex;justify-content:flex-end;gap:8px;padding:10px 16px;border-top:1px solid var(--line)}.d-mf:empty{display:none}
+.d-f{margin-bottom:11px}.d-f label{display:block;font-size:12px;margin-bottom:3px}
+.d-f input,.d-f textarea,.d-f select{width:100%;border:1px solid #c4c4c4;border-radius:6px;padding:7px 9px;font:inherit;background:#fff;color:var(--text)}
+.d-f textarea{min-height:64px;resize:vertical}.d-f small{font-size:11.5px;opacity:.7}
+.d-row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.d-pal{display:grid;grid-template-columns:repeat(8,1fr);gap:7px}
+.d-sw{aspect-ratio:1;border-radius:7px;border:3px solid transparent;cursor:pointer;box-shadow:0 0 0 1px rgba(0,0,0,.25) inset}.d-sw.sel{border-color:#222;box-shadow:0 0 0 2px #fff inset}
+.d-modal.compact{max-width:440px;font-size:12px}.d-modal.compact .d-mh{padding:7px 12px}.d-modal.compact .d-mb{padding:9px 12px}.d-modal.compact .d-mf{padding:7px 12px}
+.d-modal.compact .d-f{margin-bottom:6px}.d-modal.compact .d-f label{font-size:10.5px;margin-bottom:1px}.d-modal.compact .d-f small{font-size:10px}
+.d-modal.compact .d-f input,.d-modal.compact .d-f textarea,.d-modal.compact .d-f select{padding:3px 6px;font-size:12px;border-radius:5px}
+.d-modal.compact .d-f textarea{min-height:36px}.d-modal.compact .d-row2{gap:8px}.d-modal.compact .d-btn{padding:4px 10px;font-size:12px}
+.d-modal.compact .d-pal{grid-template-columns:repeat(16,1fr);gap:3px}.d-modal.compact .d-sw{border-width:2px;border-radius:4px}
+.d-modal.compact .f-shreset{font-size:10px;padding:0 5px;min-height:15px;margin-left:6px}
+@media (max-width:640px){.d-col{flex-basis:88vw;min-width:88vw}.d-sum{grid-template-columns:1fr}.d-row2{grid-template-columns:1fr}}`;
 
   function mount(el, ctxIn) {
     ctxIn = ctxIn || {};
@@ -990,15 +1014,17 @@
         else if (st.k === 'gray') actLine = `<div class="d-act">нет работы ${st.days} дн (порог ${it.actDays})</div>`;
         else actLine = `<div class="d-act">порог ${it.actDays} дн${it.actMin ? ' / ' + it.actMin + ' мин' : ''}${t.last ? ' · последняя работа ' + fmtDT(t.last).slice(0, 10) : ''}</div>`;
       }
-      return `<div class="d-card ${cls} ${run ? 'running' : ''}" style="--c:${col};--mix:${mix}%" data-card="${esc(it.id)}">
+      const eid = esc(it.id), menuBtn = (cl, ti) => `<button class="d-sm ${cl}" data-act="menu" data-kind="item" data-id="${eid}" title="Изменить, завершить, удалить">···</button>`;
+      return `<div class="d-card ${cls} ${run ? 'running' : ''}" style="--c:${col};--mix:${mix}%" draggable="true" data-dk="item" data-did="${eid}" data-card="${eid}">
     <div class="d-ct">
       ${kids.length ? `<button class="d-tog" data-act="toggle" data-id="${esc(it.id)}" title="Свернуть/развернуть">${isCol(it.id) ? '+' : '−'}</button>` : ''}
-      <span class="d-imp i${it.imp || 0}">${IMP[it.imp || 0]}</span>
+      <span class="d-imp i${it.imp || 0}" data-act="imp" data-id="${eid}" title="Метка важности: клик меняет">${IMP[it.imp || 0]}</span>
       <div class="d-title ${isProj ? 'proj' : 'tlink'}${c.hasRed(it.id) ? ' redkid' : ''}"${isProj ? '' : ` data-act="details" data-id="${esc(it.id)}" title="Записи времени и расходов"`}>${esc(it.title)}${(!isProj && it.thingId && c.thById[it.thingId]) ? ' <span class="d-lnk">(вещица)</span>' : ''}</div>
       <div class="d-sts"><span class="nw fact" title="Факт: время · деньги"><b>${fmtDur(t.sec)}</b> · <b>${fmtMoney(t.money)}</b></span><span class="nw plan" title="План: время · деньги">${fmtMin(t.planMin)} · ${fmtPlanMoney(t.planMoney)}</span></div>
+      ${isProj ? '' : menuBtn('d-more d-more-t')}
     </div>
     ${it.note ? `<div class="d-note">${esc(it.note)}</div>` : ''}
-    ${isProj ? `<div class="d-btns">${timer}<button class="d-sm" data-act="details" data-id="${esc(it.id)}" title="Записи времени и расходы">≡</button></div>` : (timer ? `<div class="d-btns">${timer}</div>` : '')}
+    ${isProj ? `<div class="d-btns">${timer}<button class="d-sm" data-act="details" data-id="${eid}" title="Записи времени и расходы">≡</button><button class="d-sm" data-act="addp" data-id="${eid}">+проект</button><button class="d-sm" data-act="addt" data-id="${eid}">+задача</button>${menuBtn('d-more')}</div>` : (timer ? `<div class="d-btns">${timer}</div>` : '')}
     ${actLine}
     ${kids.length && !isCol(it.id) ? `<div class="d-kids">${flat(kids, c).map(k => cardHtml(k, c, sp)).join('')}</div>` : ''}
   </div>`;
@@ -1013,8 +1039,11 @@
     function groupHtml(g, c, sp) {
       const list = c.groupRoots[g.id] || [];
       let sec = 0, money = 0; list.forEach(r => { const x = c.calc(r.id); sec += x.sec; money += x.money; });
-      return `<div class="d-grp" data-grp="${esc(g.id)}"><div class="d-grph">
-      <button class="d-tog" data-act="gr-toggle" data-id="${esc(g.id)}" title="Свернуть/развернуть">${isCol(g.id) ? '+' : '−'}</button><span class="d-gname">${esc(g.name)}</span></div>
+      const gid = esc(g.id);
+      return `<div class="d-grp" data-grp="${gid}"><div class="d-grph" draggable="true" data-dk="group" data-did="${gid}">
+      <button class="d-tog" data-act="gr-toggle" data-id="${gid}" title="Свернуть/развернуть">${isCol(g.id) ? '+' : '−'}</button><span class="d-gname">${esc(g.name)}</span>
+      <button class="d-sm" data-act="addroot" data-id="${esc(sp.id)}" data-gid="${gid}" data-type="project">+проект</button><button class="d-sm" data-act="addroot" data-id="${esc(sp.id)}" data-gid="${gid}" data-type="task">+задача</button>
+      <button class="d-sm d-more" data-act="menu" data-kind="group" data-id="${gid}" title="Переименовать, удалить">···</button></div>
     ${isCol(g.id) ? `<div class="d-gsum" style="margin:0 0 6px 14px">${fmtDur(sec)} · ${fmtMoney(money)} · дел: ${list.length}</div>` : flat(list, c).map(r => cardHtml(r, c, sp)).join('')}</div>`;
     }
     function colHtml(sp, c) {
@@ -1023,11 +1052,13 @@
       const grs = S.groups.filter(g => g.sphereId === sp.id);
       const foldable = withKids.length || grs.length, anyOpen = withKids.some(i => !isCol(i.id)) || grs.some(g => !isCol(g.id));
       return `<section class="d-col" data-col="${esc(sp.id)}">
-    <header class="d-colh" style="background:${sp.color};color:${tc}">
-      <div class="d-colt"><span class="d-colname">${esc(sp.name)}</span>${foldable ? `<button class="d-fold" data-act="sp-fold" data-id="${esc(sp.id)}" title="Свернуть или развернуть все проекты и группы этой сферы">${anyOpen ? 'Свернуть' : 'Развернуть'}</button>` : ''}</div>
+    <header class="d-colh" style="background:${sp.color};color:${tc}" draggable="true" data-dk="sphere" data-did="${esc(sp.id)}">
+      <div class="d-colt"><span class="d-colname">${esc(sp.name)}</span>${foldable ? `<button class="d-fold" data-act="sp-fold" data-id="${esc(sp.id)}" title="Свернуть или развернуть все проекты и группы этой сферы">${anyOpen ? 'Свернуть' : 'Развернуть'}</button>` : ''}<span class="d-grow"></span>
+        <button class="d-ib" data-act="menu" data-kind="sphere" data-id="${esc(sp.id)}" title="Изменить, удалить">···</button></div>
       <div class="d-cols">${fmtDur(t.sec)} / ${fmtMin(t.planMin)} · ${fmtMoney(t.money)} / ${fmtPlanMoney(t.planMoney)}</div>
     </header>
-    <div class="d-colb">${grs.map(g => groupHtml(g, c, sp)).join('')}${flat(c.roots[sp.id], c).map(r => cardHtml(r, c, sp)).join('')}</div></section>`;
+    <div class="d-colb">${grs.map(g => groupHtml(g, c, sp)).join('')}${flat(c.roots[sp.id], c).map(r => cardHtml(r, c, sp)).join('')}
+      <div class="d-addrow"><button data-act="gr-add" data-id="${esc(sp.id)}">+группа</button><button data-act="addroot" data-id="${esc(sp.id)}" data-type="project">+проект</button><button data-act="addroot" data-id="${esc(sp.id)}" data-type="task">+задача</button></div></div></section>`;
     }
     function entryRows(it) {
       const rows = it.entries.slice().sort((a, b) => b.ts - a.ts).map(e => {
@@ -1071,8 +1102,8 @@
         + ` · <button class="d-flt i1 ${ui.imp[1] ? '' : 'off'}" data-act="f-imp" data-v="1">Важно</button> · <button class="d-flt i2 ${ui.imp[2] ? '' : 'off'}" data-act="f-imp" data-v="2">Особо</button> · <button class="d-flt i0 ${ui.imp[0] ? '' : 'off'}" data-act="f-imp" data-v="0">без метки</button>`
         + ` · <button class="d-flt" data-act="f-expand" title="Раскрыть все свёрнутые списки (проекты и группы)">раскрыть все списки</button>`
         + ` · <span class="d-fc fm" data-act="f-cur" title="Прогноз денег по всем сферам. Клик: тг / $"><b data-fc="money">—</b></span> · <span class="d-fc ft" title="Прогноз времени по всем сферам"><b data-fc="time">—</b></span></span>`
-        + `<span class="d-grow"></span><span class="d-sync"></span><button class="d-btn" data-act="reload">Обновить</button></div>`
-        + `<div class="d-note1">Режим просмотра: правки, таймеры и новые дела пока вносятся в старой системе (вкладка рядом). Здесь данные из базы.</div>`
+        + `<span class="d-grow"></span><span class="d-sync"></span>${state === 'ready' ? '<button class="d-btn" data-act="sp-add">+ Сфера</button>' : ''}<button class="d-btn" data-act="reload">Обновить</button></div>`
+        + `<div class="d-note1">Здесь можно создавать и править дела, группы и сферы, переставлять их перетаскиванием, отмечать выполненными и удалять. Таймеры, записи времени и расходов, связь с вещицами пока только в старой системе (вкладка рядом). Пока старая система не заменена, вносите правки дел в одном месте, не в обоих.</div>`
         + (note ? `<div class="d-warn">${esc(note)}</div>` : '');
       let body;
       if (state === 'loading') body = '<div class="d-empty">Загрузка…</div>';
@@ -1090,12 +1121,439 @@
       syncBadge();
     }
 
+    /* ---------- запись: полные строки в очередь ядра ---------- */
+    const TBL = { spheres: 'spheres', sphere_groups: 'groups', sphere_items: 'items', time_entries: 'times', money_entries: 'moneys', entity_links: 'links' };
+    const STEP = 1024, forms = [];
+    const sortOf = (a, b) => (a.sort || 0) - (b.sort || 0) || tsOf(a.created_at) - tsOf(b.created_at);
+    const rawRow = (table, id) => (raw[TBL[table]] || []).find(r => r.id === id);
+    const newId = p => p + '_' + core.uuid().replace(/-/g, '').slice(0, 12);
+    const dev = () => (core.config && core.config.device) || 'desktop';
+    const getItem = id => S.items.find(i => i.id === id), getSphere = id => S.spheres.find(s => s.id === id), getGroup = id => S.groups.find(g => g.id === id);
+    const rebuild = () => { S = buildModel(raw); };
+    function descendants(id) { const out = []; S.items.filter(i => i.parentId === id).forEach(k => { out.push(k, ...descendants(k.id)); }); return out; }
+    function pathParts(it) {
+      const p = []; let c = it, g = 0;
+      while (c && g++ < 50) { p.unshift(c.title); c = c.parentId ? getItem(c.parentId) : null; }
+      let top = it, k = 0; while (top.parentId && getItem(top.parentId) && k++ < 50) top = getItem(top.parentId);
+      const sp = getSphere(it.sphereId), gr = top.groupId ? getGroup(top.groupId) : null;
+      return [sp ? sp.name : '?', ...(gr ? [gr.name] : []), ...p];
+    }
+    const pathOf = it => pathParts(it).join(' / ');
+    const q40 = x => '«' + (String(x).length > 40 ? String(x).slice(0, 40) + '…' : x) + '»';
+    const typeName = t => t === 'task' ? 'задача' : 'проект';
+
+    function tx() {
+      const w = {}, j = [];
+      const T = {
+        put(table, row) {
+          row = Object.assign({}, row, { updated_at: core.now() });
+          const key = TBL[table], arr = raw[key] = raw[key] || [], i = arr.findIndex(r => r.id === row.id);
+          if (row.deleted_at) { if (i >= 0) arr.splice(i, 1); } else if (i >= 0) arr[i] = row; else arr.push(row);
+          const out = Object.assign({}, row); delete out.user_id; delete out.updated_by;
+          (w[table] = w[table] || {})[row.id] = out; return row;
+        },
+        del(table, row) { return T.put(table, Object.assign({}, row, { deleted_at: core.now() })); },
+        log(op, kind, id, action, where, details) { j.push({ op, module: MOD, entity_kind: kind, entity_id: id, summary: action + (where ? ': ' + where : '') + (details ? '; ' + details : '') }); },
+        empty() { return !Object.keys(w).length && !j.length; },
+        commit() {
+          rebuild(); core.cache.set(MOD, raw);
+          const writes = Object.keys(w).map(t => ({ table: t, rows: Object.keys(w[t]).map(k => w[t][k]) }));
+          try { core.commit({ writes, journal: j }); } catch (e) { note = 'Не сохранено: ' + (e.message || e); }
+          render();
+        }
+      };
+      return T;
+    }
+    /* Порядок хранится числом sort (общий по всем строкам таблицы). Ставим между соседями; если места нет, перенумеровываем с шагом 1024. */
+    function placeSort(T, table, movedId, dst) {
+      const order = (raw[TBL[table]] || []).filter(r => r.id !== movedId).sort(sortOf);
+      let idx = -1;
+      if (dst.beforeId) idx = order.findIndex(x => x.id === dst.beforeId);
+      else if (dst.afterId) { idx = order.findIndex(x => x.id === dst.afterId); if (idx >= 0) idx++; }
+      if (idx < 0) idx = order.length;
+      const prev = order[idx - 1], next = order[idx];
+      if (!prev && !next) return STEP;
+      if (!prev) return (next.sort || 0) - STEP;
+      if (!next) return (prev.sort || 0) + STEP;
+      if ((next.sort || 0) - (prev.sort || 0) >= 2) return Math.floor(((prev.sort || 0) + (next.sort || 0)) / 2);
+      order.forEach((r, i) => { const v = ((i < idx ? i : i + 1) + 1) * STEP; if (r.sort !== v) T.put(table, Object.assign({}, r, { sort: v })); });
+      return (idx + 1) * STEP;
+    }
+    const lastSort = table => (raw[TBL[table]] || []).reduce((m, r) => Math.max(m, r.sort || 0), 0) + STEP;
+
+    function timePlanRow(itemId, sec) {
+      return { id: core.uuid(), subject_module: MOD, subject_kind: 'item', subject_id: itemId, kind: 'plan', duration_sec: sec, started_at: null, ended_at: null,
+        local_date: core.localDate(), tz: core.TZ, comment: '', tags: [], meta: {}, source_device: dev(), created_at: core.now(), updated_at: core.now(), deleted_at: null };
+    }
+    function moneyPlanRow(itemId, amount, currency) {
+      return { id: core.uuid(), subject_module: MOD, subject_kind: 'item', subject_id: itemId, direction: 'out', kind: 'plan', amount, currency: currency || 'KZT', fx_rate: null,
+        occurred_on: core.localDate(), tz: core.TZ, category: '', comment: '', meta: {}, source_device: dev(), created_at: core.now(), updated_at: core.now(), deleted_at: null };
+    }
+    /* План дела = записи «план» в общих таблицах. Меняем только если значение изменилось. */
+    function setPlan(T, itemId, pmin, pmoney) {
+      const tr = (raw.times || []).filter(r => r.subject_module === MOD && r.subject_id === itemId && r.kind === 'plan');
+      const sec = Math.round(pmin * 60), curSec = tr.reduce((s, r) => s + (+r.duration_sec || 0), 0);
+      if (sec !== curSec) {
+        if (sec > 0 && tr.length) { T.put('time_entries', Object.assign({}, tr[0], { duration_sec: sec })); tr.slice(1).forEach(r => T.del('time_entries', r)); }
+        else if (sec > 0) T.put('time_entries', timePlanRow(itemId, sec));
+        else tr.forEach(r => T.del('time_entries', r));
+      }
+      const mr = (raw.moneys || []).filter(r => r.subject_module === MOD && r.subject_id === itemId && r.kind === 'plan' && r.direction !== 'in');
+      const curM = mr.reduce((s, r) => s + (+r.amount || 0), 0);
+      if (Math.round(pmoney * 100) !== Math.round(curM * 100)) {
+        if (pmoney > 0 && mr.length) { T.put('money_entries', Object.assign({}, mr[0], { amount: pmoney })); mr.slice(1).forEach(r => T.del('money_entries', r)); }
+        else if (pmoney > 0) T.put('money_entries', moneyPlanRow(itemId, pmoney, 'KZT'));
+        else mr.forEach(r => T.del('money_entries', r));
+      }
+    }
+    const linkRow = (itemId, toModule, toId) => ({ id: core.uuid(), from_module: MOD, from_kind: 'item', from_id: itemId, to_module: toModule, to_kind: toModule === MOD ? 'item' : 'thing',
+      to_id: toId, relation: 'depends_on', meta: {}, created_at: core.now(), updated_at: core.now(), deleted_at: null });
+    function setDeps(T, itemId, dep, depTh) {
+      const want = []; if (dep) want.push([MOD, dep]); if (depTh) want.push(['things', depTh]);
+      const have = (raw.links || []).filter(l => l.from_module === MOD && l.from_id === itemId && l.relation === 'depends_on');
+      have.forEach(l => { if (!want.some(w => w[0] === l.to_module && w[1] === l.to_id)) T.del('entity_links', l); });
+      want.forEach(w => { if (!have.some(l => l.to_module === w[0] && l.to_id === w[1])) T.put('entity_links', linkRow(itemId, w[0], w[1])); });
+    }
+    /* Удаление дел: сами дела, их записи времени/денег и связи (в обе стороны) помечаются удалёнными. */
+    function removeItems(T, ids) {
+      const set = new Set(ids); let ent = 0;
+      (raw.items || []).filter(r => set.has(r.id)).forEach(r => T.del('sphere_items', r));
+      (raw.times || []).filter(r => set.has(r.subject_id)).forEach(r => { if (r.kind !== 'plan') ent++; T.del('time_entries', r); });
+      (raw.moneys || []).filter(r => set.has(r.subject_id)).forEach(r => { if (r.kind !== 'plan') ent++; T.del('money_entries', r); });
+      (raw.links || []).filter(l => (l.from_module === MOD && set.has(l.from_id)) || (l.to_module === MOD && set.has(l.to_id))).forEach(l => T.del('entity_links', l));
+      return ent;
+    }
+
+    /* ---------- окна ---------- */
+    function modal(title, body, buttons, cls) {
+      const back = document.createElement('div'); back.className = 'd-back';
+      back.innerHTML = `<div class="d-modal ${cls || ''}" role="dialog" aria-modal="true"><div class="d-mh"><b>${esc(title)}</b><button class="d-x" type="button" aria-label="Закрыть">✕</button></div><div class="d-mb">${body}</div><div class="d-mf"></div></div>`;
+      const close = () => { back.remove(); const i = forms.indexOf(back); if (i >= 0) forms.splice(i, 1); };
+      const mf = back.querySelector('.d-mf'); let primary = null;
+      buttons.forEach(b => {
+        const x = document.createElement('button'); x.type = 'button'; x.className = 'd-btn ' + (b.cls || ''); x.textContent = b.label;
+        x.onclick = () => { if (b.fn && b.fn(back) === false) return; close(); };
+        if (/primary|danger/.test(b.cls || '')) primary = x; mf.appendChild(x);
+      });
+      back.querySelector('.d-x').onclick = close;
+      back.addEventListener('keydown', e => { if (e.key === 'Enter' && primary && e.target.tagName === 'INPUT') { e.preventDefault(); primary.click(); } });
+      document.body.appendChild(back); forms.push(back);
+      const f = back.querySelector('input,textarea,select'); if (f) f.focus();
+      return { back, close };
+    }
+    const field = (label, inner, hint) => `<div class="d-f"><label>${label}</label>${inner}${hint ? `<small>${hint}</small>` : ''}</div>`;
+    function confirmBox(title, text, okLabel, fn) {
+      modal(title, `<div>${text}</div>`, [{ label: 'Отмена' }, { label: okLabel, cls: 'danger', fn }], 'compact');
+    }
+    const PALETTE = ['#e6194b', '#f58231', '#ffe119', '#bfef45', '#3cb44b', '#42d4f4', '#4363d8', '#911eb4', '#f032e6', '#9a6324', '#800000', '#469990', '#000075', '#fabed4', '#aaffc3', '#dcbeff'];
+
+    /* ---------- сфера ---------- */
+    function sphereForm(id) {
+      const sp = id ? getSphere(id) : null;
+      let color = sp ? sp.color : (PALETTE.find(c => !S.spheres.some(s => s.color === c)) || PALETTE[0]);
+      const body = field('Название сферы', `<input class="f-name" maxlength="80" value="${esc(sp ? sp.name : '')}" placeholder="Например: Жили-были">`)
+        + field('Цвет', `<div class="d-pal">${PALETTE.map(c => `<div class="d-sw ${c === color ? 'sel' : ''}" data-color="${c}" style="background:${c}" title="${c}"></div>`).join('')}</div>`);
+      const m = modal(sp ? 'Изменить сферу' : 'Новая сфера жизни', body, [{ label: 'Отмена' }, { label: 'Сохранить', cls: 'primary', fn: back => {
+        const name = back.querySelector('.f-name').value.trim(); if (!name) { back.querySelector('.f-name').focus(); return false; }
+        const T = tx();
+        if (!sp) {
+          const r = { id: newId('sp'), name, color, sort: lastSort('spheres'), created_at: core.now(), updated_at: core.now(), deleted_at: null };
+          T.put('spheres', r); T.log('create', 'sphere', r.id, 'Создана сфера', 'Сфера: ' + name, 'цвет ' + color);
+        } else {
+          const ch = []; if (sp.name !== name) ch.push(`название: «${sp.name}» → «${name}»`); if (sp.color !== color) ch.push(`цвет: ${sp.color} → ${color}`);
+          if (!ch.length) return;
+          T.put('spheres', Object.assign({}, rawRow('spheres', id), { name, color })); T.log('change', 'sphere', id, 'Изменена сфера', 'Сфера: ' + name, ch.join('; '));
+        }
+        T.commit();
+      } }]);
+      m.back.querySelectorAll('.d-sw').forEach(sw => sw.onclick = () => { color = sw.dataset.color; m.back.querySelectorAll('.d-sw').forEach(x => x.classList.toggle('sel', x === sw)); });
+    }
+    function deleteSphere(id) {
+      const sp = getSphere(id); if (!sp) return;
+      const its = S.items.filter(i => i.sphereId === id), grs = S.groups.filter(g => g.sphereId === id);
+      confirmBox('Удалить сферу?', `Сфера «${esc(sp.name)}» будет удалена вместе с группами (${grs.length}) и делами (${its.length}), включая их записи времени и расходов.`, 'Удалить', () => {
+        const T = tx(), ent = removeItems(T, its.map(i => i.id));
+        (raw.groups || []).filter(g => g.sphere_id === id).forEach(g => T.del('sphere_groups', g));
+        T.del('spheres', rawRow('spheres', id));
+        T.log('delete', 'sphere', id, 'Удалена сфера', 'Сфера: ' + sp.name, `вместе с ней дел: ${its.length}, записей: ${ent}`); T.commit();
+      });
+    }
+
+    /* ---------- группа ---------- */
+    function groupForm(o) {
+      const g = o.id ? getGroup(o.id) : null;
+      modal(g ? 'Изменить группу' : 'Новая группа', field('Название группы', `<input class="f-name" maxlength="80" value="${esc(g ? g.name : '')}" placeholder="Например: Дом">`), [{ label: 'Отмена' }, { label: 'Сохранить', cls: 'primary', fn: back => {
+        const name = back.querySelector('.f-name').value.trim(); if (!name) { back.querySelector('.f-name').focus(); return false; }
+        const sp = getSphere(g ? g.sphereId : o.sphereId); if (!sp) return;
+        const T = tx();
+        if (!g) {
+          const r = { id: newId('gr'), sphere_id: sp.id, name, collapsed: false, sort: lastSort('sphere_groups'), created_at: core.now(), updated_at: core.now(), deleted_at: null };
+          T.put('sphere_groups', r); T.log('create', 'group', r.id, 'Создана группа', `${sp.name} / ${name}`, '');
+        } else if (g.name !== name) {
+          T.put('sphere_groups', Object.assign({}, rawRow('sphere_groups', g.id), { name })); T.log('change', 'group', g.id, 'Изменена группа', `${sp.name} / ${name}`, `название: «${g.name}» → «${name}»`);
+        } else return;
+        T.commit();
+      } }]);
+    }
+    function deleteGroup(id) {
+      const g = getGroup(id); if (!g) return;
+      const sp = getSphere(g.sphereId), roots = S.items.filter(i => i.groupId === id && !i.parentId);
+      const ids = []; roots.forEach(r => { ids.push(r.id, ...descendants(r.id).map(x => x.id)); });
+      confirmBox('Удалить группу?', `Группа «${esc(g.name)}» будет удалена вместе с делами в ней (${ids.length}), включая их записи времени и расходов.`, 'Удалить', () => {
+        const T = tx(), ent = removeItems(T, ids);
+        T.del('sphere_groups', rawRow('sphere_groups', id)); delete ui.col[id]; uiSave();
+        T.log('delete', 'group', id, 'Удалена группа', `${sp ? sp.name : '?'} / ${g.name}`, `дел: ${ids.length}, записей: ${ent}`); T.commit();
+      });
+    }
+
+    /* ---------- дело ---------- */
+    function parseDur(s) {
+      s = String(s == null ? '' : s).trim().toLowerCase().replace(',', '.'); if (!s) return null;
+      let m = s.match(/^(\d+):(\d{1,2})$/); if (m) return +m[1] * 60 + +m[2];
+      m = s.match(/^(?:(\d+(?:\.\d+)?)\s*(?:ч|h))?\s*(?:(\d+(?:\.\d+)?)\s*(?:мин|min|м|m)?)?$/);
+      if (!m || (m[1] == null && m[2] == null)) return null;
+      return (m[1] ? +m[1] * 60 : 0) + (m[2] ? +m[2] : 0);
+    }
+    const parseMoney = s => { const v = parseFloat(String(s).replace(/\s/g, '').replace(',', '.')); return isNaN(v) ? null : v; };
+    const round2 = x => Math.round(x * 100) / 100;
+    function itemDepOptions(ty, self, excl) {
+      const out = [], idSet = new Set(S.items.map(x => x.id)), kidsOf = {};
+      S.items.forEach(x => { if (x.parentId && idSet.has(x.parentId)) (kidsOf[x.parentId] = kidsOf[x.parentId] || []).push(x); });
+      const leadsTo = (x, target) => { let c = x, g = 0; while (c && c.dependsOn && g++ < 60) { if (c.dependsOn === target.id) return true; c = getItem(c.dependsOn); } return false; };
+      const walk = (it, d) => {
+        if (d > 60) return;
+        if (it.type === ty && !(self && it.id === self.id) && !(ty === 'project' && excl.has(it.id)) && !(self && leadsTo(it, self))) out.push({ id: it.id, label: it.title, head: pathParts(it).slice(0, -1).join(' / ') });
+        (kidsOf[it.id] || []).forEach(k => walk(k, d + 1));
+      };
+      S.spheres.forEach(sp => {
+        const roots = S.items.filter(x => x.sphereId === sp.id && !(x.parentId && idSet.has(x.parentId))), gs = S.groups.filter(g => g.sphereId === sp.id);
+        gs.forEach(g => roots.filter(r => r.groupId === g.id).forEach(r => walk(r, 0)));
+        roots.filter(r => !gs.some(g => g.id === r.groupId)).forEach(r => walk(r, 0));
+      });
+      return out;
+    }
+    const optsHtml = (opts, sel, none) => `<option value="">${none}</option>` + (() => {
+      const heads = []; opts.forEach(o => { if (heads.indexOf(o.head) < 0) heads.push(o.head); });
+      return heads.map(h => `<optgroup label="${esc(h)}">${opts.filter(o => o.head === h).map(o => `<option value="${esc(o.id)}" ${o.id === sel ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</optgroup>`).join('');
+    })();
+
+    function itemForm(o) {
+      const it = o.id ? getItem(o.id) : null;
+      const d = it || { type: o.type, title: '', note: '', planMin: 0, planMoney: 0, actDays: 0, actMin: 0, shade: null, dependsOn: null, dependsThing: null };
+      const hasKids = !!it && S.items.some(x => x.parentId === it.id);
+      const excl = new Set(it ? [it.id, ...descendants(it.id).map(x => x.id)] : []);
+      let sphereId = it ? it.sphereId : o.sphereId, groupId = it ? it.groupId : (o.groupId || null), parentId = it ? it.parentId : (o.parentId || null), shade = d.shade, curType = hasKids ? 'project' : d.type;
+      if (parentId && getItem(parentId)) sphereId = getItem(parentId).sphereId;
+      const body = field('Название', `<input class="f-title" maxlength="200" value="${esc(d.title)}">`)
+        + `<div class="d-row2">` + field('Тип', `<select class="f-type" ${hasKids ? 'disabled' : ''}><option value="project" ${d.type === 'project' ? 'selected' : ''}>Проект</option><option value="task" ${d.type === 'task' ? 'selected' : ''}>Задача</option></select>`)
+        + field('Сфера', `<select class="f-sphere">${S.spheres.map(x => `<option value="${esc(x.id)}" ${x.id === sphereId ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>`) + `</div>`
+        + `<div class="d-row2">` + field('Группа', `<select class="f-group"></select>`) + field('Материнский проект', `<select class="f-parent"></select>`) + `</div>`
+        + `<div class="d-row2"><div class="d-f"><label class="f-deplbl">Зависит от проекта</label><select class="f-dep"></select></div><div class="d-f"><label>Зависит от вещицы (пока «купить»)</label><select class="f-depth"></select></div></div>`
+        + `<div class="f-shadebox"><div class="d-f"><label>Цвет проекта / оттенок цвета сферы <button type="button" class="d-sm f-shreset">по цвету сферы</button></label><div class="d-pal f-pal"></div></div></div>`
+        + field('Заметка', `<textarea class="f-note">${esc(d.note)}</textarea>`)
+        + `<div class="d-row2">` + field('План: время', `<input class="f-pmin" value="${d.planMin ? round2(d.planMin) : ''}" placeholder="мин, 1:30 или 1ч 30м">`) + field('План: деньги', `<input class="f-pmoney" inputmode="decimal" value="${d.planMoney || ''}">`)
+        + `</div><div class="d-row2">` + field('Активность: дни', `<input class="f-adays" inputmode="numeric" value="${d.actDays || ''}">`, 'через сколько дней без работы карточка серая')
+        + field('Активность: минуты', `<input class="f-amin" inputmode="numeric" value="${d.actMin || ''}">`, 'минимум за этот период, иначе красная') + `</div>`;
+      const m = modal(it ? 'Изменить: ' + it.title : (d.type === 'task' ? 'Новая задача' : 'Новый проект'), body, [{ label: 'Отмена' }, { label: 'Сохранить', cls: 'primary', fn: save }], 'compact');
+      const q = s => m.back.querySelector(s);
+      function save(back) {
+        const t = q('.f-title').value.trim(); if (!t) { q('.f-title').focus(); return false; }
+        const pmin = q('.f-pmin').value.trim() ? parseDur(q('.f-pmin').value) : 0;
+        const pmoney = q('.f-pmoney').value.trim() ? parseMoney(q('.f-pmoney').value) : 0;
+        if (pmin == null) { alert('Не удалось разобрать плановое время'); q('.f-pmin').focus(); return false; }
+        if (pmoney == null || pmoney < 0) { alert('Не удалось разобрать плановые деньги (нужно число не меньше нуля)'); q('.f-pmoney').focus(); return false; }
+        const adays = Math.max(0, Math.floor(+q('.f-adays').value) || 0), amin = Math.max(0, Math.floor(+q('.f-amin').value) || 0);
+        const type = hasKids ? 'project' : q('.f-type').value, note = q('.f-note').value.trim();
+        const sph = q('.f-sphere').value, parent = q('.f-parent').value || null, group = parent ? null : (q('.f-group').value || null);
+        const sh = type === 'task' ? null : shade, dep = q('.f-dep').value || null, depTh = q('.f-depth').value || null;
+        const T = tx();
+        if (!it) {
+          const id = newId('it'), r = { id, sphere_id: sph, parent_id: parent, group_id: group, kind: type, title: t, note, done: false, importance: 0, shade: sh, collapsed: false,
+            act_days: adays, act_min: amin, timer_start: null, sort: lastSort('sphere_items'), created_at: core.now(), updated_at: core.now(), deleted_at: null };
+          if (parent) { const p = getItem(parent); if (p) r.sphere_id = p.sphereId; r.group_id = null; }
+          T.put('sphere_items', r); setPlan(T, id, pmin, pmoney); setDeps(T, id, dep, depTh);
+          if (parent) { delete ui.col[parent]; uiSave(); }
+          rebuild(); const n = getItem(id);
+          T.log('create', 'item', id, type === 'task' ? 'Создана задача' : 'Создан проект', pathOf(n),
+            `план: ${fmtMin(pmin)} / ${fmtPlanMoney(pmoney)}` + (adays ? `; активность: ${adays} дн / ${amin} мин` : '') + (sh != null ? `; цвет №${sh + 1}` : '')
+            + (dep && getItem(dep) ? `; зависит от: ${getItem(dep).title}` : '') + (depTh && S.things.find(x => x.id === depTh) ? `; зависит от вещицы: ${S.things.find(x => x.id === depTh).name}` : ''));
+        } else {
+          const ch = [], cmp = (lbl, a, b, f) => { if (a !== b) ch.push(`${lbl}: ${f ? f(a) : a} → ${f ? f(b) : b}`); };
+          const thName = x => x ? ((S.things.find(y => y.id === x) || {}).name || '?') : 'нет';
+          cmp('название', it.title, t, q40); cmp('тип', it.type, type, typeName); cmp('заметка', it.note, note, q40);
+          cmp('план время', round2(it.planMin), round2(pmin), fmtMin); cmp('план деньги', it.planMoney, pmoney, fmtPlanMoney);
+          cmp('активность дни', it.actDays, adays); cmp('активность мин', it.actMin, amin);
+          cmp('зависимость', it.dependsOn || null, dep, x => x ? (getItem(x) ? getItem(x).title : '?') : 'нет'); cmp('зависимость от вещицы', it.dependsThing || null, depTh, thName);
+          cmp('цвет', it.shade, sh, x => x == null ? 'по сфере' : '№' + (x + 1));
+          const moved = it.sphereId !== sph || it.parentId !== parent || it.groupId !== group;
+          if (!ch.length && !moved) return;
+          if (ch.length) {
+            T.put('sphere_items', Object.assign({}, rawRow('sphere_items', it.id), { title: t, kind: type, note, act_days: adays, act_min: amin, shade: sh }));
+            setPlan(T, it.id, pmin, pmoney); setDeps(T, it.id, dep, depTh);
+            if (type === 'project') (raw.links || []).filter(l => l.from_id === it.id && l.relation === 'linked_thing').forEach(l => T.del('entity_links', l));
+            rebuild(); T.log('change', 'item', it.id, type === 'task' ? 'Изменена задача' : 'Изменён проект', pathOf(getItem(it.id)), ch.join('; '));
+          }
+          if (moved) doMove(T, it.id, { sphereId: sph, parentId: parent, groupId: group });
+        }
+        T.commit();
+      }
+      function fillPlace() {
+        q('.f-group').innerHTML = '<option value="">без группы</option>' + S.groups.filter(g => g.sphereId === sphereId).map(g => `<option value="${esc(g.id)}" ${g.id === groupId ? 'selected' : ''}>${esc(g.name)}</option>`).join('');
+        q('.f-parent').innerHTML = '<option value="">нет, верхний уровень</option>' + S.items.filter(x => x.sphereId === sphereId && x.type === 'project' && !excl.has(x.id))
+          .map(x => `<option value="${esc(x.id)}" ${x.id === parentId ? 'selected' : ''}>${esc(pathParts(x).slice(1).join(' / '))}</option>`).join('');
+        q('.f-group').disabled = !!q('.f-parent').value;
+      }
+      function fillPal() {
+        const sp = getSphere(sphereId); if (!sp) return;
+        q('.f-pal').innerHTML = Array.from({ length: 16 }, (_, i) => `<div class="d-sw ${shade === i ? 'sel' : ''}" data-i="${i}" style="background:${shadeOf(sp.color, i)}"></div>`).join('');
+      }
+      function fillDep(sel) { q('.f-dep').innerHTML = optsHtml(itemDepOptions(curType, it, excl), sel, 'нет'); }
+      function typeVis() {
+        const ty = hasKids ? 'project' : q('.f-type').value;
+        q('.f-shadebox').style.display = ty === 'task' ? 'none' : '';
+        q('.f-deplbl').textContent = ty === 'task' ? 'Зависит от задачи' : 'Зависит от проекта';
+        if (ty !== curType) { curType = ty; fillDep(null); }
+      }
+      q('.f-sphere').onchange = e => { sphereId = e.target.value; groupId = null; parentId = null; fillPlace(); fillPal(); };
+      q('.f-parent').onchange = e => { parentId = e.target.value || null; q('.f-group').disabled = !!parentId; };
+      q('.f-group').onchange = e => { groupId = e.target.value || null; };
+      q('.f-type').onchange = typeVis;
+      q('.f-pal').onclick = e => { const sw = e.target.closest('.d-sw'); if (sw) { shade = +sw.dataset.i; fillPal(); } };
+      q('.f-shreset').onclick = () => { shade = null; fillPal(); };
+      const thOpts = S.things.filter(t => !t.have || t.id === d.dependsThing).map(t => ({ id: t.id, label: t.name, head: t.have ? 'уже есть' : 'нужно купить' }));
+      q('.f-depth').innerHTML = optsHtml(thOpts, d.dependsThing, 'нет');
+      fillPlace(); fillPal(); fillDep(d.dependsOn); typeVis();
+    }
+    function deleteItem(id) {
+      const it = getItem(id); if (!it) return;
+      const ds = descendants(id);
+      confirmBox(it.type === 'task' ? 'Удалить задачу?' : 'Удалить проект?', `«${esc(it.title)}»${ds.length ? ` будет удалено вместе с вложенными делами (${ds.length})` : ' будет удалено'}, включая записи времени и расходов.`, 'Удалить', () => {
+        const where = pathOf(it), T = tx(), ent = removeItems(T, [id, ...ds.map(x => x.id)]);
+        if (detailsId === id || ds.some(x => x.id === detailsId)) detailsId = null;
+        T.log('delete', 'item', id, it.type === 'task' ? 'Удалена задача' : 'Удалён проект', where, `вложенных: ${ds.length}, записей: ${ent}`); T.commit();
+      });
+    }
+    function toggleDone(id) {
+      const it = getItem(id); if (!it) return;
+      if (!it.done && it.timerStart) { alert('Сначала остановите таймер.'); return; }
+      const T = tx();
+      T.put('sphere_items', Object.assign({}, rawRow('sphere_items', id), { done: !it.done }));
+      T.log('change', 'item', id, it.done ? 'Возвращено в работу' : 'Отмечено выполненным', pathOf(it), '');
+      if (!it.done && it.thingId && S.things.find(t => t.id === it.thingId)) note = `Задача связана с вещицей «${S.things.find(t => t.id === it.thingId).name}». Автоматическая отметка «куплено» в «Вещицах» появится на следующем этапе; пока отметьте её в «Вещицах» сами.`;
+      T.commit();
+    }
+    function cycleImp(id) {
+      const it = getItem(id); if (!it) return;
+      const nv = ((it.imp || 0) + 1) % 3, T = tx();
+      T.put('sphere_items', Object.assign({}, rawRow('sphere_items', id), { importance: nv }));
+      T.log('change', 'item', id, 'Изменена метка', pathOf(it), `${IMP[it.imp || 0]} → ${IMP[nv]}`); T.commit();
+    }
+
+    /* ---------- перемещение (drag & drop) ---------- */
+    function doMove(T, id, dst) {
+      rebuild(); const it = getItem(id); if (!it) return false;
+      if (dst.parentId) {
+        if (dst.parentId === id || descendants(id).some(x => x.id === dst.parentId)) return false;
+        const p = getItem(dst.parentId); if (!p || p.type !== 'project') return false;
+        dst.sphereId = p.sphereId; dst.groupId = null;
+      }
+      const before = pathOf(it), ds = descendants(id), parent = dst.parentId || null, group = parent ? null : (dst.groupId || null);
+      const s = placeSort(T, 'sphere_items', id, dst);
+      T.put('sphere_items', Object.assign({}, rawRow('sphere_items', id), { parent_id: parent, group_id: group, sphere_id: dst.sphereId, sort: s }));
+      ds.forEach(x => { if (x.sphereId !== dst.sphereId) T.put('sphere_items', Object.assign({}, rawRow('sphere_items', x.id), { sphere_id: dst.sphereId })); });
+      if (parent) { delete ui.col[parent]; uiSave(); }
+      rebuild(); const after = pathOf(getItem(id));
+      T.log('change', 'item', id, before === after ? 'Изменён порядок' : 'Перемещено', after, before === after ? '' : `из «${before}»`);
+      return true;
+    }
+    function moveItem(id, dst) { const T = tx(); if (doMove(T, id, dst)) T.commit(); }
+    function moveSphere(id, targetId, after) {
+      const a = getSphere(id), t = getSphere(targetId); if (!a || !t || a === t) return;
+      const T = tx(), s = placeSort(T, 'spheres', id, after ? { afterId: targetId } : { beforeId: targetId });
+      T.put('spheres', Object.assign({}, rawRow('spheres', id), { sort: s }));
+      T.log('change', 'sphere', id, 'Изменён порядок сфер', 'Сфера: ' + a.name, `${after ? 'после' : 'перед'} «${t.name}»`); T.commit();
+    }
+    function moveGroup(id, dst) {
+      const g = getGroup(id); if (!g) return;
+      const oldSp = getSphere(g.sphereId), newSp = getSphere(dst.sphereId); if (!newSp) return;
+      const T = tx(), s = placeSort(T, 'sphere_groups', id, dst);
+      T.put('sphere_groups', Object.assign({}, rawRow('sphere_groups', id), { sphere_id: dst.sphereId, sort: s }));
+      if (g.sphereId !== dst.sphereId) S.items.filter(i => i.groupId === id && !i.parentId).forEach(r => {
+        [r, ...descendants(r.id)].forEach(x => T.put('sphere_items', Object.assign({}, rawRow('sphere_items', x.id), { sphere_id: dst.sphereId })));
+      });
+      const moved = oldSp && oldSp.id !== newSp.id;
+      T.log('change', 'group', id, moved ? 'Группа перемещена' : 'Изменён порядок групп', `${newSp.name} / ${g.name}`, moved ? `из сферы «${oldSp.name}»` : ''); T.commit();
+    }
+    let drag = null, dropT = null;
+    function inSubtree(id, rootId) { let c = getItem(id), k = 0; while (c && k++ < 60) { if (c.id === rootId) return true; c = c.parentId ? getItem(c.parentId) : null; } return false; }
+    function computeTarget(e) {
+      const col = e.target.closest ? e.target.closest('[data-col]') : null; if (!col) return null;
+      const sid = col.dataset.col;
+      if (drag.k === 'sphere') {
+        if (sid === drag.id) return null;
+        const r = col.getBoundingClientRect(), after = e.clientX > r.left + r.width / 2;
+        return { el: col, cls: after ? 'dz-right' : 'dz-left', exec: () => moveSphere(drag.id, sid, after) };
+      }
+      const grp = e.target.closest('[data-grp]');
+      if (drag.k === 'group') {
+        if (grp) {
+          if (grp.dataset.grp === drag.id) return null;
+          const r = grp.getBoundingClientRect(), after = e.clientY > r.top + r.height / 2, gid = grp.dataset.grp;
+          return { el: grp, cls: after ? 'dz-after' : 'dz-before', exec: () => moveGroup(drag.id, { sphereId: sid, [after ? 'afterId' : 'beforeId']: gid }) };
+        }
+        return { el: col.querySelector('.d-colb'), cls: 'dz-into', exec: () => moveGroup(drag.id, { sphereId: sid }) };
+      }
+      const card = e.target.closest('[data-card]');
+      if (card) {
+        const tid = card.dataset.card; if (inSubtree(tid, drag.id)) return null;
+        const t = getItem(tid); if (!t) return null;
+        const r = card.getBoundingClientRect(), kidsEl = card.querySelector(':scope > .d-kids'), bottom = kidsEl ? kidsEl.getBoundingClientRect().top : r.bottom;
+        const y = Math.max(0, Math.min(1, (e.clientY - r.top) / Math.max(1, bottom - r.top)));
+        if (t.type === 'project' && y >= 0.3 && y <= 0.7) return { el: card, cls: 'dz-into', exec: () => moveItem(drag.id, { sphereId: t.sphereId, parentId: tid }) };
+        const after = t.type === 'project' ? y > 0.7 : y > 0.5;
+        return { el: card, cls: after ? 'dz-after' : 'dz-before', exec: () => moveItem(drag.id, { sphereId: t.sphereId, parentId: t.parentId, groupId: t.groupId, [after ? 'afterId' : 'beforeId']: tid }) };
+      }
+      if (grp) return { el: grp, cls: 'dz-into', exec: () => moveItem(drag.id, { sphereId: sid, parentId: null, groupId: grp.dataset.grp }) };
+      return { el: col.querySelector('.d-colb'), cls: 'dz-into', exec: () => moveItem(drag.id, { sphereId: sid, parentId: null, groupId: null }) };
+    }
+    const clearDz = () => root.querySelectorAll('.dz-before,.dz-after,.dz-into,.dz-left,.dz-right').forEach(x => x.classList.remove('dz-before', 'dz-after', 'dz-into', 'dz-left', 'dz-right'));
+    root.addEventListener('dragstart', e => {
+      const el = e.target.closest ? e.target.closest('[data-dk]') : null; if (!el) return;
+      drag = { k: el.dataset.dk, id: el.dataset.did }; dropT = null;
+      try { e.dataTransfer.setData('text/plain', drag.id); e.dataTransfer.effectAllowed = 'move'; } catch (x) { /* не везде доступно */ }
+    });
+    root.addEventListener('dragover', e => {
+      if (!drag) return; clearDz(); const t = computeTarget(e); dropT = t; if (!t) return;
+      e.preventDefault(); try { e.dataTransfer.dropEffect = 'move'; } catch (x) { /* ничего */ }
+      if (t.el) t.el.classList.add(t.cls);
+    });
+    root.addEventListener('drop', e => {
+      if (!drag) return; e.preventDefault();
+      const t = dropT; clearDz(); const keep = drag; dropT = null;
+      try { if (t) t.exec(); } finally { if (drag === keep) drag = null; }
+    });
+    root.addEventListener('dragend', () => { clearDz(); drag = null; dropT = null; });
+
+    /* ---------- меню «···» ---------- */
+    function closeMenu() { const m = root.querySelector('.d-menu'); if (m) m.remove(); }
+    function openMenu(btn) {
+      closeMenu(); const kind = btn.dataset.kind, id = btn.dataset.id; let items = [];
+      if (kind === 'item') { const it = getItem(id); if (!it) return; items = [['m-edit', 'Изменить'], ['m-done', it.done ? 'Вернуть в работу' : 'Завершить'], ['m-del', 'Удалить']]; }
+      else if (kind === 'group') items = [['m-edit', 'Переименовать'], ['m-del', 'Удалить']];
+      else items = [['m-edit', 'Изменить'], ['m-del', 'Удалить']];
+      const m = document.createElement('div'); m.className = 'd-menu';
+      m.innerHTML = items.map(x => `<button type="button" data-act="${x[0]}" data-kind="${kind}" data-id="${esc(id)}">${x[1]}</button>`).join('');
+      const r = btn.getBoundingClientRect(); m.style.top = Math.min(r.bottom + 2, window.innerHeight - 120) + 'px'; m.style.left = Math.max(4, Math.min(r.left, window.innerWidth - 170)) + 'px';
+      root.appendChild(m);
+    }
+
     /* ---------- события ---------- */
     function allFoldable(spId) {
       const ids = []; S.items.forEach(i => { if (i.sphereId === spId && (ctx.kids[i.id] || []).length) ids.push(i.id); });
       S.groups.forEach(g => { if (g.sphereId === spId) ids.push(g.id); }); return ids;
     }
     function onClick(e) {
+      if (!(e.target.closest && e.target.closest('.d-menu'))) closeMenu();
       const b = e.target.closest ? e.target.closest('[data-act]') : null; if (!b || !root.contains(b)) return;
       if (b.dataset.act === 'close') { if (e.target.closest('[data-modal]') && !e.target.closest('.d-x')) return; detailsId = null; render(); return; }
       const id = b.dataset.id;
@@ -1111,19 +1569,34 @@
         case 'f-cur': ui.usd = !ui.usd; uiSave(); render(); break;
         case 'details': detailsId = id; render(); break;
         case 'reload': load(); break;
+        case 'imp': cycleImp(id); break;
+        case 'menu': openMenu(b); break;
+        case 'm-edit': closeMenu(); if (b.dataset.kind === 'item') itemForm({ id }); else if (b.dataset.kind === 'group') groupForm({ id }); else sphereForm(id); break;
+        case 'm-done': closeMenu(); toggleDone(id); break;
+        case 'm-del': closeMenu(); if (b.dataset.kind === 'item') deleteItem(id); else if (b.dataset.kind === 'group') deleteGroup(id); else deleteSphere(id); break;
+        case 'addp': itemForm({ type: 'project', parentId: id, sphereId: (getItem(id) || {}).sphereId }); break;
+        case 'addt': itemForm({ type: 'task', parentId: id, sphereId: (getItem(id) || {}).sphereId }); break;
+        case 'addroot': itemForm({ type: b.dataset.type, sphereId: id, groupId: b.dataset.gid || null }); break;
+        case 'gr-add': groupForm({ sphereId: id }); break;
+        case 'sp-add': sphereForm(null); break;
       }
     }
-    const onKey = e => { if (e.key === 'Escape' && detailsId) { detailsId = null; render(); } };
+    const onKey = e => {
+      if (e.key !== 'Escape') return;
+      if (forms.length) { forms.pop().remove(); return; }
+      if (root.querySelector('.d-menu')) { closeMenu(); return; }
+      if (detailsId) { detailsId = null; render(); }
+    };
     root.addEventListener('click', onClick); document.addEventListener('keydown', onKey);
     offs.push(core.on('queue', syncBadge), core.on('dead', syncBadge), core.on('net', syncBadge));
     const onVis = () => { if (document.visibilityState === 'visible' && state === 'ready' && Date.now() - loadedAt > 120000 && !core.status().pending) load(); };
     document.addEventListener('visibilitychange', onVis);
-    const tickTimer = setInterval(() => { if (state === 'ready' && !detailsId) render(); }, 60000);
+    const tickTimer = setInterval(() => { if (state === 'ready' && !detailsId && !forms.length) render(); }, 60000);
 
     load();
     return {
       reload: load,
-      unmount() { alive = false; clearInterval(tickTimer); offs.forEach(f => f()); document.removeEventListener('keydown', onKey); document.removeEventListener('visibilitychange', onVis); el.innerHTML = ''; }
+      unmount() { alive = false; clearInterval(tickTimer); forms.splice(0).forEach(f => f.remove()); offs.forEach(f => f()); document.removeEventListener('keydown', onKey); document.removeEventListener('visibilitychange', onVis); el.innerHTML = ''; }
     };
   }
 
