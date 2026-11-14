@@ -741,6 +741,398 @@
 
 </script>
 <script>
+/* ---- modules/spheres.js ---- */
+/* Модуль «Сферы и дела» (СД), этап 1: ТОЛЬКО ПРОСМОТР. Данные из Supabase через LifeCore.
+   Точка входа: LifeModules.spheres.mount(элемент, {core}). Возвращает {unmount, reload}.
+   Хранение (миграция 0003): spheres, sphere_groups, sphere_items; время, деньги и связи дел лежат в общих таблицах
+   time_entries / money_entries / entity_links (subject_module='spheres', subject_kind='item').
+   Расчёты (итоги, статусы «серая/красная/ждёт/готово», фильтры) перенесены из del.html без изменений.
+   «Свёрнуто/развёрнуто» хранится на устройстве, а не в базе. */
+(function (global) {
+  'use strict';
+  const MOD = 'spheres', UI_KEY = 'lifeerp-spheres-ui', DEF_USD = 455;
+  const IMP = ['без метки', 'Важно', 'Особо'];
+  const PALETTE0 = '#e6194b';
+
+  /* ---------- утилиты (как в del.html) ---------- */
+  const pad = n => String(n).padStart(2, '0');
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmtDT = ts => { const d = new Date(ts); return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+  function fmtDur(sec) {
+    sec = Math.round(sec); const neg = sec < 0; sec = Math.abs(sec);
+    const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+    return (neg ? '−' : '') + (h ? `${h}ч ${pad(m)}м` : m ? `${m}м` : s ? `${s}с` : '0м');
+  }
+  const fmtClock = sec => { sec = Math.max(0, Math.floor(sec)); return `${Math.floor(sec / 3600)}:${pad(Math.floor(sec % 3600 / 60))}:${pad(sec % 60)}`; };
+  const fmtMoney = n => Number(n || 0).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+  const fmtCur = (x, usd, rate) => usd ? '$' + (x / rate).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : fmtMoney(x) + ' тг';
+  const fmtMin = min => min ? fmtDur(min * 60) : '0';
+  const fmtPlanMoney = n => n ? fmtMoney(n) : '0';
+  const textOn = hex => { const n = parseInt(hex.slice(1), 16), r = n >> 16, g = n >> 8 & 255, b = n & 255; return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#404040' : '#fff'; };
+  function hexToHsl(hex) {
+    const n = parseInt(hex.slice(1), 16); let r = (n >> 16) / 255, g = (n >> 8 & 255) / 255, b = (n & 255) / 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2; let h = 0, sat = 0;
+    if (mx !== mn) { const d = mx - mn; sat = l > .5 ? d / (2 - mx - mn) : d / (mx + mn); h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60; }
+    return [Math.round(h), Math.round(sat * 100), Math.round(l * 100)];
+  }
+  const shadeOf = (hex, i) => { const [h, sat] = hexToHsl(hex); return `hsl(${h},${Math.max(sat, 30)}%,${Math.round(82 - 58 * i / 15)}%)`; };
+  const tsOf = v => { const t = v ? Date.parse(v) : NaN; return isNaN(t) ? 0 : t; };
+
+  /* ---------- модель: строки базы -> то, с чем работает расчёт из del.html ---------- */
+  function buildModel(d) {
+    const bySort = (a, b) => (a.sort || 0) - (b.sort || 0) || tsOf(a.created_at) - tsOf(b.created_at);
+    const spheres = (d.spheres || []).slice().sort(bySort).map(s => ({ id: s.id, name: s.name || 'Сфера', color: /^#[0-9a-f]{6}$/i.test(s.color) ? s.color : PALETTE0 }));
+    const groups = (d.groups || []).slice().sort(bySort).map(g => ({ id: g.id, sphereId: g.sphere_id, name: g.name || 'Группа' }));
+    const items = (d.items || []).slice().sort(bySort).map(r => {
+      const type = r.kind === 'task' ? 'task' : 'project';
+      return { id: r.id, sphereId: r.sphere_id, parentId: r.parent_id || null, groupId: r.parent_id ? null : (r.group_id || null), type,
+        title: r.title || 'Без названия', note: r.note || '', done: !!r.done, imp: (+r.importance === 1 || +r.importance === 2) ? +r.importance : 0,
+        shade: (type !== 'task' && Number.isInteger(r.shade) && r.shade >= 0 && r.shade < 16) ? r.shade : null,
+        actDays: +r.act_days > 0 ? +r.act_days : 0, actMin: +r.act_min > 0 ? +r.act_min : 0,
+        timerStart: r.timer_start ? tsOf(r.timer_start) : null, created: tsOf(r.created_at),
+        planMin: 0, planMoney: 0, entries: [], thingId: null, dependsOn: null, dependsThing: null };
+    });
+    const idx = {}; items.forEach(i => { idx[i.id] = i; });
+    (d.times || []).forEach(t => {
+      const it = idx[t.subject_id]; if (!it) return;
+      if (t.kind === 'plan') it.planMin += (+t.duration_sec || 0) / 60;
+      else it.entries.push({ kind: t.kind === 'correction' ? 'corr' : 'time', sec: +t.duration_sec || 0, amount: 0, ts: tsOf(t.ended_at) || tsOf(t.started_at) || tsOf(t.created_at),
+        start: t.started_at ? tsOf(t.started_at) : null, comment: t.comment || '' });
+    });
+    (d.moneys || []).forEach(m => {
+      const it = idx[m.subject_id]; if (!it) return;
+      if (m.kind === 'plan') { if (m.direction !== 'in') it.planMoney += +m.amount || 0; }
+      else if (m.kind === 'fact') it.entries.push({ kind: 'money', sec: 0, amount: (m.direction === 'in' ? -1 : 1) * (+m.amount || 0), ts: tsOf(m.created_at), start: null, comment: m.comment || '' });
+    });
+    (d.links || []).forEach(l => {
+      const it = idx[l.from_id]; if (!it) return;
+      if (l.relation === 'depends_on' && l.to_module === 'spheres') it.dependsOn = l.to_id;
+      else if (l.relation === 'depends_on' && l.to_module === 'things') it.dependsThing = l.to_id;
+      else if (l.relation === 'linked_thing' && it.type === 'task') it.thingId = l.to_id;
+    });
+    const things = (d.things || []).map(t => ({ id: t.id, name: t.name, have: !!t.have }));
+    return { spheres, groups, items, things };
+  }
+
+  /* ---------- расчёты (buildCtx из del.html) ---------- */
+  function buildCtx(S, now) {
+    const idx = {}, thById = {}, kids = {}, roots = {}, groupRoots = {}, gset = new Set(S.groups.map(g => g.id));
+    S.items.forEach(i => { idx[i.id] = i; });
+    S.things.forEach(t => { thById[t.id] = t; });
+    S.items.forEach(i => {
+      if (i.parentId && idx[i.parentId]) (kids[i.parentId] = kids[i.parentId] || []).push(i);
+      else if (i.groupId && gset.has(i.groupId)) (groupRoots[i.groupId] = groupRoots[i.groupId] || []).push(i);
+      else (roots[i.sphereId] = roots[i.sphereId] || []).push(i);
+    });
+    const memo = {};
+    function own(i) {
+      let sec = 0, money = 0, last = 0;
+      for (const e of i.entries) { if (e.kind === 'money') money += e.amount; else { sec += e.sec; if (e.sec > 0 && e.ts > last) last = e.ts; } }
+      if (i.timerStart) { sec += Math.max(0, (now - i.timerStart) / 1000); last = now; }
+      return { sec, money, planMin: i.planMin || 0, planMoney: i.planMoney || 0, last };
+    }
+    function calc(id) {
+      if (memo[id]) return memo[id];
+      const t = own(idx[id]); memo[id] = t;
+      (kids[id] || []).forEach(k => { const c = calc(k.id); t.sec += c.sec; t.money += c.money; t.planMin += c.planMin; t.planMoney += c.planMoney; if (c.last > t.last) t.last = c.last; });
+      return t;
+    }
+    function win(i, days, depth) {
+      if (depth > 60) return 0;
+      const from = now - days * 864e5; let s = 0;
+      for (const e of i.entries) if (e.kind !== 'money' && e.ts >= from) s += e.sec;
+      if (i.timerStart) s += (now - Math.max(i.timerStart, from)) / 1000;
+      (kids[i.id] || []).forEach(k => { s += win(k, days, depth + 1); });
+      return Math.max(0, s);
+    }
+    function blocked(i) {
+      let c = i, g = 0;
+      while (c && g++ < 60) {
+        const t = c.dependsOn && idx[c.dependsOn];
+        if (t && !t.done && t.id !== c.id) return { own: c === i, by: { title: t.title, thing: false } };
+        const th = c.dependsThing && thById[c.dependsThing];
+        if (th && !th.have) return { own: c === i, by: { title: th.name, thing: true } };
+        c = c.parentId ? idx[c.parentId] : null;
+      }
+      return null;
+    }
+    const redMemo = {};
+    function hasRed(id) {
+      if (id in redMemo) return redMemo[id];
+      redMemo[id] = false;
+      return (redMemo[id] = (kids[id] || []).some(k => status(k).k === 'red' || hasRed(k.id)));
+    }
+    function status(i) {
+      if (i.done) return { k: 'done' };
+      const bl = blocked(i); if (bl) return { k: 'blocked', own: bl.own, by: bl.by };
+      if (!i.actDays) return { k: 'normal' };
+      const c = calc(i.id), age = now - (c.last || i.created);
+      if (age > i.actDays * 864e5) return { k: 'gray', days: Math.floor(age / 864e5) };
+      if (i.actMin > 0) {
+        if (now - i.created < i.actDays * 864e5) return { k: 'normal' };
+        const got = win(i, i.actDays, 0) / 60;
+        if (got < i.actMin) return { k: 'red', ratio: Math.min(1, 1 - got / i.actMin), got };
+      }
+      return { k: 'normal' };
+    }
+    return { now, idx, thById, kids, roots, groupRoots, calc, own, status, hasRed, get: id => idx[id] };
+  }
+
+  const CSS = `
+.d-app{--text:#404040;--line:#dcdcdc;--bg:#f2f2f2;--panel:#fff;--dark:#404040;font:14px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:var(--text);background:var(--bg);min-height:calc(100vh - 46px);padding-bottom:40px}
+.d-app *{box-sizing:border-box}.d-app button{font:inherit;cursor:pointer;color:var(--text)}.d-app [hidden]{display:none !important}
+.d-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--line)}
+.d-top h1{margin:0;font-size:17px;font-weight:600;letter-spacing:.5px}.d-grow{flex:1}.d-muted{font-size:12px}
+.d-btn{border:1px solid #c9c9c9;background:#fff;border-radius:6px;padding:6px 12px}.d-btn:hover{background:#efefef}
+.d-sync{font-size:12px;opacity:.75}.d-sync.warn{color:#b3261e;opacity:1}
+.d-note1{background:#fff4d6;border-bottom:1px solid #e6d29a;padding:6px 14px;font-size:13px;color:#5b4a10}
+.d-warn{background:#e6e6e6;padding:6px 14px;font-size:13px}
+.d-flt{border:0;background:transparent;padding:0 1px;font:inherit;text-decoration:underline dotted;cursor:pointer}
+.d-flt.off{text-decoration:line-through;opacity:.45}.d-flt.i1{color:#d32f2f}.d-flt.i2{color:#ef6c00}.d-flt.i0{color:#9a9a9a}
+.d-fc{white-space:nowrap}.d-fc.fm{cursor:pointer;color:#ef6c00;margin-left:18px}.d-fc.ft{color:#7b1fa2}
+.d-board{display:flex;gap:12px;align-items:flex-start;overflow-x:auto;padding:14px}
+.d-col{flex:1 0 auto;min-width:285px;background:#e6e6e6;border-radius:9px;overflow:hidden}
+.d-colh{padding:9px 11px}.d-colt{display:flex;align-items:center;gap:6px}.d-colname{font-weight:600;font-size:15px;white-space:nowrap}
+.d-cols{font-size:12px;margin-top:3px;white-space:nowrap}
+.d-fold{border:0;background:rgba(255,255,255,.3);color:inherit !important;border-radius:4px;padding:1px 7px;font-size:11px;margin-left:8px}.d-fold:hover{background:rgba(255,255,255,.55)}
+.d-colb{padding:8px;min-height:50px}.d-empty{padding:40px 20px;text-align:center;flex:1}
+.d-grp{background:rgba(255,255,255,.55);border:1px solid #cfcfcf;border-radius:8px;margin-bottom:9px;padding:6px 6px 2px}
+.d-grph{display:flex;align-items:center;gap:5px;margin-bottom:6px}.d-gname{font-weight:600;flex:1;min-width:0;white-space:nowrap}.d-gsum{font-size:12px}
+.d-card{--c:#888;--mix:14%;border:1px solid var(--line);border-left:6px solid var(--c);border-radius:7px;color:var(--text);background:color-mix(in srgb,var(--c) var(--mix),#fff);margin-bottom:8px;padding:7px 8px;user-select:none}
+.d-card.st-done{color:#5e9a6e;background:repeating-linear-gradient(45deg,#86b392 0 1px,transparent 1px 6px),#fff}
+.d-card.running{box-shadow:0 0 0 2px var(--dark) inset}
+.d-card.st-blocked{color:#8a8a8a}.d-card.st-blocked.own{background:repeating-linear-gradient(45deg,rgba(0,0,0,.18) 0 1px,transparent 1px 6px),#f0f0f0}
+.d-card.st-gray{background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'%3E%3Cg fill='none' stroke='%236db3e0' stroke-width='1' stroke-linecap='round' stroke-linejoin='round' opacity='.5'%3E%3Cpath d='M0 -9V9M-3 -6.2 0 -9 3 -6.2M-3 6.2 0 9 3 6.2' transform='translate%2815 15%29 rotate%280%29 scale%280.95%29'/%3E%3Cpath d='M0 -9V9M-3 -6.2 0 -9 3 -6.2M-3 6.2 0 9 3 6.2' transform='translate%2815 15%29 rotate%2860%29 scale%280.95%29'/%3E%3Cpath d='M0 -9V9M-3 -6.2 0 -9 3 -6.2M-3 6.2 0 9 3 6.2' transform='translate%2815 15%29 rotate%28120%29 scale%280.95%29'/%3E%3Cpath d='M0 -9V9M-3 -6.2 0 -9 3 -6.2M-3 6.2 0 9 3 6.2' transform='translate%2845 45%29 rotate%280%29 scale%280.7%29'/%3E%3Cpath d='M0 -9V9M-3 -6.2 0 -9 3 -6.2M-3 6.2 0 9 3 6.2' transform='translate%2845 45%29 rotate%2860%29 scale%280.7%29'/%3E%3Cpath d='M0 -9V9M-3 -6.2 0 -9 3 -6.2M-3 6.2 0 9 3 6.2' transform='translate%2845 45%29 rotate%28120%29 scale%280.7%29'/%3E%3C/g%3E%3C/svg%3E"),color-mix(in srgb,var(--c) var(--mix),#fff)}
+.d-ct{display:flex;align-items:baseline;gap:4px}
+.d-tog{width:10px;height:10px;font-size:7px;line-height:1;border:0;background:transparent;padding:0;flex:none}
+.d-imp{flex:none;font-size:9px;user-select:none;margin-right:2px}.d-imp.i0{color:#9a9a9a}.d-imp.i1{color:#d32f2f;font-weight:600}.d-imp.i2{color:#ef6c00;font-weight:600}
+.d-title{font-weight:400;flex:1;min-width:0;white-space:nowrap}.d-title.proj{font-weight:600}.d-title.tlink{cursor:pointer}.d-title.tlink:hover{text-decoration:underline}.d-title.redkid{color:#c62828}
+.d-lnk{color:#9a9a9a;font-weight:400}
+.d-sts{flex:none;text-align:right;font-size:9.4px;white-space:nowrap;margin-left:10px;opacity:.5}.d-sts .nw{display:block;line-height:1.2;white-space:nowrap}
+.d-sts .fact{color:#1565c0}.d-sts .plan{color:#6a1b9a}
+.d-act{font-size:12px;margin-top:5px;opacity:.7}.d-act.red{font-weight:600}
+.d-note{font-size:12px;margin-top:3px;white-space:pre-wrap;word-break:break-word;max-width:340px}
+.d-btns{display:flex;gap:3px;flex-wrap:wrap;margin-top:6px}
+.d-sm{border:1px solid rgba(0,0,0,.18);background:rgba(255,255,255,.7);border-radius:4px;padding:2px 6px;font-size:10px;line-height:1.3;min-height:18px;opacity:.75}.d-sm:hover{background:#fff}
+.d-sm.tm-on{background:#5cb872;border-color:#5cb872;color:#fff;opacity:1;cursor:default}
+.d-kids{margin-top:7px;padding-left:8px;border-left:2px dashed rgba(0,0,0,.2)}.d-kids .d-card{margin-bottom:6px}
+.d-back{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:1200;padding:12px}
+.d-modal{background:#fff;border-radius:10px;width:100%;max-width:640px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 20px 50px rgba(0,0,0,.3);color:var(--text)}
+.d-mh{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line);gap:10px}.d-mh b{min-width:0}
+.d-x{border:0;background:transparent;font-size:16px}.d-mb{padding:14px 16px;overflow:auto}
+.d-sum{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}.d-sum div{background:#f6f6f6;border:1px solid var(--line);border-radius:7px;padding:8px 10px}.d-sum small{display:block}
+.d-et{width:100%;border-collapse:collapse;font-size:13px}.d-et td,.d-et th{padding:5px 6px;border-bottom:1px solid #eee;text-align:left;vertical-align:top}.d-et th{font-weight:600;font-size:12px}
+.d-neg{color:#c62828}.d-pos{color:#2e7d32}
+@media (max-width:640px){.d-col{flex-basis:88vw;min-width:88vw}.d-sum{grid-template-columns:1fr}}`;
+
+  function mount(el, ctxIn) {
+    ctxIn = ctxIn || {};
+    const core = ctxIn.core || global.LifeCore, store = core.store;
+    let raw = null, S = { spheres: [], groups: [], items: [], things: [] }, usdRate = DEF_USD;
+    let ui = Object.assign({ showProj: true, showTask: true, zeroOnly: false, showDone: false, usd: false, imp: [true, true, true], col: {} }, store.get(UI_KEY, {}) || {});
+    if (!Array.isArray(ui.imp) || ui.imp.length !== 3) ui.imp = [true, true, true];
+    if (!ui.col || typeof ui.col !== 'object') ui.col = {};
+    let state = 'loading', note = '', errText = '', alive = true, loadedAt = 0, detailsId = null, ctx = null;
+    const offs = [];
+    if (!document.getElementById('sp-css')) { const s = document.createElement('style'); s.id = 'sp-css'; s.textContent = CSS; document.head.appendChild(s); }
+    el.innerHTML = '';
+    const root = document.createElement('div'); root.className = 'd-app'; el.appendChild(root);
+    const uiSave = () => store.set(UI_KEY, ui);
+
+    /* ---------- данные ---------- */
+    function apply(d) {
+      raw = d; S = buildModel(d);
+      const usd = (d.fx || []).filter(r => r.currency === 'USD' && !r.deleted_at).sort((a, b) => String(b.on_date).localeCompare(String(a.on_date)))[0];
+      usdRate = usd && +usd.rate > 0 ? +usd.rate : DEF_USD;
+    }
+    async function load() {
+      state = state === 'ready' ? 'ready' : 'loading'; render();
+      try { await core.flush(); } catch (e) { /* очередь сама повторит */ }
+      try {
+        const nd = ['deleted_at=is.null'];
+        const sub = ['subject_module=eq.spheres', 'deleted_at=is.null'];
+        const [spheres, groups, items, times, moneys, links, things, fx] = await Promise.all([
+          core.select('spheres', { filters: nd }), core.select('sphere_groups', { filters: nd }), core.select('sphere_items', { filters: nd }),
+          core.select('time_entries', { filters: sub }), core.select('money_entries', { filters: sub }),
+          core.select('entity_links', { filters: ['from_module=eq.spheres', 'deleted_at=is.null'] }),
+          core.select('things_view'), core.select('fx_rates', { filters: nd })
+        ]);
+        apply({ spheres, groups, items, times, moneys, links, things, fx });
+        core.cache.set(MOD, raw); state = 'ready'; note = ''; loadedAt = Date.now();
+      } catch (e) {
+        if (e.auth) { state = 'error'; errText = 'нужно войти'; if (ctxIn.onAuthLost) ctxIn.onAuthLost(); render(); return; }
+        const c = core.cache.get(MOD);
+        if (c && e.net) { apply(c.data); state = 'ready'; note = 'Нет связи с базой. Показана копия от ' + fmtDT(c.ts) + '.'; }
+        else { state = 'error'; errText = e.net ? 'нет связи с базой и нет копии в браузере' : (e.message || 'ошибка чтения'); }
+      }
+      render();
+    }
+
+    /* ---------- отрисовка ---------- */
+    const vis = i => (i.type === 'task' ? (ui.showTask && (ui.showDone || !i.done) && (!ui.zeroOnly || !i.planMoney)) : ui.showProj) && ui.imp[i.imp || 0];
+    function flat(list, c) { const out = []; (list || []).forEach(i => { if (vis(i)) out.push(i); else out.push(...flat(c.kids[i.id], c)); }); return out; }
+    const isCol = id => !!ui.col[id];
+
+    function cardHtml(it, c, sp) {
+      const t = c.calc(it.id), st = c.status(it), kids = c.kids[it.id] || [];
+      const isProj = it.type === 'project', shaded = isProj && it.shade != null;
+      let col = shaded ? shadeOf(sp.color, it.shade) : sp.color, mix = shaded ? 24 : 14, cls = '';
+      if (st.k === 'gray') { col = '#9a9a9a'; mix = 12; cls = 'st-gray'; }
+      else if (st.k === 'red') { col = `hsl(0,78%,${Math.round(58 - 16 * st.ratio)}%)`; mix = Math.round(16 + 24 * st.ratio); cls = 'st-red'; }
+      else if (st.k === 'done') { col = '#5e9a6e'; mix = 8; cls = 'st-done'; }
+      else if (st.k === 'blocked') { col = '#9a9a9a'; mix = 12; cls = 'st-blocked' + (st.own ? ' own' : ''); }
+      const run = !!it.timerStart;
+      const timer = run ? `<button class="d-sm tm-on" disabled title="Таймер идёт (в этой версии только просмотр)">■ ${fmtClock((c.now - it.timerStart) / 1000)}</button>` : '';
+      let actLine = '';
+      if (st.k === 'blocked' && st.own) actLine = `<div class="d-act">ждёт ${st.by.thing ? 'покупки' : 'завершения'}: ${esc(st.by.title)}</div>`;
+      else if (it.actDays) {
+        if (st.k === 'red') actLine = `<div class="d-act red">мало: за ${it.actDays} дн набрано ${fmtDur(st.got * 60)} из ${it.actMin} мин</div>`;
+        else if (st.k === 'gray') actLine = `<div class="d-act">нет работы ${st.days} дн (порог ${it.actDays})</div>`;
+        else actLine = `<div class="d-act">порог ${it.actDays} дн${it.actMin ? ' / ' + it.actMin + ' мин' : ''}${t.last ? ' · последняя работа ' + fmtDT(t.last).slice(0, 10) : ''}</div>`;
+      }
+      return `<div class="d-card ${cls} ${run ? 'running' : ''}" style="--c:${col};--mix:${mix}%" data-card="${esc(it.id)}">
+    <div class="d-ct">
+      ${kids.length ? `<button class="d-tog" data-act="toggle" data-id="${esc(it.id)}" title="Свернуть/развернуть">${isCol(it.id) ? '+' : '−'}</button>` : ''}
+      <span class="d-imp i${it.imp || 0}">${IMP[it.imp || 0]}</span>
+      <div class="d-title ${isProj ? 'proj' : 'tlink'}${c.hasRed(it.id) ? ' redkid' : ''}"${isProj ? '' : ` data-act="details" data-id="${esc(it.id)}" title="Записи времени и расходов"`}>${esc(it.title)}${(!isProj && it.thingId && c.thById[it.thingId]) ? ' <span class="d-lnk">(вещица)</span>' : ''}</div>
+      <div class="d-sts"><span class="nw fact" title="Факт: время · деньги"><b>${fmtDur(t.sec)}</b> · <b>${fmtMoney(t.money)}</b></span><span class="nw plan" title="План: время · деньги">${fmtMin(t.planMin)} · ${fmtPlanMoney(t.planMoney)}</span></div>
+    </div>
+    ${it.note ? `<div class="d-note">${esc(it.note)}</div>` : ''}
+    ${isProj ? `<div class="d-btns">${timer}<button class="d-sm" data-act="details" data-id="${esc(it.id)}" title="Записи времени и расходы">≡</button></div>` : (timer ? `<div class="d-btns">${timer}</div>` : '')}
+    ${actLine}
+    ${kids.length && !isCol(it.id) ? `<div class="d-kids">${flat(kids, c).map(k => cardHtml(k, c, sp)).join('')}</div>` : ''}
+  </div>`;
+    }
+    function sphereTotals(c, spId) {
+      const t = { sec: 0, money: 0, planMin: 0, planMoney: 0 };
+      const list = (c.roots[spId] || []).slice();
+      S.groups.filter(g => g.sphereId === spId).forEach(g => list.push(...(c.groupRoots[g.id] || [])));
+      list.forEach(r => { const x = c.calc(r.id); t.sec += x.sec; t.money += x.money; t.planMin += x.planMin; t.planMoney += x.planMoney; });
+      return t;
+    }
+    function groupHtml(g, c, sp) {
+      const list = c.groupRoots[g.id] || [];
+      let sec = 0, money = 0; list.forEach(r => { const x = c.calc(r.id); sec += x.sec; money += x.money; });
+      return `<div class="d-grp" data-grp="${esc(g.id)}"><div class="d-grph">
+      <button class="d-tog" data-act="gr-toggle" data-id="${esc(g.id)}" title="Свернуть/развернуть">${isCol(g.id) ? '+' : '−'}</button><span class="d-gname">${esc(g.name)}</span></div>
+    ${isCol(g.id) ? `<div class="d-gsum" style="margin:0 0 6px 14px">${fmtDur(sec)} · ${fmtMoney(money)} · дел: ${list.length}</div>` : flat(list, c).map(r => cardHtml(r, c, sp)).join('')}</div>`;
+    }
+    function colHtml(sp, c) {
+      const t = sphereTotals(c, sp.id), tc = textOn(sp.color);
+      const withKids = S.items.filter(i => i.sphereId === sp.id && (c.kids[i.id] || []).length);
+      const grs = S.groups.filter(g => g.sphereId === sp.id);
+      const foldable = withKids.length || grs.length, anyOpen = withKids.some(i => !isCol(i.id)) || grs.some(g => !isCol(g.id));
+      return `<section class="d-col" data-col="${esc(sp.id)}">
+    <header class="d-colh" style="background:${sp.color};color:${tc}">
+      <div class="d-colt"><span class="d-colname">${esc(sp.name)}</span>${foldable ? `<button class="d-fold" data-act="sp-fold" data-id="${esc(sp.id)}" title="Свернуть или развернуть все проекты и группы этой сферы">${anyOpen ? 'Свернуть' : 'Развернуть'}</button>` : ''}</div>
+      <div class="d-cols">${fmtDur(t.sec)} / ${fmtMin(t.planMin)} · ${fmtMoney(t.money)} / ${fmtPlanMoney(t.planMoney)}</div>
+    </header>
+    <div class="d-colb">${grs.map(g => groupHtml(g, c, sp)).join('')}${flat(c.roots[sp.id], c).map(r => cardHtml(r, c, sp)).join('')}</div></section>`;
+    }
+    function entryRows(it) {
+      const rows = it.entries.slice().sort((a, b) => b.ts - a.ts).map(e => {
+        const v = e.kind === 'money' ? `<span class="${e.amount < 0 ? 'd-neg' : ''}">${fmtMoney(e.amount)} тг</span>`
+          : e.kind === 'corr' ? `<span class="${e.sec < 0 ? 'd-neg' : 'd-pos'}">${e.sec < 0 ? '−' : '+'}${fmtDur(Math.abs(e.sec))}</span>` : fmtDur(e.sec);
+        return `<tr><td style="white-space:nowrap">${fmtDT(e.ts)}</td><td>${e.kind === 'money' ? 'деньги' : e.kind === 'corr' ? 'коррекция' : 'время'}</td><td>${v}</td><td>${esc(e.comment)}</td></tr>`;
+      });
+      return rows.length ? `<table class="d-et"><thead><tr><th>Когда</th><th>Вид</th><th>Значение</th><th>Комментарий</th></tr></thead><tbody>${rows.join('')}</tbody></table>` : '<div class="d-muted">Записей пока нет.</div>';
+    }
+    function detailsHtml(it, c) {
+      const t = c.calc(it.id), own = c.own(it), st = c.status(it);
+      const path = []; let cur = it, g = 0; while (cur && g++ < 50) { path.unshift(cur.title); cur = cur.parentId ? c.idx[cur.parentId] : null; }
+      let top = it, k = 0; while (top.parentId && c.idx[top.parentId] && k++ < 50) top = c.idx[top.parentId];
+      const sp = S.spheres.find(s => s.id === it.sphereId), gr = top.groupId ? S.groups.find(x => x.id === top.groupId) : null;
+      const where = [sp ? sp.name : '?', ...(gr ? [gr.name] : []), ...path].map(esc).join(' / ');
+      const dep = [];
+      if (it.dependsOn && c.idx[it.dependsOn]) dep.push(`зависит от дела «${esc(c.idx[it.dependsOn].title)}»${c.idx[it.dependsOn].done ? ' (готово)' : ''}`);
+      if (it.dependsThing && c.thById[it.dependsThing]) dep.push(`зависит от вещицы «${esc(c.thById[it.dependsThing].name)}» (${c.thById[it.dependsThing].have ? 'уже есть' : 'нужно купить'})`);
+      if (it.thingId && c.thById[it.thingId]) dep.push(`связана с вещицей «${esc(c.thById[it.thingId].name)}»`);
+      const stTxt = { done: 'выполнено', blocked: 'ждёт', gray: 'давно без работы', red: 'мало работы', normal: '' }[st.k] || '';
+      return `<div class="d-back" data-act="close"><div class="d-modal" role="dialog" aria-modal="true" data-modal>
+    <div class="d-mh"><b>${esc(it.title)}</b><button class="d-x" data-act="close" aria-label="Закрыть">✕</button></div>
+    <div class="d-mb"><div class="d-muted" style="margin-bottom:8px">${where}</div>
+      <div class="d-sum"><div><small>Время: факт / план</small><b>${fmtDur(t.sec)} / ${fmtMin(t.planMin)}</b></div><div><small>Деньги: факт / план</small><b>${fmtMoney(t.money)} / ${fmtPlanMoney(t.planMoney)} тг</b></div>
+        ${it.type === 'project' ? `<div><small>Только по самому проекту</small><b>${fmtDur(own.sec)} · ${fmtMoney(own.money)}</b></div>` : ''}<div><small>Статус</small><b>${esc(stTxt) || '—'}</b></div></div>
+      ${it.note ? `<div class="d-note" style="max-width:none;margin-bottom:8px">${esc(it.note)}</div>` : ''}
+      ${dep.length ? `<div class="d-muted" style="margin-bottom:8px">${dep.join('<br>')}</div>` : ''}
+      ${entryRows(it)}</div></div></div>`;
+    }
+
+    function syncBadge() {
+      const b = root.querySelector('.d-sync'); if (!b) return; const s = core.status();
+      b.classList.toggle('warn', s.dead > 0);
+      b.textContent = s.dead > 0 ? `не принято сервером: ${s.dead}` : (s.pending > 0 ? `ожидает отправки: ${s.pending}` : (s.online ? '' : 'нет связи'));
+    }
+    function render() {
+      if (!alive) return;
+      const head = `<div class="d-top"><h1>СФЕРЫ И ДЕЛА</h1><span class="d-muted">`
+        + `<button class="d-flt ${ui.showProj ? '' : 'off'}" data-act="f-proj" title="Показать/скрыть проекты">проекты</button> · <button class="d-flt ${ui.showTask ? '' : 'off'}" data-act="f-task" title="Показать/скрыть задачи">задачи</button>`
+        + (ui.showTask ? ` · <button class="d-flt ${ui.zeroOnly ? '' : 'off'}" data-act="f-zero" title="Только задачи без планируемой суммы">показывать только бесплатные</button> · <button class="d-flt ${ui.showDone ? '' : 'off'}" data-act="f-done" title="Показывать выполненные задачи">выполненные</button>` : '')
+        + ` · <button class="d-flt i1 ${ui.imp[1] ? '' : 'off'}" data-act="f-imp" data-v="1">Важно</button> · <button class="d-flt i2 ${ui.imp[2] ? '' : 'off'}" data-act="f-imp" data-v="2">Особо</button> · <button class="d-flt i0 ${ui.imp[0] ? '' : 'off'}" data-act="f-imp" data-v="0">без метки</button>`
+        + ` · <button class="d-flt" data-act="f-expand" title="Раскрыть все свёрнутые списки (проекты и группы)">раскрыть все списки</button>`
+        + ` · <span class="d-fc fm" data-act="f-cur" title="Прогноз денег по всем сферам. Клик: тг / $"><b data-fc="money">—</b></span> · <span class="d-fc ft" title="Прогноз времени по всем сферам"><b data-fc="time">—</b></span></span>`
+        + `<span class="d-grow"></span><span class="d-sync"></span><button class="d-btn" data-act="reload">Обновить</button></div>`
+        + `<div class="d-note1">Режим просмотра: правки, таймеры и новые дела пока вносятся в старой системе (вкладка рядом). Здесь данные из базы.</div>`
+        + (note ? `<div class="d-warn">${esc(note)}</div>` : '');
+      let body;
+      if (state === 'loading') body = '<div class="d-empty">Загрузка…</div>';
+      else if (state === 'error') body = `<div class="d-empty">Не удалось прочитать данные: ${esc(errText)}.<br><br><button class="d-btn" data-act="reload">Повторить</button></div>`;
+      else {
+        ctx = buildCtx(S, Date.now());
+        body = `<div class="d-board">${S.spheres.length ? S.spheres.map(sp => colHtml(sp, ctx)).join('') : '<div class="d-empty">В базе пока нет ни одной сферы.</div>'}</div>`;
+      }
+      root.innerHTML = head + body + (detailsId && ctx && ctx.idx[detailsId] ? detailsHtml(ctx.idx[detailsId], ctx) : '');
+      if (state === 'ready') {
+        let pm = 0, pt = 0; S.spheres.forEach(sp => { const t = sphereTotals(ctx, sp.id); pm += t.planMoney; pt += t.planMin; });
+        const fm = root.querySelector('[data-fc="money"]'), ft = root.querySelector('[data-fc="time"]');
+        if (fm) fm.textContent = fmtCur(pm, ui.usd, usdRate); if (ft) ft.textContent = fmtMin(pt);
+      }
+      syncBadge();
+    }
+
+    /* ---------- события ---------- */
+    function allFoldable(spId) {
+      const ids = []; S.items.forEach(i => { if (i.sphereId === spId && (ctx.kids[i.id] || []).length) ids.push(i.id); });
+      S.groups.forEach(g => { if (g.sphereId === spId) ids.push(g.id); }); return ids;
+    }
+    function onClick(e) {
+      const b = e.target.closest ? e.target.closest('[data-act]') : null; if (!b || !root.contains(b)) return;
+      if (b.dataset.act === 'close') { if (e.target.closest('[data-modal]') && !e.target.closest('.d-x')) return; detailsId = null; render(); return; }
+      const id = b.dataset.id;
+      switch (b.dataset.act) {
+        case 'toggle': case 'gr-toggle': if (ui.col[id]) delete ui.col[id]; else ui.col[id] = 1; uiSave(); render(); break;
+        case 'sp-fold': { const ids = allFoldable(id), open = ids.some(x => !ui.col[x]); ids.forEach(x => { if (open) ui.col[x] = 1; else delete ui.col[x]; }); uiSave(); render(); break; }
+        case 'f-expand': ui.col = {}; uiSave(); render(); break;
+        case 'f-proj': ui.showProj = !ui.showProj; uiSave(); render(); break;
+        case 'f-task': ui.showTask = !ui.showTask; uiSave(); render(); break;
+        case 'f-zero': ui.zeroOnly = !ui.zeroOnly; uiSave(); render(); break;
+        case 'f-done': ui.showDone = !ui.showDone; uiSave(); render(); break;
+        case 'f-imp': ui.imp[+b.dataset.v] = !ui.imp[+b.dataset.v]; uiSave(); render(); break;
+        case 'f-cur': ui.usd = !ui.usd; uiSave(); render(); break;
+        case 'details': detailsId = id; render(); break;
+        case 'reload': load(); break;
+      }
+    }
+    const onKey = e => { if (e.key === 'Escape' && detailsId) { detailsId = null; render(); } };
+    root.addEventListener('click', onClick); document.addEventListener('keydown', onKey);
+    offs.push(core.on('queue', syncBadge), core.on('dead', syncBadge), core.on('net', syncBadge));
+    const onVis = () => { if (document.visibilityState === 'visible' && state === 'ready' && Date.now() - loadedAt > 120000 && !core.status().pending) load(); };
+    document.addEventListener('visibilitychange', onVis);
+    const tickTimer = setInterval(() => { if (state === 'ready' && !detailsId) render(); }, 60000);
+
+    load();
+    return {
+      reload: load,
+      unmount() { alive = false; clearInterval(tickTimer); offs.forEach(f => f()); document.removeEventListener('keydown', onKey); document.removeEventListener('visibilitychange', onVis); el.innerHTML = ''; }
+    };
+  }
+
+  global.LifeModules = global.LifeModules || {};
+  global.LifeModules.spheres = { id: MOD, title: 'Сферы и дела', mount, _buildModel: buildModel, _buildCtx: buildCtx };
+})(window);
+
+</script>
+<script>
 /* ---- shell/shell.js ---- */
 /* Оболочка (компьютер): верхняя панель, вкладки модулей, переключатель «чьи данные», индикатор очереди записи.
    Старая система подключается как есть, в окне внутри страницы (файл life-system.html рядом).
@@ -773,6 +1165,7 @@ body{margin:0;background:#f2f2f2}
 
     const modules = [
       { id: 'things', title: 'Вещицы', mount: (box, ctx) => global.LifeModules.things.mount(box, ctx) },
+      { id: 'spheres', title: 'Сферы и дела', mount: (box, ctx) => global.LifeModules.spheres.mount(box, ctx) },
       { id: 'legacy', title: 'Состояние, СД, дневник (старая система)', own: true, mount(box) {
         const f = document.createElement('iframe'); f.src = 'life-system.html'; f.title = 'Старая система'; box.appendChild(f);
         return { unmount() { f.remove(); } };
