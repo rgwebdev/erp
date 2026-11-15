@@ -1521,7 +1521,7 @@ input[type="date"].field, input[type="time"].field{ min-height: 44px; }
       const names = S.dueBells(); if (names.length) { beep(); toast('🔔 ' + names.join(', ')); }
       updateTexts();
     }, 1000);
-    const offs = [core.on('queue', () => render(false)), core.on('drained', () => render(false)), core.on('net', () => render(false))];
+    const offs = [core.on('queue', () => render(false)), core.on('drained', () => { if (S.note && S.state === 'ready' && !core.status().pending) S.load(); else render(false); }), core.on('net', () => { if (S.note && S.state === 'ready' && core.status().online && !core.status().pending) S.load(); else render(false); })];
     const onVis = () => { if (document.visibilityState === 'visible' && S.state === 'ready' && Date.now() - S.loadedAt > 60000 && !core.status().pending) S.load(); };
     document.addEventListener('visibilitychange', onVis);
     render(false); S.load();
@@ -1536,9 +1536,766 @@ input[type="date"].field, input[type="time"].field{ min-height: 44px; }
 
 </script>
 <script>
+/* ---- modules/shop-model.js ---- */
+/* «Покупки»: чистые расчёты без экрана и без базы. Логика перенесена из старого приложения «Карточки времени» без изменений.
+   Данные D = {items, receipts, lines, settings, lastBought}. День — строка YYYY-MM-DD по поясу владельца. window.LifeShopModel */
+(function (global) {
+  'use strict';
+  const T = global.LifeTimersModel;
+  const RECEIPT_GAP_MS = 5 * 60 * 1000, MAX_QTY = 9999, DORMANT_MS = 30 * 86400000;
+  const round2 = n => Math.round(n * 100) / 100, round3 = n => Math.round(n * 1000) / 1000, round4 = n => Math.round(n * 10000) / 10000;
+  const money = n => round2(n).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+  const fmtNum = n => round3(n).toLocaleString('ru-RU', { maximumFractionDigits: 3 });
+  const dayDiff = (a, b) => Math.round((Date.parse(a + 'T12:00:00Z') - Date.parse(b + 'T12:00:00Z')) / 86400000);
+  const fmtDay = key => new Date(key + 'T12:00:00Z').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'UTC' });
+
+  /* Весовые товары: в кг или в граммах. Остальное считается штуками. */
+  function weightKind(unit) {
+    const u = String(unit || '').trim().toLowerCase().replace(/\.$/, '');
+    if (u === 'кг' || u === 'kg' || u === 'килограмм') return 'kg';
+    if (u === 'г' || u === 'гр' || u === 'грамм' || u === 'g') return 'g';
+    return null;
+  }
+  const stepFor = unit => (weightKind(unit) === 'g' ? 100 : 1);
+  /* «1100», «1100 г», «1,1 кг», «1.1», «800г»: количество в единице самой карточки или null. Без суффикса дробное = кг, целое от 20 = граммы. */
+  function parseWeight(text, unit) {
+    const t = String(text).trim().toLowerCase().replace(/\s+/g, ' ');
+    const m = t.match(/^(\d+(?:[.,]\d+)?) ?(кг|килограмм[а-я]*|kg|г|гр|грамм[а-я]*|g)?\.?$/);
+    if (!m) return null;
+    const num = parseFloat(m[1].replace(',', '.')); if (!(num > 0)) return null;
+    let grams;
+    if (m[2]) grams = /^(кг|килограмм|kg)/.test(m[2]) ? num * 1000 : num;
+    else if (/[.,]/.test(m[1])) grams = num * 1000;
+    else grams = num < 20 ? num * 1000 : num;
+    return round3(weightKind(unit) === 'g' ? grams : grams / 1000);
+  }
+  function fmtQ(q, unit) {
+    const k = weightKind(unit);
+    if (k === 'kg') return q < 1 ? fmtNum(q * 1000) + ' г' : fmtNum(q) + ' кг';
+    if (k === 'g') return q >= 1000 ? fmtNum(q / 1000) + ' кг' : fmtNum(q) + ' г';
+    return fmtNum(q) + ' ' + unit;
+  }
+  const effPrice = it => (it.price_now != null ? +it.price_now : +it.price);
+  const startQty = it => (weightKind(it.unit) ? +it.ref_qty : 1);
+  /* ref_qty хватает на days дней; округляем вниз, не меньше одного дня */
+  const supplyDaysFor = (it, q) => Math.max(1, Math.floor(q * it.days / it.ref_qty + 1e-9));
+
+  /* «100 50», «100, 50», «100+50» → 150; «12,5» и «99,50» остаются дробными; «100,200» (три цифры) — сумма */
+  function parsePrice(text) {
+    const t = String(text).trim(); if (t === '') return NaN;
+    let total = 0; const tokens = t.split(/[\s;+]+/).filter(Boolean);
+    for (const tok of tokens) {
+      const parts = /^\d+,\d{1,2}$/.test(tok) ? [tok.replace(',', '.')] : tok.split(',').filter(Boolean);
+      for (const p of parts) { if (!/^\d+(\.\d+)?$/.test(p)) return NaN; total += Number(p); }
+    }
+    return round2(total);
+  }
+  /* Поля формы → значения карточки или {error} */
+  function readFields(f) {
+    const name = String(f.name || '').trim(); if (!name) return { error: 'Укажите название.' };
+    const ptxt = String(f.price || '').trim(), price = ptxt === '' ? 0 : parsePrice(ptxt);
+    if (!isFinite(price) || price < 0) return { error: 'Цена должна быть числом, например 250, 99,5 или 100 50 (сложу).' };
+    const days = Number(String(f.days || '').trim());
+    if (!isFinite(days) || days < 1 || Math.floor(days) !== days) return { error: 'Укажите целое число дней от 1, на сколько хватает покупки.' };
+    const unit = String(f.unit || '').trim() || 'шт', kind = weightKind(unit); let ref = 1;
+    if (kind) {
+      const rt = String(f.ref || '').trim();
+      if (rt === '') ref = kind === 'g' ? 1000 : 1; else { ref = parseWeight(rt, unit); if (ref === null) return { error: 'Не понял вес. Пример: 800 г или 0,8 кг.' }; }
+    }
+    return { name, price: round2(price), unit, days, ref_qty: ref };
+  }
+
+  /* ---- порядок и разделы ---- */
+  const ordMs = it => Date.parse(it.ord_at);
+  function isDormant(it, lastBought, now) {
+    if (it.status !== 'off') return false;
+    return now - Math.max(ordMs(it) || 0, lastBought[it.name] || 0) > DORMANT_MS;
+  }
+  function ordered(items) {
+    const rank = { on: 0, off: 1, bought: 2 };
+    return items.slice().sort((a, b) => {
+      if (a.status !== b.status) return rank[a.status] - rank[b.status];
+      if (a.status === 'on' && !!a.checked !== !!b.checked) return a.checked ? 1 : -1;
+      if (a.status === 'bought') { if (a.due_on !== b.due_on) return a.due_on < b.due_on ? -1 : 1; } else if (ordMs(b) !== ordMs(a)) return ordMs(b) - ordMs(a);
+      return a.name.localeCompare(b.name, 'ru');
+    });
+  }
+  const normQ = t => String(t).toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim();
+  function sugMatches(items, q) {
+    q = normQ(q); if (!q) return [];
+    const out = [];
+    items.forEach(it => { const n = normQ(it.name), at = n.indexOf(q); if (at < 0) return; out.push({ it, score: at === 0 ? 0 : (n.charAt(at - 1) === ' ' ? 1 : 2) }); });
+    out.sort((a, b) => a.score - b.score || a.it.name.localeCompare(b.it.name, 'ru'));
+    return out.slice(0, 8).map(x => x.it);
+  }
+  function sugStatus(it) {
+    if (it.status === 'on') return { t: 'в списке · ' + fmtQ(it.qty, it.unit), on: true };
+    if (it.status === 'bought') return { t: 'куплено, вернётся ' + fmtDay(it.due_on), on: false };
+    return { t: 'не в списке', on: false };
+  }
+
+  /* ---- чеки ---- */
+  const lineTs = l => Date.parse(l.bought_at);
+  /* Чек = строки с одним receipt_id. Итоги: товары, пакеты, сумма. */
+  function receiptsOf(D) {
+    const by = {}; D.lines.forEach(l => { (by[l.receipt_id] = by[l.receipt_id] || []).push(l); });
+    return D.receipts.filter(r => by[r.id]).map(r => {
+      const lines = by[r.id].slice().sort((a, b) => lineTs(a) - lineTs(b) || String(a.id).localeCompare(String(b.id)));
+      const goods = lines.filter(l => l.kind === 'goods'), bags = lines.filter(l => l.kind === 'bag');
+      const gAmount = round2(goods.reduce((a, l) => a + +l.amount, 0)), bAmount = round2(bags.reduce((a, l) => a + +l.amount, 0));
+      return { id: r.id, date: r.local_date, first: lineTs(lines[0]), last: lineTs(lines[lines.length - 1]), lines, goods, bags, itemsAmount: gAmount, bagsAmount: bAmount, amount: round2(gAmount + bAmount),
+        bagS: bags.filter(l => l.item_id === 'bag_s').reduce((a, l) => a + +l.qty, 0), bagL: bags.filter(l => l.item_id === 'bag_l').reduce((a, l) => a + +l.qty, 0) };
+    }).sort((a, b) => a.first - b.first);
+  }
+  /* К какому чеку отнести покупку сейчас: к последнему за этот день, если с его последней строки прошло не больше 5 минут */
+  function receiptFor(D, nowMs, day) {
+    const rs = receiptsOf(D).filter(r => r.date === day);
+    const last = rs[rs.length - 1];
+    return last && nowMs - last.last <= RECEIPT_GAP_MS ? last.id : null;
+  }
+  function bagsAmount(set, b) { return b.s * +set.bag_small_price + b.l * +set.bag_large_price; }
+
+  /* выгрузка чеков в прежнем формате kartochki-vremeni/purchases/v1; from/to — строки дней */
+  function buildPurchasesExport(D, from, to, tz, now) {
+    const rs = receiptsOf(D).filter(r => r.date >= from && r.date <= to);
+    const receipts = rs.map(r => {
+      const items = r.goods.map(p => {
+        const ref = +p.ref_qty > 0 ? +p.ref_qty : 1, supply = p.supply_days != null ? p.supply_days : p.days * p.qty;
+        return { purchaseId: p.id, itemId: p.item_id, name: p.name, unit: p.unit, unitPrice: +p.price, quantity: +p.qty, amount: +p.amount, daysPerUnit: round4(p.days / ref), referenceQuantity: ref, referenceDays: p.days, supplyDays: supply, purchasedAt: T.isoZoned(lineTs(p), tz), nextDue: T.shiftDay(p.local_date, supply) };
+      });
+      return { id: r.goods[0] ? r.goods[0].id : r.id, date: r.date, start: T.isoZoned(r.first, tz), end: T.isoZoned(r.last, tz), itemCount: items.length, itemsAmount: r.itemsAmount, bags: { small: r.bagS, large: r.bagL, amount: r.bagsAmount }, amount: r.amount, items };
+    });
+    const byDate = {}, daily = [];
+    receipts.forEach(r => { if (!byDate[r.date]) { byDate[r.date] = { date: r.date, receipts: 0, items: 0, amount: 0 }; daily.push(byDate[r.date]); } const d = byDate[r.date]; d.receipts++; d.items += r.itemCount; d.amount = round2(d.amount + r.amount); });
+    const set = D.settings;
+    return { schema: 'kartochki-vremeni/purchases/v1', exportedAt: T.isoZoned(now, tz), timezone: tz, range: { from, to }, rules: { receiptGapMinutes: RECEIPT_GAP_MS / 60000 },
+      totals: { receipts: receipts.length, items: receipts.reduce((a, r) => a + r.itemCount, 0), amount: round2(receipts.reduce((a, r) => a + r.amount, 0)), bagsAmount: round2(receipts.reduce((a, r) => a + r.bags.amount, 0)) },
+      bagPrices: { small: +set.bag_small_price, large: +set.bag_large_price }, daily, receipts };
+  }
+
+  global.LifeShopModel = { RECEIPT_GAP_MS, MAX_QTY, DORMANT_MS, round2, round3, round4, money, fmtNum, dayDiff, fmtDay, weightKind, stepFor, parseWeight, fmtQ, effPrice, startQty, supplyDaysFor,
+    parsePrice, readFields, isDormant, ordered, normQ, sugMatches, sugStatus, receiptsOf, receiptFor, bagsAmount, buildPurchasesExport };
+})(window);
+
+</script>
+<script>
+/* ---- modules/shop-css.js ---- */
+/* «Покупки» (карманная версия): стили карточек, корзины, поиска и чеков. Основа — старое приложение «Карточки времени». Дополняет timers-css.js. window.LifeShopCss */
+window.LifeShopCss = `
+
+
+
+.search{ display: flex; flex-direction: column; gap: 8px; }
+.sug{ list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.sug li{ margin: 0; }
+.sugrow{ width: 100%; min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; text-align: left; }
+.sugrow:hover, .sugrow:focus-visible{ border-color: var(--ring); }
+.sugrow .sn{ font-weight: 600; overflow-wrap: anywhere; }
+.sugrow .sm{ font-size: 12px; color: var(--muted); text-align: right; flex-shrink: 0; max-width: 45%; }
+.sugrow .sm.on{ color: var(--accent-ink); font-weight: 600; }
+.sugadd{ border-style: dashed; }
+.sug .nomatch{ padding: 10px 14px; color: var(--muted); font-size: 14px; }
+.total.cart{ align-items: center; }
+.total.cart > span:first-child{ flex: 1; min-width: 0; }
+.bags{ display: inline-flex; gap: 6px; flex-shrink: 0; }
+.bag{ min-width: 44px; height: 36px; padding: 0 10px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--cart) 60%, transparent); background: transparent; color: var(--cart); font-family: var(--font-mono); font-weight: 700; font-size: 15px; cursor: pointer; touch-action: manipulation; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+.bag.on{ background: color-mix(in srgb, var(--cart) 18%, transparent); border-color: var(--cart); }
+.item{ cursor: default; }
+.item.bought{ opacity: .5; }
+.item.checked{ opacity: .6; }
+.chk{ display: none; align-items: center; justify-content: center; width: 40px; height: 40px; margin: -6px 0 -6px -8px; flex-shrink: 0; cursor: pointer; }
+.item.active .chk{ display: inline-flex; }
+.chk input{ width: 24px; height: 24px; margin: 0; cursor: pointer; accent-color: var(--cart); }
+.total.cart{ border-top: 0; padding-top: 0; color: var(--cart); }
+.total.cart .num{ color: var(--cart); }
+.total.cart[hidden]{ display: none; }
+.item .calc{ display: none; flex-direction: column; align-items: flex-end; font-family: var(--font-mono); font-variant-numeric: tabular-nums; line-height: 1.15; flex-shrink: 0; }
+.item.active .calc{ display: flex; }
+.calc .q{ font-size: 20px; font-weight: 500; }
+.calc .a{ font-size: 13px; opacity: .85; }
+.item .cd{ display: none; flex-direction: column; align-items: flex-end; text-align: right; font-variant-numeric: tabular-nums; line-height: 1.15; flex-shrink: 0; }
+.item.bought .cd{ display: flex; }
+.cd b{ font-family: var(--font-mono); font-size: 22px; font-weight: 500; }
+.cd small{ font-size: 12px; color: var(--muted); }
+.buy{
+  display: none; min-height: 44px; padding: 10px 16px; border: 0; border-radius: 10px;
+  background: var(--accent-ink); color: var(--accent); font-weight: 700; cursor: pointer; flex-shrink: 0;
+}
+.item.active .buy{ display: inline-block; }
+.fields{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.fields .full{ grid-column: 1 / -1; }
+.empty{ border: 1.5px dashed var(--line); border-radius: 12px; padding: 18px 16px; color: var(--muted); font-size: 14px; }
+.empty p{ margin: 0; max-width: 52ch; }
+.rcp-day{ font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 12px 0 6px; }
+.rcp{ display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; margin-bottom: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); }
+.rcp-head{ display: flex; justify-content: space-between; gap: 10px; font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+.rcp ul{ list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.rcp li{ display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 14px; }
+.rcp li span:first-child{ min-width: 0; overflow-wrap: anywhere; }
+.item.active.weight .calc{ display: none; }
+.wedit{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.wsum{ grid-column: 1 / -1; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 13px; }
+.wsum b{ font-size: 20px; font-weight: 500; }
+@media (max-width: 360px){ .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.rcp-day{ display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.rcp-daysum{ font-weight: 700; }
+.dormant{ margin-top: 14px; }
+.dormant summary{ font-weight: 600; }
+.sh-set{display:flex;gap:8px;align-items:end;flex-wrap:wrap}.sh-set .lbl{flex:1;min-width:110px}
+.rcp-thing{font-size:12px;color:var(--muted)}
+`;
+
+</script>
+<script>
+/* ---- modules/shop-store.js ---- */
+/* «Покупки»: данные и действия (без экрана). LifeShopStore.create(core) → объект S.
+   Всё пишется через core.commit (офлайн-очередь, журнал), строки целиком. Каждая строка чека дублируется в money_entries
+   (fact / out, subject shop/purchase, тот же uuid). Перенос строки в «Вещицы» — функция базы shop_move_to_thing (нужна связь). */
+(function (global) {
+  'use strict';
+  const M = global.LifeShopModel, TM = global.LifeTimersModel;
+  const MOD = 'shop', CACHE = 'shop', CACHE_DAYS = 45;
+  const TBL = { shop_items: 'items', shop_receipts: 'receipts', shop_purchases: 'lines' };
+
+  function create(core) {
+    const TZ = core.TZ;
+    const D = { items: [], receipts: [], lines: [], settings: null, lastBought: {} };
+    const S = { D, TZ, state: 'loading', note: '', loadedAt: 0, onChange: null };
+    const iso = ms => new Date(ms).toISOString();
+    const device = () => (core.config && core.config.device) || 'pocket';
+    const changed = () => { if (S.onChange) S.onChange(); };
+    const today = () => TM.dayKey(Date.now(), TZ);
+    S.today = today;
+    const defSettings = () => ({ id: 'main', bag_small_price: 25, bag_large_price: 39, bags_small: 0, bags_large: 0, created_at: iso(Date.now()), updated_at: core.now(), deleted_at: null });
+    D.settings = defSettings();
+
+    function apply(d) {
+      D.items = (d.items || []).filter(r => !r.deleted_at); D.receipts = (d.receipts || []).filter(r => !r.deleted_at); D.lines = (d.lines || []).filter(r => !r.deleted_at);
+      D.settings = d.settings || defSettings(); D.lastBought = d.lastBought || {};
+    }
+    function lastBoughtOf(lines) { const m = {}; lines.forEach(l => { if (l.kind === 'goods') { const t = Date.parse(l.bought_at); if (!m[l.name] || t > m[l.name]) m[l.name] = t; } }); return m; }
+    function saveCache() {
+      const from = TM.shiftDay(today(), -CACHE_DAYS), lines = D.lines.filter(l => l.local_date >= from), ids = {}; lines.forEach(l => { ids[l.receipt_id] = 1; });
+      core.cache.set(CACHE, { items: D.items, settings: D.settings, lines, receipts: D.receipts.filter(r => ids[r.id]), lastBought: D.lastBought });
+    }
+    S.load = async function () {
+      if (S.state !== 'ready') S.state = 'loading'; changed();
+      try { await S.flushPending(); await core.flush(); } catch (e) { /* очередь повторит */ }
+      try {
+        if (core.status().pending > 0) throw Object.assign(new Error('очередь'), { pendingQueue: true });
+        const nd = ['deleted_at=is.null'];
+        const [items, receipts, lines, set] = await Promise.all([core.select('shop_items', { filters: nd }), core.select('shop_receipts', { filters: nd }), core.select('shop_purchases', { filters: nd }), core.select('shop_settings', { filters: nd })]);
+        apply({ items, receipts, lines, settings: set.find(s => s.id === 'main') || null, lastBought: lastBoughtOf(lines) });
+        saveCache(); S.state = 'ready'; S.note = ''; S.loadedAt = Date.now();
+      } catch (e) {
+        if (e.auth) { S.state = 'error'; S.note = 'нужно войти'; S.authLost = true; changed(); return; }
+        const c = core.cache.get(CACHE);
+        if (c && (e.net || e.pendingQueue)) { apply(c.data); S.state = 'ready'; S.note = e.pendingQueue ? 'Есть неотправленные изменения, показаны данные на этом телефоне.' : 'Нет связи. Показана копия от ' + new Date(c.ts).toLocaleString('ru-RU') + '.'; }
+        else { S.state = 'error'; S.note = e.net ? 'нет связи с базой и нет копии на телефоне' : (e.message || 'ошибка чтения'); }
+      }
+      if (S.state === 'ready') S.refreshDue();
+      changed();
+    };
+
+    /* ---------- запись одним действием (как в «Таймерах») ---------- */
+    function tx() {
+      const w = {}, j = [], before = [];
+      const arrOf = table => (table === 'shop_settings' ? null : D[TBL[table]]);
+      const T = {
+        put(table, row) {
+          row = Object.assign({}, row, { updated_at: core.now() });
+          if (table === 'shop_settings') { before.push({ table, prev: JSON.parse(JSON.stringify(D.settings)), id: row.id }); D.settings = row; }
+          else {
+            const arr = arrOf(table), i = arr.findIndex(r => r.id === row.id);
+            before.push({ table, prev: i >= 0 ? JSON.parse(JSON.stringify(arr[i])) : null, id: row.id });
+            if (row.deleted_at) { if (i >= 0) arr.splice(i, 1); } else if (i >= 0) arr[i] = row; else arr.push(row);
+          }
+          const out = Object.assign({}, row); delete out.user_id; delete out.updated_by; (w[table] = w[table] || {})[row.id] = out; return row;
+        },
+        putMoney(row) { row = Object.assign({}, row, { updated_at: core.now() }); (w.money_entries = w.money_entries || {})[row.id] = row; before.push({ table: 'money_entries', prev: null, id: row.id, money: row }); return row; },
+        del(table, row) { return T.put(table, Object.assign({}, row, { deleted_at: core.now() })); },
+        log(op, kind, id, summary) { j.push({ op, module: MOD, entity_kind: kind, entity_id: id, summary }); },
+        commit() {
+          saveCache();
+          const writes = Object.keys(w).map(t => ({ table: t, rows: Object.keys(w[t]).map(k => w[t][k]) }));
+          try { core.commit({ writes, journal: j }); } catch (e) { S.note = 'Не сохранено: ' + (e.message || e); }
+          changed(); return T;
+        },
+        /* отмена: прежние версии возвращаются, созданное заново помечается удалённым (в т.ч. деньги) */
+        undo(summary) {
+          const U = tx(), seen = {};
+          before.slice().reverse().forEach(b => {
+            const k = b.table + '/' + b.id; if (seen[k]) return; seen[k] = 1;
+            const first = before.find(x => x.table === b.table && x.id === b.id);
+            if (b.table === 'money_entries') { U.putMoney(Object.assign({}, b.money, { deleted_at: core.now() })); return; }
+            if (b.table === 'shop_settings') { U.put('shop_settings', first.prev); return; }
+            const cur = arrOf(b.table).find(r => r.id === b.id);
+            if (first.prev) U.put(b.table, first.prev); else if (cur) U.del(b.table, cur);
+          });
+          U.log('change', 'undo', '', summary || 'Отмена действия'); U.commit();
+        }
+      };
+      return T;
+    }
+    S.tx = tx;
+
+    const newId = p => p + '_' + core.uuid().replace(/-/g, '').slice(0, 12);
+    const item = id => D.items.find(i => i.id === id) || null;
+    const itemRow = (o, base) => Object.assign({ id: o.id, name: '', price: 0, unit: 'шт', days: 1, ref_qty: 1, status: 'on', qty: 1, price_now: null, ord_at: iso(Date.now()), due_on: null, checked: false, created_at: iso(Date.now()), deleted_at: null }, base || {}, o);
+    const snap = it => ({ status: it.status, qty: it.qty, ord_at: it.ord_at, due_on: it.due_on, price_now: it.price_now, checked: it.checked });
+    const reactivate = (it, ordMs) => Object.assign({}, it, { status: 'on', qty: M.weightKind(it.unit) ? it.ref_qty : (it.qty || 1), price_now: null, checked: false, ord_at: iso(ordMs), due_on: null });
+    const toOff = it => Object.assign({}, it, { status: 'off', qty: M.startQty(it), price_now: null, ord_at: iso(Date.now()), due_on: null, checked: false });
+
+    /* купленное возвращается в список в календарный день due_on */
+    S.refreshDue = function () {
+      const t = today(), T = tx(); let n = 0;
+      D.items.filter(it => it.status === 'bought' && it.due_on && it.due_on <= t).forEach(it => { T.put('shop_items', reactivate(it, TM.zonedTs(it.due_on, '00:00', TZ))); n++; });
+      if (n) T.commit(); return n > 0;
+    };
+
+    /* ---------- карточки ---------- */
+    S.addItem = function (f) {
+      const r = M.readFields(f); if (r.error) return r;
+      const T = tx(), id = newId('si'), row = itemRow({ id }, r); row.qty = M.startQty(row); T.put('shop_items', row);
+      T.log('create', 'item', id, 'Покупка добавлена в список: ' + r.name); T.commit(); return { ok: true, id, tx: T, name: r.name };
+    };
+    S.editItem = function (id, f) {
+      const r = M.readFields(f), it = item(id); if (r.error) return r; if (!it) return { error: 'Карточка не найдена.' };
+      const unitChanged = it.unit !== r.unit, priceChanged = +it.price !== r.price, n = Object.assign({}, it, r);
+      if (unitChanged || priceChanged) n.price_now = null;
+      if (unitChanged && n.status === 'on') n.qty = M.startQty(n);
+      const T = tx(); T.put('shop_items', n); T.log('change', 'item', id, 'Покупка изменена: ' + r.name); T.commit(); return { ok: true };
+    };
+    S.deleteItem = function (id) { const it = item(id); if (!it) return; const T = tx(); T.del('shop_items', it); T.log('delete', 'item', id, 'Покупка удалена: ' + it.name); T.commit(); };
+    S.setChecked = function (id, v) { const it = item(id); if (!it || it.status !== 'on') return; const T = tx(); T.put('shop_items', Object.assign({}, it, { checked: !!v })); T.commit(); };
+
+    /* Правка веса и цены в активной карточке: в памяти сразу, в базу — после паузы или при уходе из поля */
+    let pend = {}, pendT = null;
+    S.setLive = function (id, patch) {
+      const it = item(id); if (!it) return; Object.assign(it, patch); pend[id] = true; clearTimeout(pendT); pendT = setTimeout(() => S.flushPending(), 700);
+    };
+    S.flushPending = async function () {
+      clearTimeout(pendT); const ids = Object.keys(pend); pend = {}; if (!ids.length) return;
+      const T = tx(); ids.forEach(id => { const it = item(id); if (it) T.put('shop_items', Object.assign({}, it)); }); T.commit();
+    };
+
+    /* Свайпы: вправо = плюс (или вернуть в список), влево = минус (или перестать ждать) */
+    S.swipeRight = function (id) {
+      const it = item(id); if (!it) return {};
+      const T = tx();
+      if (it.status === 'off') T.put('shop_items', Object.assign({}, it, { status: 'on', qty: M.startQty(it), price_now: null, ord_at: iso(Date.now()), due_on: null, checked: false }));
+      else if (it.status === 'bought') { T.put('shop_items', reactivate(it, Date.now())); T.commit(); return { msg: 'Вернул в список раньше срока.' }; }
+      else { const step = M.stepFor(it.unit); if (it.qty + step > M.MAX_QTY) return { msg: 'Больше ' + M.MAX_QTY + ' не добавляю.' }; T.put('shop_items', Object.assign({}, it, { qty: M.round3(+it.qty + step) })); }
+      T.commit(); return {};
+    };
+    S.swipeLeft = function (id) {
+      const it = item(id); if (!it) return {};
+      const T = tx();
+      if (it.status === 'bought') { T.put('shop_items', toOff(it)); T.commit(); return { msg: 'Перестал ждать: ' + it.name + '.', tx: T }; }
+      if (it.status !== 'on') return {};
+      const step = M.stepFor(it.unit);
+      if (it.qty - step > 1e-9) T.put('shop_items', Object.assign({}, it, { qty: M.round3(+it.qty - step) })); else T.put('shop_items', toOff(it));
+      T.commit(); return {};
+    };
+    /* Поиск: поднять карточку наверх, включив, если она не в списке */
+    S.pickFound = function (id) {
+      const it = item(id); if (!it) return null; const was = it.status, T = tx();
+      if (was === 'off') T.put('shop_items', Object.assign({}, it, { status: 'on', qty: M.startQty(it), price_now: null, ord_at: iso(Date.now()), due_on: null, checked: false }));
+      else if (was === 'bought') T.put('shop_items', reactivate(it, Date.now()));
+      else T.put('shop_items', Object.assign({}, it, { ord_at: iso(Date.now()), checked: false }));
+      T.commit(); return { was, name: it.name, tx: T };
+    };
+
+    /* ---------- пакеты ---------- */
+    S.bag = function (key, clear) { // key 's' | 'l'
+      const f = key === 's' ? 'bags_small' : 'bags_large', set = D.settings; if (!clear && set[f] >= 99) return; const T = tx();
+      T.put('shop_settings', Object.assign({}, set, { [f]: clear ? 0 : set[f] + 1 })); T.commit();
+    };
+    S.setBagPrices = function (small, large) {
+      const a = M.parsePrice(small), b = M.parsePrice(large); if (!isFinite(a) || !isFinite(b) || a < 0 || b < 0) return { error: 'Цены пакетов должны быть числами.' };
+      const T = tx(); T.put('shop_settings', Object.assign({}, D.settings, { bag_small_price: a, bag_large_price: b })); T.log('change', 'settings', 'main', `Цены пакетов: М ${a}, Б ${b}`); T.commit(); return { ok: true };
+    };
+
+    /* ---------- покупка ---------- */
+    function money(line, extra) {
+      return Object.assign({ id: line.id, subject_module: 'shop', subject_kind: 'purchase', subject_id: line.id, direction: 'out', kind: 'fact', amount: line.amount, currency: 'KZT', fx_rate: null, occurred_on: line.local_date, tz: TZ, category: '', comment: line.name,
+        meta: { receipt: line.receipt_id, kind: line.kind }, source_device: device(), created_at: line.created_at, deleted_at: null }, extra || {});
+    }
+    S.buy = function (id) {
+      const it = item(id); if (!it || it.status !== 'on') return null;
+      const now = Date.now(), day = TM.dayKey(now, TZ), price = M.effPrice(it), q = +it.qty, supply = M.supplyDaysFor(it, q), T = tx();
+      let rid = M.receiptFor(D, now, day);
+      if (!rid) { rid = newId('rc'); T.put('shop_receipts', { id: rid, started_at: iso(now), local_date: day, created_at: iso(now), deleted_at: null }); }
+      const mk = (kind, item_id, name, unit, pr, qty, amount, extra) => Object.assign({ id: core.uuid(), receipt_id: rid, kind, item_id, name, unit, price: pr, qty, amount, days: 1, ref_qty: 1, supply_days: 1, bought_at: iso(now), local_date: day, thing_id: null, created_at: iso(now), deleted_at: null }, extra || {});
+      const g = mk('goods', it.id, it.name, it.unit, price, q, M.round2(price * q), { days: it.days, ref_qty: +it.ref_qty, supply_days: supply });
+      T.put('shop_purchases', g); T.putMoney(money(g));
+      const set = D.settings, bagsText = [];
+      [['s', 'bags_small', 'bag_small_price', 'Пакет М', 'bag_s'], ['l', 'bags_large', 'bag_large_price', 'Пакет Б', 'bag_l']].forEach(b => {
+        const n = set[b[1]]; if (!n) return; const pr = +set[b[2]], line = mk('bag', b[4], b[3], 'шт', pr, n, M.round2(pr * n)); T.put('shop_purchases', line); T.putMoney(money(line)); bagsText.push(b[3].slice(-1) + n);
+      });
+      if (bagsText.length) T.put('shop_settings', Object.assign({}, set, { bags_small: 0, bags_large: 0 }));
+      const due = TM.shiftDay(day, supply);
+      T.put('shop_items', Object.assign({}, it, { status: 'bought', checked: false, due_on: due }));
+      D.lastBought[it.name] = now;
+      T.log('create', 'purchase', g.id, `Куплено: ${it.name}, ${M.fmtQ(q, it.unit)}, ${M.money(g.amount)}${bagsText.length ? '; пакеты ' + bagsText.join(' ') : ''}`); T.commit();
+      return { tx: T, name: it.name, text: `${it.name}, ${M.fmtQ(q, it.unit)}`, due };
+    };
+    S.deleteLine = function (lineId) {
+      const l = D.lines.find(x => x.id === lineId); if (!l) return false; const T = tx();
+      T.del('shop_purchases', l); T.putMoney(money(l, { deleted_at: core.now() }));
+      if (!D.lines.some(x => x.receipt_id === l.receipt_id)) { const r = D.receipts.find(x => x.id === l.receipt_id); if (r) T.del('shop_receipts', r); }
+      T.log('delete', 'purchase', lineId, `Строка чека удалена: ${l.name}, ${M.money(+l.amount)} (${l.local_date})`); T.commit(); return true;
+    };
+    /* перенос строки чека в «Вещицы»: одна транзакция в базе, нужна связь; повтор безопасен */
+    S.moveToThing = async function (lineId) {
+      const l = D.lines.find(x => x.id === lineId); if (!l || l.kind !== 'goods') return { ok: false, msg: 'Переносятся только товары.' };
+      try { await core.flush(); } catch (e) { /* ниже проверим очередь */ }
+      if (core.status().pending > 0) return { ok: false, msg: 'Сначала дождитесь отправки изменений (вверху «Ожидает отправки»).' };
+      try {
+        const r = await core.request('/rest/v1/rpc/shop_move_to_thing', { method: 'POST', body: { p_line: lineId } });
+        l.thing_id = r.data.thing_id; saveCache(); changed();
+        return { ok: true, created: !!r.data.created, thingId: r.data.thing_id };
+      } catch (e) { return { ok: false, msg: e.net ? 'Нет связи. Перенос возможен только при подключении.' : (/BAG_NOT/.test(e.message) ? 'Пакеты не переносятся.' : e.message) }; }
+    };
+
+    /* ---------- перенос из старого приложения (резервная копия kartochki-vremeni/backup/v1, раздел shop) ---------- */
+    S.importLegacy = async function (obj) {
+      const sh = obj && obj.shop; if (!sh || !Array.isArray(sh.items) || !Array.isArray(sh.purchases)) return { ok: false, msg: 'В копии нет раздела покупок (нужна кнопка «Резервная копия» старых Карточек времени).' };
+      const at = iso(Date.now()), now = core.now(), uid = s => TM.detUuid(s);
+      const items = [], idMap = {};
+      sh.items.forEach(o => {
+        const id = 'si_kv' + uid('item' + o.id).slice(0, 10); idMap[o.id] = id;
+        items.push({ id, name: String(o.name || 'Без названия').slice(0, 60), price: M.round2(+o.price || 0), unit: String(o.unit || 'шт'), days: Math.max(1, Math.floor(+o.days) || 1), ref_qty: +o.refQty > 0 ? M.round3(+o.refQty) : 1,
+          status: ['on', 'off', 'bought'].includes(o.status) ? o.status : 'off', qty: +o.qty > 0 ? M.round3(+o.qty) : 1, price_now: o.priceNow != null ? M.round2(+o.priceNow) : null, ord_at: iso(+o.ord || Date.now()),
+          due_on: o.status === 'bought' && o.dueKey ? o.dueKey : null, checked: !!o.checked, created_at: at, updated_at: now, deleted_at: null });
+      });
+      items.forEach(i => { if (i.status === 'bought' && !i.due_on) { i.status = 'off'; } });
+      /* чеки: подряд идущие покупки одного дня, не дальше 5 минут друг от друга */
+      const ps = sh.purchases.filter(p => p && p.at).slice().sort((a, b) => a.at - b.at), receipts = [], lines = [], money = []; let cur = null;
+      const set = Object.assign({}, D.settings, { bags_small: Math.max(0, +(sh.bags && sh.bags.s) || 0), bags_large: Math.max(0, +(sh.bags && sh.bags.l) || 0), updated_at: now });
+      ps.forEach(p => {
+        const day = TM.dayKey(p.at, TZ);
+        if (!cur || cur.date !== day || p.at - cur.last > M.RECEIPT_GAP_MS) { cur = { id: 'rc_kv' + uid('receipt' + p.id).slice(0, 10), date: day, last: p.at }; receipts.push({ id: cur.id, started_at: iso(p.at), local_date: day, created_at: at, updated_at: now, deleted_at: null }); }
+        cur.last = p.at;
+        const base = { receipt_id: cur.id, bought_at: iso(p.at), local_date: day, created_at: iso(p.at), updated_at: now, deleted_at: null, thing_id: null };
+        const g = Object.assign({ id: uid('line' + p.id), kind: 'goods', item_id: idMap[p.itemId] || null, name: String(p.name || '').slice(0, 60), unit: String(p.unit || 'шт'), price: M.round2(+p.price || 0), qty: +p.qty > 0 ? M.round3(+p.qty) : 1,
+          amount: M.round2(+p.amount || 0), days: Math.max(1, Math.floor(+p.days) || 1), ref_qty: +p.refQty > 0 ? M.round3(+p.refQty) : 1, supply_days: Math.max(1, Math.floor(+p.supplyDays) || 1) }, base);
+        lines.push(g);
+        if (p.bags) [['s', 'bag_s', 'Пакет М', 25], ['l', 'bag_l', 'Пакет Б', 39]].forEach(b => {
+          const n = +p.bags[b[0]] || 0; if (!n) return; const tot = +p.bags.amount || 0, price = b[0] === 's' ? 25 : 39;
+          lines.push(Object.assign({ id: uid('bag' + b[0] + p.id), kind: 'bag', item_id: b[1], name: b[2], unit: 'шт', price, qty: n, amount: M.round2(n * price), days: 1, ref_qty: 1, supply_days: 1 }, base, { created_at: iso(p.at) }));
+        });
+      });
+      lines.forEach(l => money.push({ id: l.id, subject_module: 'shop', subject_kind: 'purchase', subject_id: l.id, direction: 'out', kind: 'fact', amount: l.amount, currency: 'KZT', fx_rate: null, occurred_on: l.local_date, tz: TZ, category: '', comment: l.name,
+        meta: { receipt: l.receipt_id, kind: l.kind, legacy: 'kv' }, source_device: 'import', created_at: l.created_at, updated_at: now, deleted_at: null }));
+      const writes = [['shop_items', items], ['shop_receipts', receipts], ['shop_purchases', lines], ['money_entries', money], ['shop_settings', [(() => { const o = Object.assign({}, set, { deleted_at: null }); delete o.user_id; delete o.updated_by; return o; })()]]].filter(w => w[1].length).map(w => ({ table: w[0], rows: w[1] }));
+      const summary = `Импорт покупок из «Карточек времени»: карточек ${items.length}, чеков ${receipts.length}, строк ${lines.length}`;
+      core.commit({ writes, journal: [{ op: 'create', module: MOD, entity_kind: 'import', entity_id: 'kv', summary }] });
+      await S.load(); return { ok: true, text: summary + '.' };
+    };
+
+    return S;
+  }
+  global.LifeShopStore = { create };
+})(window);
+
+</script>
+<script>
+/* ---- modules/shop-tools.js ---- */
+/* «Покупки»: окна под списком — чеки за 7 дней (с переносом в «Вещицы»), выгрузка для анализа, цены пакетов, перенос из старого приложения.
+   window.LifeShopTools: build(env, box), refresh(env) */
+(function (global) {
+  'use strict';
+  const M = global.LifeShopModel, TM = global.LifeTimersModel;
+  let refs = null;
+
+  function build(env, box) {
+    const { S, D } = env;
+    box.innerHTML = `<details class="data" id="receiptsBox"><summary>Чеки за 7 дней</summary><div class="rcps"></div></details>
+    <details class="data"><summary>Цены пакетов</summary><p>Цена за штуку, тг. Меняется только для будущих покупок.</p>
+      <div class="sh-set"><label class="lbl">Малый (М)<input class="field s-small" type="text" inputmode="decimal" autocomplete="off"></label><label class="lbl">Большой (Б)<input class="field s-large" type="text" inputmode="decimal" autocomplete="off"></label><button type="button" class="btn primary s-save">Сохранить</button></div><p class="formerr s-err" hidden></p></details>
+    <details class="data"><summary>Данные: выгрузка и перенос</summary>
+      <p>Выгрузка чеков для анализа в прежнем формате purchases/v1. «День» берёт сегодня, «7 дней» заканчивается сегодня, «Всё» — вся история. Копия попадает в буфер и в поле ниже.</p>
+      <div class="btns"><button type="button" class="btn primary x-day">День</button><button type="button" class="btn primary x-week">7 дней</button><button type="button" class="btn primary x-all">Всё</button></div>
+      <div class="pastrow"><label class="lbl">С<input class="field x-from" type="date"></label><label class="lbl">По<input class="field x-to" type="date"></label></div>
+      <div class="btns"><button type="button" class="btn x-range">Выгрузить период</button></div>
+      <p class="exportinfo x-info" hidden></p><textarea class="x-out" readonly hidden aria-label="Чеки в формате JSON"></textarea>
+      <p>Перенос из старых «Карточек времени»: вставьте резервную копию (или выберите файл) и нажмите кнопку. Переносятся карточки покупок, чеки, пакеты. Повторный перенос дублей не создаёт.</p>
+      <input type="file" class="i-file" accept=".json,application/json,text/plain" aria-label="Файл резервной копии">
+      <textarea class="i-in" aria-label="Резервная копия для переноса" placeholder='{"schema":"kartochki-vremeni/backup/v1", ...}' style="display:block;width:100%;height:90px;font-size:12px;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:8px;"></textarea>
+      <div class="btns"><button type="button" class="btn i-go">Перенести</button></div><p class="exportinfo i-info" hidden></p></details>`;
+    const q = s => box.querySelector(s);
+    refs = { box, q, rec: q('#receiptsBox'), sIn: false };
+    q('#receiptsBox').addEventListener('toggle', () => refresh(env));
+    /* цены пакетов */
+    q('.s-save').addEventListener('click', () => { const r = S.setBagPrices(q('.s-small').value, q('.s-large').value); q('.s-err').hidden = !r.error; q('.s-err').textContent = r.error || ''; if (r.ok) env.toast('Цены пакетов сохранены.'); });
+    /* выгрузка */
+    const out = q('.x-out'), info = q('.x-info');
+    function run(btn, label, obj) {
+      info.hidden = false; info.textContent = `Выгружено: ${label}, ${obj.range.from === obj.range.to ? obj.range.from : obj.range.from + ' – ' + obj.range.to}. Формат purchases/v1. Чеков ${obj.totals.receipts}, позиций ${obj.totals.items}, сумма ${M.money(obj.totals.amount)}.`;
+      const text = JSON.stringify(obj, null, 2); out.hidden = false; out.value = text;
+      try { navigator.clipboard.writeText(text).then(() => { btn.textContent = 'Скопировано'; setTimeout(() => { btn.textContent = label; }, 1500); }, () => { out.focus(); out.select(); }); } catch (e) { out.focus(); out.select(); }
+    }
+    const build_ = (from, to) => M.buildPurchasesExport(D, from, to, env.TZ, Date.now());
+    q('.x-day').addEventListener('click', e => run(e.currentTarget, 'День', build_(S.today(), S.today())));
+    q('.x-week').addEventListener('click', e => run(e.currentTarget, '7 дней', build_(TM.shiftDay(S.today(), -6), S.today())));
+    q('.x-all').addEventListener('click', e => { let min = S.today(); D.lines.forEach(l => { if (l.local_date < min) min = l.local_date; }); run(e.currentTarget, 'Всё', build_(min, S.today())); });
+    q('.x-range').addEventListener('click', e => {
+      const f = q('.x-from').value, t = q('.x-to').value || S.today(); info.hidden = false;
+      if (!f) { info.textContent = 'Укажите дату «С».'; return; } if (f > t) { info.textContent = 'Дата «С» должна быть не позже даты «По».'; return; }
+      run(e.currentTarget, 'Период', build_(f, t));
+    });
+    /* перенос из старого приложения */
+    const iin = q('.i-in'), iinfo = q('.i-info'), igo = q('.i-go');
+    q('.i-file').addEventListener('change', ev => { const f = ev.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { iin.value = String(r.result || ''); delete igo.dataset.confirm; igo.textContent = 'Перенести'; }; r.readAsText(f); });
+    igo.addEventListener('click', async () => {
+      iinfo.hidden = false; let obj = null; try { obj = JSON.parse(iin.value.trim()); } catch (e) { /* ниже скажем */ }
+      const sh = obj && obj.shop; if (!sh || !Array.isArray(sh.items) || !Array.isArray(sh.purchases)) { iinfo.textContent = 'Это не резервная копия (нет раздела покупок). Нужен JSON из кнопки «Резервная копия» старых Карточек времени.'; return; }
+      if (!igo.dataset.confirm) { igo.dataset.confirm = '1'; igo.textContent = 'Точно перенести?'; iinfo.textContent = `В копии: карточек ${sh.items.length}, покупок ${sh.purchases.length}. Нажмите ещё раз.`; return; }
+      delete igo.dataset.confirm; igo.textContent = 'Перенос…'; igo.disabled = true;
+      try { const r = await S.importLegacy(obj); iinfo.textContent = r.ok ? r.text : r.msg; if (r.ok) iin.value = ''; } catch (e) { iinfo.textContent = 'Не удалось: ' + (e.message || e); }
+      igo.disabled = false; igo.textContent = 'Перенести';
+    });
+  }
+
+  function renderReceipts(env) {
+    const { S, D } = env, box = refs.q('.rcps'); box.textContent = '';
+    const from = TM.shiftDay(S.today(), -6), groups = M.receiptsOf(D).filter(r => r.date >= from).reverse();
+    if (!groups.length) { const p = document.createElement('p'); p.textContent = 'За последние 7 дней покупок нет.'; box.appendChild(p); return; }
+    let last = null;
+    groups.forEach(g => {
+      if (g.date !== last) {
+        last = g.date; const h = document.createElement('div'); h.className = 'rcp-day'; const dn = document.createElement('span');
+        dn.textContent = new Date(g.date + 'T12:00:00Z').toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long', timeZone: 'UTC' });
+        const ds = document.createElement('span'); ds.className = 'rcp-daysum'; ds.textContent = M.money(M.round2(groups.filter(x => x.date === g.date).reduce((a, x) => a + x.amount, 0))); h.append(dn, ds); box.appendChild(h);
+      }
+      const b = document.createElement('div'); b.className = 'rcp'; b.dataset.receipt = g.id;
+      const head = document.createElement('div'); head.className = 'rcp-head'; const t = document.createElement('span'), a = TM.hm(g.first, env.TZ), z = TM.hm(g.last, env.TZ); t.textContent = a === z ? a : a + '–' + z;
+      const sum = document.createElement('span'); sum.textContent = M.money(g.amount); head.append(t, sum); b.appendChild(head);
+      const ul = document.createElement('ul');
+      g.goods.forEach(p => {
+        const li = document.createElement('li'), tx = document.createElement('span'); tx.textContent = p.name + ', ' + M.fmtQ(+p.qty, p.unit) + ' · ' + M.money(+p.amount); li.appendChild(tx);
+        const mv = document.createElement('button'); mv.type = 'button'; mv.className = 'btn small mv'; mv.dataset.line = p.id;
+        if (p.thing_id) { mv.textContent = 'в Вещицах'; mv.disabled = true; } else { mv.textContent = 'В Вещицы'; mv.addEventListener('click', async () => { mv.disabled = true; mv.textContent = '…'; const r = await S.moveToThing(p.id); if (r.ok) { env.toast(r.created ? 'Добавлено в «Вещицы»: ' + p.name + '.' : 'Уже есть в «Вещицах».'); } else { env.toast(r.msg); } renderReceipts(env); }); }
+        const del = document.createElement('button'); del.type = 'button'; del.className = 'btn danger small'; del.textContent = 'Удалить';
+        del.addEventListener('click', () => { if (!del.dataset.confirm) { del.dataset.confirm = '1'; del.textContent = p.thing_id ? 'Точно? Вещица останется' : 'Точно?'; return; } S.deleteLine(p.id); });
+        li.append(mv, del); ul.appendChild(li);
+      });
+      if (g.bagS || g.bagL) { const li = document.createElement('li'), tx = document.createElement('span'); tx.textContent = 'Пакеты: ' + (g.bagS ? 'М' + g.bagS : '') + (g.bagS && g.bagL ? ' ' : '') + (g.bagL ? 'Б' + g.bagL : '') + ' · ' + M.money(g.bagsAmount); li.appendChild(tx); ul.appendChild(li); }
+      b.appendChild(ul); box.appendChild(b);
+    });
+  }
+  function refresh(env) {
+    if (!refs) return;
+    if (refs.rec.open) renderReceipts(env);
+    const set = env.D.settings, a = refs.q('.s-small'), b = refs.q('.s-large');
+    if (document.activeElement !== a) a.value = String(set.bag_small_price).replace('.', ','); if (document.activeElement !== b) b.value = String(set.bag_large_price).replace('.', ',');
+  }
+  global.LifeShopTools = { build, refresh };
+})(window);
+
+</script>
+<script>
+/* ---- modules/shop.js ---- */
+/* «Покупки» (карманная версия): экран списка. Данные и действия — shop-store.js, расчёты — shop-model.js, стили — shop-css.js,
+   чеки, выгрузка, перенос и цены пакетов — shop-tools.js. Точка входа: LifeModules.shop.mount(элемент, {core, onAuthLost}) → {unmount, reload}. */
+(function (global) {
+  'use strict';
+  const M = global.LifeShopModel, TM = global.LifeTimersModel;
+
+  function mount(el, ctxIn) {
+    ctxIn = ctxIn || {};
+    const core = ctxIn.core || global.LifeCore, S = global.LifeShopStore.create(core), D = S.D;
+    let openMenu = null, alive = true; const els = new Map();
+    ['LifeTimersCss', 'LifeShopCss'].forEach((k, i) => { const id = i ? 'sh-css' : 'tm-css'; if (!document.getElementById(id)) { const s = document.createElement('style'); s.id = id; s.textContent = global[k]; document.head.appendChild(s); } });
+    el.innerHTML = `<div class="app" data-mode="shop">
+  <div class="tm-bar"><span class="tm-note" role="status"></span><button type="button" class="tm-refresh">Обновить</button></div>
+  <header class="head">
+    <div class="total"><span class="sh-total-label">К покупке</span><span class="num sh-total">0</span></div>
+    <div class="total cart sh-cartline" hidden><span class="sh-cart-label">В корзине</span><span class="bags"><button type="button" class="bag" data-bag="s">М</button><button type="button" class="bag" data-bag="l">Б</button></span><span class="num sh-cart">0</span></div>
+  </header>
+  <div class="search" role="search"><input class="field sh-search" type="search" inputmode="search" enterkeyhint="search" autocomplete="off" placeholder="Найти продукт" aria-label="Поиск продукта"><ul class="sug" hidden></ul></div>
+  <main class="list" aria-label="Покупки"></main>
+  <div class="empty sh-empty" hidden><p>Список пуст. Добавьте первую покупку кнопкой ниже: название, цена за единицу, единица измерения и на сколько дней её хватает.</p></div>
+  <p class="hint">Свайп вправо включает покупку в список. Ещё один свайп вправо добавляет одну единицу (штуку, кг), свайп влево убирает одну. Если единица на минимуме, свайп влево убирает покупку из списка. У товаров в кг или граммах в активной карточке можно ввести фактический вес и цену, итог и срок пересчитаются. «Купил» убирает покупку в запас и запускает отсчёт в днях: когда срок выйдет, она сама вернётся наверх. Кнопки М и Б в корзине считают пакеты: короткое нажатие добавляет, долгое обнуляет; при «Купил» пакеты попадают в чек.</p>
+  <footer style="display:flex;flex-direction:column;gap:12px;">
+    <button type="button" class="add sh-addbtn">+ Добавить покупку</button>
+    <form class="addform sh-addform" hidden><div class="fields">
+      <label class="lbl full">Название<input class="field a-name" type="text" maxlength="60" autocomplete="off" placeholder="Например, Пельмени"></label>
+      <label class="lbl">Цена за единицу<input class="field a-price" type="text" inputmode="decimal" autocomplete="off" placeholder="250"></label>
+      <label class="lbl">Единица<input class="field a-unit" type="text" maxlength="16" autocomplete="off" placeholder="кг, шт, рулон"></label>
+      <label class="lbl">Хватает на, дней<input class="field a-days" type="text" inputmode="numeric" autocomplete="off" placeholder="4"></label>
+      <label class="lbl full a-refwrap" hidden>Обычный вес на эти дни<input class="field a-ref" type="text" inputmode="decimal" autocomplete="off" placeholder="800 г или 0,8 кг"><small class="sub">Если купите больше или меньше, дни пересчитаются под вес, округляя вниз.</small></label></div>
+      <p class="formerr a-err" hidden></p><div class="btns"><button type="submit" class="btn primary">Добавить</button><button type="button" class="btn ghost a-cancel">Отмена</button></div></form>
+    <div class="tm-tools"></div>
+  </footer></div><div class="toast" role="status" aria-live="polite" hidden></div>`;
+    const $ = s => el.querySelector(s), listEl = $('.list'), toastEl = $('.toast');
+    let toastTimer = null;
+    function toast(msg, label, fn) {
+      toastEl.textContent = ''; const sp = document.createElement('span'); sp.textContent = msg; toastEl.appendChild(sp);
+      if (label) { const b = document.createElement('button'); b.type = 'button'; b.className = 'toastbtn'; b.textContent = label; b.addEventListener('click', () => { toastEl.hidden = true; clearTimeout(toastTimer); fn(); }); toastEl.appendChild(b); }
+      toastEl.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { toastEl.hidden = true; }, label ? 7000 : 3200);
+    }
+    function attachSwipe(c, o) {
+      let sw = null;
+      c.addEventListener('pointerdown', e => { if (e.button > 0 || e.target.closest('button, input, select, textarea, label, .panel, .wedit')) return; sw = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, on: false }; });
+      c.addEventListener('pointermove', e => {
+        if (!sw || e.pointerId !== sw.id) return; const dx = e.clientX - sw.x, dy = e.clientY - sw.y;
+        if (!sw.on) { if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { sw = null; return; } if (Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(dx) > 12) { sw.on = true; try { c.setPointerCapture(e.pointerId); } catch (er) { /* не критично */ } c.style.transition = 'none'; } else return; }
+        sw.dx = Math.max(-96, Math.min(dx, 96)); c.style.transform = 'translateX(' + sw.dx + 'px)';
+      });
+      const end = (e, cancelled) => { if (!sw || e.pointerId !== sw.id) return; const d = sw; sw = null; if (!d.on) return; c.style.transition = ''; c.style.transform = ''; if (cancelled) return; if (d.dx >= 64) o.right(); else if (d.dx <= -64) o.left(); };
+      c.addEventListener('pointerup', e => end(e, false)); c.addEventListener('pointercancel', e => end(e, true));
+    }
+    const undoToast = (msg, T, sum) => toast(msg, 'Отменить', () => T.undo(sum));
+
+    /* ---------- карточка ---------- */
+    function create(it) {
+      const id = it.id, e = document.createElement('div'); e.className = 'card item'; e.tabIndex = 0; e.setAttribute('role', 'group'); e.dataset.item = id;
+      e.innerHTML = '<div class="row top"><span class="stats"></span><span class="top-actions"><button type="button" class="more" aria-label="Изменить покупку">•••</button></span></div>' +
+        '<div class="row main"><label class="chk"><input type="checkbox" class="chk-in" aria-label="Положил в корзину"></label><span class="name"></span><span class="calc"><span class="q"></span><span class="a"></span></span><span class="cd"><b></b><small>дн. до покупки</small></span><button type="button" class="buy">Купил</button></div>' +
+        '<div class="wedit" hidden><label class="lbl">Вес<input class="field w-qty" type="text" inputmode="decimal" autocomplete="off" placeholder="1100 г или 1,1 кг"></label><label class="lbl"><span class="w-plabel">Цена</span><input class="field w-price" type="text" inputmode="decimal" autocomplete="off"></label><div class="wsum"><span class="w-read"></span><b class="w-total"></b></div></div>' +
+        '<form class="panel" hidden><div class="fields"><label class="lbl full">Название<input class="field f-name" type="text" maxlength="60" autocomplete="off"></label><label class="lbl">Цена за единицу<input class="field f-price" type="text" inputmode="decimal" autocomplete="off"></label><label class="lbl">Единица<input class="field f-unit" type="text" maxlength="16" autocomplete="off"></label><label class="lbl">Хватает на, дней<input class="field f-days" type="text" inputmode="numeric" autocomplete="off"></label><label class="lbl full ref-wrap" hidden>Обычный вес на эти дни<input class="field f-ref" type="text" inputmode="decimal" autocomplete="off" placeholder="800 г или 0,8 кг"><small class="sub">Если купите больше или меньше, дни пересчитаются под вес, округляя вниз.</small></label></div><p class="formerr" hidden></p><div class="btns"><button type="submit" class="btn primary">Сохранить</button><button type="button" class="btn danger del">Удалить</button><button type="button" class="btn ghost close">Закрыть</button></div></form>';
+      const q = s => e.querySelector(s), cur = () => D.items.find(x => x.id === id);
+      const fName = q('.f-name'), fPrice = q('.f-price'), fUnit = q('.f-unit'), fDays = q('.f-days'), fRef = q('.f-ref'), err = q('.formerr');
+      const syncRef = () => { q('.ref-wrap').hidden = !M.weightKind(fUnit.value.trim() || 'шт'); }; fUnit.addEventListener('input', syncRef);
+      const wQty = q('.w-qty'), wPrice = q('.w-price');
+      wQty.addEventListener('input', () => { const c = cur(); if (!c) return; const v = M.parseWeight(wQty.value, c.unit); if (v === null) { wQty.setAttribute('aria-invalid', 'true'); return; } wQty.removeAttribute('aria-invalid'); S.setLive(id, { qty: v }); updateTexts(); });
+      wPrice.addEventListener('input', () => { const c = cur(); if (!c) return; const v = M.parsePrice(wPrice.value); if (!isFinite(v) || v < 0) { wPrice.setAttribute('aria-invalid', 'true'); return; } wPrice.removeAttribute('aria-invalid'); S.setLive(id, { price_now: v === +c.price ? null : v }); updateTexts(); });
+      [wQty, wPrice].forEach(f => f.addEventListener('blur', () => { f.removeAttribute('aria-invalid'); S.flushPending(); updateTexts(); }));
+      /* «100 50» в поле цены при уходе из поля превращается в сумму */
+      [wPrice, fPrice].forEach(f => f.addEventListener('blur', () => { const v = f.value.trim(); if (!/[\s;+]|,.*,|,\d{3}/.test(v)) return; const n = M.parsePrice(v); if (isFinite(n)) { f.value = String(n).replace('.', ','); f.dispatchEvent(new Event('input', { bubbles: true })); } }));
+      attachSwipe(e, {
+        right: () => { const r = S.swipeRight(id); if (r.msg) toast(r.msg); },
+        left: () => { const r = S.swipeLeft(id); if (r.tx) undoToast(r.msg, r.tx, 'Отмена: вернул ожидание'); }
+      });
+      e.addEventListener('keydown', ev => { if (ev.target !== e) return; if (ev.key === 'ArrowRight') { ev.preventDefault(); S.swipeRight(id); } if (ev.key === 'ArrowLeft') { ev.preventDefault(); S.swipeLeft(id); } });
+      q('.chk').addEventListener('click', ev => ev.stopPropagation());
+      q('.chk-in').addEventListener('change', ev => S.setChecked(id, ev.target.checked));
+      q('.buy').addEventListener('click', async ev => {
+        ev.stopPropagation(); await S.flushPending(); openMenu = null; const r = S.buy(id); if (!r) return;
+        undoToast('Куплено: ' + r.text + '. Вернётся в список ' + M.fmtDay(r.due) + '.', r.tx, 'Отмена покупки');
+      });
+      q('.more').addEventListener('click', ev => {
+        ev.stopPropagation(); openMenu = openMenu === id ? null : id; const c = cur();
+        if (openMenu === id && c) { fName.value = c.name; fPrice.value = String(c.price).replace('.', ','); fUnit.value = c.unit; fDays.value = String(c.days); fRef.value = M.weightKind(c.unit) ? M.fmtQ(+c.ref_qty, c.unit) : ''; err.hidden = true; syncRef(); }
+        render(false);
+      });
+      q('.panel').addEventListener('submit', ev => { ev.preventDefault(); const r = S.editItem(id, { name: fName.value, price: fPrice.value, unit: fUnit.value, days: fDays.value, ref: fRef.value }); if (r.error) { err.textContent = r.error; err.hidden = false; return; } openMenu = null; render(false); });
+      q('.close').addEventListener('click', () => { openMenu = null; render(false); });
+      q('.del').addEventListener('click', ev => { const b = ev.currentTarget; if (!e.dataset.confirm) { e.dataset.confirm = '1'; b.textContent = 'Точно удалить?'; return; } openMenu = null; S.deleteItem(id); });
+      els.set(id, e); return e;
+    }
+
+    function updateTexts() {
+      let total = 0, onCount = 0, cart = 0, cartCount = 0; const set = D.settings;
+      D.items.forEach(it => {
+        const on = it.status === 'on', wk = M.weightKind(it.unit), price = M.effPrice(it), amount = M.round2(price * it.qty);
+        if (on) { total += amount; onCount++; } if (on && it.checked) { cart += amount; cartCount++; }
+        const e = els.get(it.id); if (!e) return; const q = s => e.querySelector(s);
+        e.classList.toggle('checked', on && !!it.checked); const ci = q('.chk-in'); if (ci.checked !== (on && !!it.checked)) ci.checked = on && !!it.checked;
+        e.classList.toggle('weight', !!wk);
+        q('.stats').textContent = M.money(+it.price) + ' за ' + it.unit + ' · ' + (wk ? M.fmtQ(+it.ref_qty, it.unit) + ' на ' : 'на ') + it.days + ' дн.';
+        if (on && !wk) { q('.q').textContent = '× ' + M.fmtNum(+it.qty); q('.a').textContent = M.money(amount); }
+        q('.wedit').hidden = !(on && wk);
+        if (on && wk) {
+          const wq = q('.w-qty'), wp = q('.w-price');
+          if (document.activeElement !== wq) wq.value = M.fmtQ(+it.qty, it.unit); if (document.activeElement !== wp) wp.value = String(price).replace('.', ',');
+          q('.w-plabel').textContent = 'Цена за ' + it.unit; q('.w-read').textContent = '= ' + M.fmtQ(+it.qty, it.unit) + (it.price_now != null ? ' · цена изменена' : ''); q('.w-total').textContent = M.money(amount);
+        }
+      });
+      const bs = set.bags_small, bl = set.bags_large;
+      $('.sh-cartline').hidden = !(cartCount || bs || bl || onCount);
+      [['s', bs, 'М', set.bag_small_price, 'Маленький'], ['l', bl, 'Б', set.bag_large_price, 'Большой']].forEach(b => {
+        const btn = $('[data-bag=' + b[0] + ']'); btn.textContent = b[1] ? b[2] + b[1] : b[2]; btn.classList.toggle('on', b[1] > 0);
+        btn.setAttribute('aria-label', b[4] + ' пакет, ' + b[3] + ' за штуку. Сейчас ' + b[1] + '. Долгое нажатие обнуляет.');
+      });
+      cart += M.bagsAmount(set, { s: bs, l: bl });
+      $('.sh-cart').textContent = M.money(M.round2(cart)); $('.sh-cart-label').textContent = 'В корзине · ' + cartCount + ' из ' + onCount;
+      $('.sh-total').textContent = M.money(total); $('.sh-total-label').textContent = onCount ? 'К покупке · ' + onCount + ' поз.' : 'К покупке';
+    }
+
+    /* пакеты: короткое нажатие +1, долгое обнуляет */
+    el.querySelectorAll('[data-bag]').forEach(btn => {
+      let timer = null, fired = false; const clear = () => { if (timer) { clearTimeout(timer); timer = null; } };
+      btn.addEventListener('pointerdown', () => { fired = false; clear(); timer = setTimeout(() => { timer = null; fired = true; try { if (navigator.vibrate) navigator.vibrate(30); } catch (e) { /* нет вибрации */ } S.bag(btn.dataset.bag, true); }, 500); });
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach(n => btn.addEventListener(n, clear));
+      btn.addEventListener('contextmenu', ev => ev.preventDefault());
+      btn.addEventListener('click', () => { if (fired) { fired = false; return; } S.bag(btn.dataset.bag, false); });
+    });
+
+    /* ---------- поиск ---------- */
+    const search = $('.sh-search'), sug = $('.sug');
+    const closeSearch = () => { search.value = ''; sug.hidden = true; sug.textContent = ''; search.blur(); };
+    function renderSug() {
+      const qv = search.value; sug.textContent = ''; if (!M.normQ(qv)) { sug.hidden = true; return; } sug.hidden = false;
+      const found = M.sugMatches(D.items, qv), exact = D.items.some(i => M.normQ(i.name) === M.normQ(qv));
+      const addRow = () => { const li = document.createElement('li'), b = document.createElement('button'); b.type = 'button'; b.className = 'sugrow sugadd'; const sn = document.createElement('span'); sn.className = 'sn'; sn.textContent = '«' + qv.trim() + '»'; const sm = document.createElement('span'); sm.className = 'sm on'; sm.textContent = '+ Добавить'; b.append(sn, sm); b.addEventListener('click', () => startAdd(qv.trim())); li.appendChild(b); sug.appendChild(li); };
+      if (!found.length) { const l0 = document.createElement('li'); l0.className = 'nomatch'; l0.textContent = 'Ничего не найдено.'; sug.appendChild(l0); addRow(); return; }
+      found.forEach(it => { const li = document.createElement('li'), b = document.createElement('button'); b.type = 'button'; b.className = 'sugrow'; b.dataset.item = it.id; const sn = document.createElement('span'); sn.className = 'sn'; sn.textContent = it.name; const st = M.sugStatus(it), sm = document.createElement('span'); sm.className = 'sm' + (st.on ? ' on' : ''); sm.textContent = st.t; b.append(sn, sm); b.addEventListener('click', () => pick(it.id)); li.appendChild(b); sug.appendChild(li); });
+      if (!exact) addRow();
+    }
+    function pick(id) { const r = S.pickFound(id); if (!r) return; openMenu = null; closeSearch(); try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { window.scrollTo(0, 0); } undoToast((r.was === 'on' ? 'Поднял наверх: ' : 'Добавлено: ') + r.name + '.', r.tx, 'Отмена'); }
+    function startAdd(text) { closeSearch(); if (addForm.hidden) addBtn.click(); fields.name.value = text.charAt(0).toUpperCase() + text.slice(1); fields.err.hidden = true; fields.price.focus({ preventScroll: true }); }
+    search.addEventListener('input', renderSug);
+    search.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); const f = M.sugMatches(D.items, search.value); if (f.length) pick(f[0].id); else if (M.normQ(search.value)) startAdd(search.value.trim()); } else if (ev.key === 'Escape') { search.value = ''; renderSug(); } });
+
+    /* ---------- добавление ---------- */
+    const addBtn = $('.sh-addbtn'), addForm = $('.sh-addform');
+    const fields = { name: $('.a-name'), price: $('.a-price'), unit: $('.a-unit'), days: $('.a-days'), ref: $('.a-ref'), err: $('.a-err') };
+    const syncRef = () => { $('.a-refwrap').hidden = !M.weightKind(fields.unit.value.trim() || 'шт'); }; fields.unit.addEventListener('input', syncRef);
+    const closeAdd = () => { ['name', 'price', 'unit', 'days', 'ref'].forEach(k => { fields[k].value = ''; }); syncRef(); fields.err.hidden = true; addForm.hidden = true; addBtn.hidden = false; };
+    addBtn.addEventListener('click', () => { addBtn.hidden = true; addForm.hidden = false; fields.name.focus(); });
+    $('.a-cancel').addEventListener('click', closeAdd);
+    fields.price.addEventListener('blur', () => { const v = fields.price.value.trim(); if (!/[\s;+]|,.*,|,\d{3}/.test(v)) return; const n = M.parsePrice(v); if (isFinite(n)) fields.price.value = String(n).replace('.', ','); });
+    addForm.addEventListener('submit', ev => {
+      ev.preventDefault(); const r = S.addItem({ name: fields.name.value, price: fields.price.value, unit: fields.unit.value, days: fields.days.value, ref: fields.ref.value });
+      if (r.error) { fields.err.textContent = r.error; fields.err.hidden = false; return; }
+      closeAdd(); try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { window.scrollTo(0, 0); } undoToast('Добавлено в список: ' + r.name + '.', r.tx, 'Отмена добавления');
+    });
+
+    /* ---------- отрисовка ---------- */
+    function render(animate) {
+      if (!alive) return;
+      const first = new Map(); if (animate) els.forEach((e, id) => { if (e.offsetParent !== null) first.set(id, e.getBoundingClientRect().top); });
+      const ids = {}; D.items.forEach(i => { ids[i.id] = true; }); els.forEach((e, id) => { if (!ids[id]) { e.remove(); els.delete(id); } });
+      let dorm = $('.dormant');
+      if (!dorm) { dorm = document.createElement('details'); dorm.className = 'data dormant'; dorm.hidden = true; const ds = document.createElement('summary'); const dl = document.createElement('div'); dl.className = 'list'; dorm.append(ds, dl); listEl.parentNode.insertBefore(dorm, listEl.nextSibling); }
+      const dlist = dorm.querySelector('.list'); let dc = 0, now = Date.now();
+      M.ordered(D.items).forEach(it => {
+        const e = els.get(it.id) || create(it), dm = M.isDormant(it, D.lastBought, now); if (dm) dc++;
+        (dm ? dlist : listEl).appendChild(e); const on = it.status === 'on', bought = it.status === 'bought';
+        e.classList.toggle('active', on); e.classList.toggle('bought', bought); e.querySelector('.name').textContent = it.name;
+        if (bought) e.querySelector('.cd b').textContent = String(Math.max(0, M.dayDiff(it.due_on, S.today())));
+        e.setAttribute('aria-label', it.name + (on ? ', в списке, ' + M.fmtQ(+it.qty, it.unit) : (bought ? ', куплено' : ', не в списке')));
+        const panel = e.querySelector('.panel'), open = openMenu === it.id; panel.hidden = !open; if (!open) { e.dataset.confirm = ''; e.querySelector('.del').textContent = 'Удалить'; }
+      });
+      $('.sh-empty').hidden = !(S.state === 'ready' && !D.items.length); dorm.hidden = dc === 0; dorm.querySelector('summary').textContent = 'Давно не нужны · ' + dc;
+      const nt = $('.tm-note'), st = core.status();
+      nt.className = 'tm-note' + (st.dead > 0 ? ' warn' : ''); nt.textContent = S.state === 'loading' ? 'Загрузка…' : S.state === 'error' ? 'Ошибка: ' + S.note : st.dead > 0 ? 'Не принято сервером: ' + st.dead : st.pending > 0 ? 'Ожидает отправки: ' + st.pending : (S.note || (st.online ? '' : 'Нет связи'));
+      updateTexts(); renderSug(); if (global.LifeShopTools) global.LifeShopTools.refresh(env);
+      if (animate) { let moved = false; els.forEach((e, id) => { if (!first.has(id)) return; const dy = first.get(id) - e.getBoundingClientRect().top; if (dy) { e.style.transition = 'none'; e.style.transform = 'translateY(' + dy + 'px)'; moved = true; } }); if (moved) { void listEl.offsetHeight; els.forEach(e => { e.style.transition = ''; e.style.transform = ''; }); } }
+    }
+    const env = { core, S, D, TZ: core.TZ, el, $, toast, render: () => render(false) };
+    S.onChange = () => { if (S.authLost) { S.authLost = false; if (ctxIn.onAuthLost) ctxIn.onAuthLost(); return; } render(true); };
+    $('.tm-refresh').addEventListener('click', () => S.load());
+    if (global.LifeShopTools) global.LifeShopTools.build(env, $('.tm-tools'));
+    const tick = setInterval(() => { if (S.state === 'ready') S.refreshDue(); }, 60000);
+    const offs = [core.on('queue', () => render(false)), core.on('drained', () => { if (S.note && S.state === 'ready' && !core.status().pending) S.load(); else render(false); }), core.on('net', () => { if (S.note && S.state === 'ready' && core.status().online && !core.status().pending) S.load(); else render(false); })];
+    const onVis = () => { if (document.visibilityState === 'visible' && S.state === 'ready' && Date.now() - S.loadedAt > 60000 && !core.status().pending) S.load(); };
+    document.addEventListener('visibilitychange', onVis);
+    render(false); S.load();
+    return { reload: () => S.load(), unmount() { alive = false; clearInterval(tick); offs.forEach(f => f()); document.removeEventListener('visibilitychange', onVis); S.flushPending(); el.innerHTML = ''; } };
+  }
+  global.LifeModules = global.LifeModules || {};
+  global.LifeModules.shop = { mount };
+})(window);
+
+</script>
+<script>
 /* ---- pocket/pocket.js ---- */
 /* Карманная оболочка (телефон): вход, нижние вкладки, индикатор очереди, работа без сети.
-   LifePocket.start(элемент). Сейчас подключены «Таймеры»; «Покупки» и «Эмоции» добавятся следующими (список modules). */
+   LifePocket.start(элемент). Подключены «Таймеры» и «Покупки»; «Эмоции» добавятся следующими (список modules). */
 (function (global) {
   'use strict';
   const TAB_KEY = 'lifeerp-pocket-tab';
@@ -1554,10 +2311,10 @@ html,body{margin:0}
 `;
   function start(el) {
     const core = global.LifeCore.init({ device: 'pocket' });
-    if (!document.getElementById('pk-css')) { const s = document.createElement('style'); s.id = 'pk-css'; s.textContent = global.LifeTimersCss + CSS; document.head.appendChild(s); }
+    if (!document.getElementById('pk-css')) { const s = document.createElement('style'); s.id = 'pk-css'; s.textContent = global.LifeTimersCss + global.LifeShopCss + CSS; document.head.appendChild(s); }
     const modules = [
       { id: 'timers', title: 'Таймеры', mount: (box, ctx) => global.LifeModules.timers.mount(box, ctx) },
-      { id: 'shop', title: 'Покупки', soon: 'Покупки переедут сюда следующим шагом. Пока пользуйтесь старым приложением «Карточки времени».' },
+      { id: 'shop', title: 'Покупки', mount: (box, ctx) => global.LifeModules.shop.mount(box, ctx) },
       { id: 'emo', title: 'Эмоции', soon: 'Эмоции переедут сюда после Покупок. Пока пользуйтесь старым приложением «Карточки времени».' }
     ];
     let tab = core.store.get(TAB_KEY, 'timers'); if (!modules.some(m => m.id === tab)) tab = 'timers';
