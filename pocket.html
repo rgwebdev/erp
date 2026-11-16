@@ -1755,28 +1755,51 @@ window.LifeShopCss = `
   'use strict';
   const M = global.LifeShopModel, TM = global.LifeTimersModel;
   const MOD = 'shop', CACHE = 'shop', CACHE_DAYS = 45;
-  const TBL = { shop_items: 'items', shop_receipts: 'receipts', shop_purchases: 'lines' };
+  const TBL = { shop_items: 'cards', shop_list_state: 'st', shop_receipts: 'receipts', shop_purchases: 'lines' };
+  const LIST_KEY = 'lifeerp-shop-list', LISTS = [1, 2, 3];
+  const CARD_F = ['name', 'price', 'unit', 'days', 'ref_qty'], STATE_F = ['status', 'qty', 'price_now', 'ord_at', 'due_on', 'checked'];
+  const setId = n => (n === 1 ? 'main' : 'main' + n);
 
   function create(core) {
     const TZ = core.TZ;
-    const D = { items: [], receipts: [], lines: [], settings: null, lastBought: {} };
-    const S = { D, TZ, state: 'loading', note: '', loadedAt: 0, onChange: null };
+    /* Карточки (cards) общие, состояние карточки в каждом из трёх списков своё (st). D.items — карточки с состоянием текущего списка S.list. */
+    const D = { cards: [], st: [], setts: {}, items: [], receipts: [], lines: [], lastBought: {} };
+    const S = { D, TZ, state: 'loading', note: '', loadedAt: 0, onChange: null, lists: LISTS };
+    S.list = +core.store.get(LIST_KEY, 1); if (LISTS.indexOf(S.list) < 0) S.list = 1;
     const iso = ms => new Date(ms).toISOString();
     const device = () => (core.config && core.config.device) || 'pocket';
     const changed = () => { if (S.onChange) S.onChange(); };
     const today = () => TM.dayKey(Date.now(), TZ);
     S.today = today;
-    const defSettings = () => ({ id: 'main', bag_small_price: 25, bag_large_price: 39, bags_small: 0, bags_large: 0, created_at: iso(Date.now()), updated_at: core.now(), deleted_at: null });
-    D.settings = defSettings();
-
+    /* цены пакетов общие на все списки (берутся из 'main'), счётчики пакетов у каждого списка свои */
+    const defSettings = n => { const m = D.setts.main; return { id: setId(n), bag_small_price: m ? m.bag_small_price : 25, bag_large_price: m ? m.bag_large_price : 39, bags_small: 0, bags_large: 0, created_at: iso(Date.now()), updated_at: core.now(), deleted_at: null }; };
+    Object.defineProperty(D, 'settings', { get() { return D.setts[setId(S.list)] || defSettings(S.list); } });
+    const stKey = (list, id) => list + '|' + id;
+    function stMap() { const m = {}; D.st.forEach(r => { m[stKey(r.list_no, r.item_id)] = r; }); return m; }
+    function view(list, map) {
+      map = map || stMap();
+      return D.cards.map(c => {
+        const s = map[stKey(list, c.id)];
+        const base = { status: 'off', qty: M.startQty(c), price_now: null, ord_at: c.ord_at || c.created_at, due_on: null, checked: false };
+        const o = Object.assign({}, c, s ? { status: s.status, qty: s.qty, price_now: s.price_now, ord_at: s.ord_at, due_on: s.due_on, checked: s.checked } : base);
+        o.list_no = list; return o;
+      });
+    }
+    function rebuild() { D.items = view(S.list); }
+    S.view = view;
     function apply(d) {
-      D.items = (d.items || []).filter(r => !r.deleted_at); D.receipts = (d.receipts || []).filter(r => !r.deleted_at); D.lines = (d.lines || []).filter(r => !r.deleted_at);
-      D.settings = d.settings || defSettings(); D.lastBought = d.lastBought || {};
+      D.cards = (d.cards || []).filter(r => !r.deleted_at); D.st = (d.st || []).filter(r => !r.deleted_at); D.receipts = (d.receipts || []).filter(r => !r.deleted_at); D.lines = (d.lines || []).filter(r => !r.deleted_at);
+      D.setts = d.setts || {}; D.lastBought = d.lastBought || {}; rebuild();
     }
     function lastBoughtOf(lines) { const m = {}; lines.forEach(l => { if (l.kind === 'goods') { const t = Date.parse(l.bought_at); if (!m[l.name] || t > m[l.name]) m[l.name] = t; } }); return m; }
     function saveCache() {
       const from = TM.shiftDay(today(), -CACHE_DAYS), lines = D.lines.filter(l => l.local_date >= from), ids = {}; lines.forEach(l => { ids[l.receipt_id] = 1; });
-      core.cache.set(CACHE, { items: D.items, settings: D.settings, lines, receipts: D.receipts.filter(r => ids[r.id]), lastBought: D.lastBought });
+      core.cache.set(CACHE, { cards: D.cards, st: D.st, setts: D.setts, lines, receipts: D.receipts.filter(r => ids[r.id]), lastBought: D.lastBought });
+    }
+    function legacyCache(d) { /* копия, сохранённая до трёх списков: все состояния уходят в список 1 */
+      const cards = (d.items || []).map(i => ({ id: i.id, name: i.name, price: i.price, unit: i.unit, days: i.days, ref_qty: i.ref_qty, created_at: i.created_at, ord_at: i.ord_at, deleted_at: null }));
+      const st = (d.items || []).map(i => ({ id: 'l1_' + i.id, list_no: 1, item_id: i.id, status: i.status, qty: i.qty, price_now: i.price_now, ord_at: i.ord_at, due_on: i.due_on, checked: i.checked, deleted_at: null }));
+      return { cards, st, setts: d.settings ? { main: d.settings } : {}, receipts: d.receipts, lines: d.lines, lastBought: d.lastBought };
     }
     S.load = async function () {
       if (S.state !== 'ready') S.state = 'loading'; changed();
@@ -1784,13 +1807,14 @@ window.LifeShopCss = `
       try {
         if (core.status().pending > 0) throw Object.assign(new Error('очередь'), { pendingQueue: true });
         const nd = ['deleted_at=is.null'];
-        const [items, receipts, lines, set] = await Promise.all([core.select('shop_items', { filters: nd }), core.select('shop_receipts', { filters: nd }), core.select('shop_purchases', { filters: nd }), core.select('shop_settings', { filters: nd })]);
-        apply({ items, receipts, lines, settings: set.find(s => s.id === 'main') || null, lastBought: lastBoughtOf(lines) });
+        const [cards, st, receipts, lines, set] = await Promise.all([core.select('shop_items', { filters: nd }), core.select('shop_list_state', { filters: nd }), core.select('shop_receipts', { filters: nd }), core.select('shop_purchases', { filters: nd }), core.select('shop_settings', { filters: nd })]);
+        const setts = {}; set.forEach(r => { setts[r.id] = r; });
+        apply({ cards, st, receipts, lines, setts, lastBought: lastBoughtOf(lines) });
         saveCache(); S.state = 'ready'; S.note = ''; S.loadedAt = Date.now();
       } catch (e) {
         if (e.auth) { S.state = 'error'; S.note = 'нужно войти'; S.authLost = true; changed(); return; }
         const c = core.cache.get(CACHE);
-        if (c && (e.net || e.pendingQueue)) { apply(c.data); S.state = 'ready'; S.note = e.pendingQueue ? 'Есть неотправленные изменения, показаны данные на этом телефоне.' : 'Нет связи. Показана копия от ' + new Date(c.ts).toLocaleString('ru-RU') + '.'; }
+        if (c && (e.net || e.pendingQueue)) { apply(c.data.cards ? c.data : legacyCache(c.data)); S.state = 'ready'; S.note = e.pendingQueue ? 'Есть неотправленные изменения, показаны данные на этом телефоне.' : 'Нет связи. Показана копия от ' + new Date(c.ts).toLocaleString('ru-RU') + '.'; }
         else { S.state = 'error'; S.note = e.net ? 'нет связи с базой и нет копии на телефоне' : (e.message || 'ошибка чтения'); }
       }
       if (S.state === 'ready') S.refreshDue();
@@ -1802,14 +1826,26 @@ window.LifeShopCss = `
       const w = {}, j = [], before = [];
       const arrOf = table => (table === 'shop_settings' ? null : D[TBL[table]]);
       const T = {
+        /* строка карточки с состоянием (put 'shop_items') раскладывается: общая часть в shop_items, состояние текущего списка в shop_list_state */
         put(table, row) {
+          if (table !== 'shop_items') return T.rawPut(table, row);
+          const cur = D.cards.find(c => c.id === row.id), now = iso(Date.now());
+          if (row.deleted_at) { const c = cur || row; T.rawPut('shop_items', Object.assign({ status: 'off', qty: 1, price_now: null, ord_at: c.ord_at || now, due_on: null, checked: false }, cardOnly(c), { id: row.id, created_at: c.created_at || now, deleted_at: row.deleted_at })); return row; }
+          const card = Object.assign({ status: 'off', qty: 1, price_now: null, ord_at: (cur && cur.ord_at) || row.ord_at || now, due_on: null, checked: false }, cardOnly(row), { id: row.id, created_at: (cur && cur.created_at) || row.created_at || now, deleted_at: null });
+          if (!cur || CARD_F.some(k => cur[k] !== card[k])) T.rawPut('shop_items', card);
+          const list = row.list_no || S.list;
+          T.rawPut('shop_list_state', Object.assign({ id: 'l' + list + '_' + row.id, list_no: list, item_id: row.id, created_at: now, deleted_at: null }, pick(row, STATE_F)));
+          return row;
+        },
+        rawPut(table, row) {
           row = Object.assign({}, row, { updated_at: core.now() });
-          if (table === 'shop_settings') { before.push({ table, prev: JSON.parse(JSON.stringify(D.settings)), id: row.id }); D.settings = row; }
+          if (table === 'shop_settings') { before.push({ table, prev: D.setts[row.id] ? JSON.parse(JSON.stringify(D.setts[row.id])) : null, id: row.id }); D.setts[row.id] = row; }
           else {
             const arr = arrOf(table), i = arr.findIndex(r => r.id === row.id);
             before.push({ table, prev: i >= 0 ? JSON.parse(JSON.stringify(arr[i])) : null, id: row.id });
             if (row.deleted_at) { if (i >= 0) arr.splice(i, 1); } else if (i >= 0) arr[i] = row; else arr.push(row);
           }
+          if (table === 'shop_items' || table === 'shop_list_state') rebuild();
           const out = Object.assign({}, row); delete out.user_id; delete out.updated_by; (w[table] = w[table] || {})[row.id] = out; return row;
         },
         putMoney(row) { row = Object.assign({}, row, { updated_at: core.now() }); (w.money_entries = w.money_entries || {})[row.id] = row; before.push({ table: 'money_entries', prev: null, id: row.id, money: row }); return row; },
@@ -1828,9 +1864,9 @@ window.LifeShopCss = `
             const k = b.table + '/' + b.id; if (seen[k]) return; seen[k] = 1;
             const first = before.find(x => x.table === b.table && x.id === b.id);
             if (b.table === 'money_entries') { U.putMoney(Object.assign({}, b.money, { deleted_at: core.now() })); return; }
-            if (b.table === 'shop_settings') { U.put('shop_settings', first.prev); return; }
+            if (b.table === 'shop_settings') { const cs = D.setts[b.id]; if (first.prev) U.rawPut('shop_settings', first.prev); else if (cs) U.rawPut('shop_settings', Object.assign({}, cs, { deleted_at: core.now() })); return; }
             const cur = arrOf(b.table).find(r => r.id === b.id);
-            if (first.prev) U.put(b.table, first.prev); else if (cur) U.del(b.table, cur);
+            if (first.prev) U.rawPut(b.table, first.prev); else if (cur) U.rawPut(b.table, Object.assign({}, cur, { deleted_at: core.now() }));
           });
           U.log('change', 'undo', '', summary || 'Отмена действия'); U.commit();
         }
@@ -1838,6 +1874,8 @@ window.LifeShopCss = `
       return T;
     }
     S.tx = tx;
+    const pick = (o, ks) => { const r = {}; ks.forEach(k => { r[k] = o[k]; }); return r; };
+    const cardOnly = o => pick(o, CARD_F);
 
     const newId = p => p + '_' + core.uuid().replace(/-/g, '').slice(0, 12);
     const item = id => D.items.find(i => i.id === id) || null;
@@ -1849,9 +1887,12 @@ window.LifeShopCss = `
     /* купленное возвращается в список в календарный день due_on */
     S.refreshDue = function () {
       const t = today(), T = tx(); let n = 0;
-      D.items.filter(it => it.status === 'bought' && it.due_on && it.due_on <= t).forEach(it => { T.put('shop_items', reactivate(it, TM.zonedTs(it.due_on, '00:00', TZ))); n++; });
+      LISTS.forEach(l => view(l).filter(it => it.status === 'bought' && it.due_on && it.due_on <= t).forEach(it => { T.put('shop_items', reactivate(it, TM.zonedTs(it.due_on, '00:00', TZ))); n++; }));
       if (n) T.commit(); return n > 0;
     };
+
+    S.setList = function (n) { if (LISTS.indexOf(n) < 0) return; S.list = n; core.store.set(LIST_KEY, n); rebuild(); changed(); };
+    S.nextList = function () { S.setList(S.list % LISTS.length + 1); return S.list; };
 
     /* ---------- карточки ---------- */
     S.addItem = function (f) {
@@ -1872,11 +1913,13 @@ window.LifeShopCss = `
     /* Правка веса и цены в активной карточке: в памяти сразу, в базу — после паузы или при уходе из поля */
     let pend = {}, pendT = null;
     S.setLive = function (id, patch) {
-      const it = item(id); if (!it) return; Object.assign(it, patch); pend[id] = true; clearTimeout(pendT); pendT = setTimeout(() => S.flushPending(), 700);
+      const it = item(id); if (!it) return; let r = D.st.find(x => x.list_no === S.list && x.item_id === id);
+      if (!r) { r = Object.assign({ id: 'l' + S.list + '_' + id, list_no: S.list, item_id: id, created_at: iso(Date.now()), deleted_at: null }, pick(it, STATE_F)); D.st.push(r); }
+      Object.assign(r, patch); rebuild(); pend[id + '|' + S.list] = true; clearTimeout(pendT); pendT = setTimeout(() => S.flushPending(), 700);
     };
     S.flushPending = async function () {
       clearTimeout(pendT); const ids = Object.keys(pend); pend = {}; if (!ids.length) return;
-      const T = tx(); ids.forEach(id => { const it = item(id); if (it) T.put('shop_items', Object.assign({}, it)); }); T.commit();
+      const T = tx(); ids.forEach(k => { const [id, l] = k.split('|'), it = view(+l).find(x => x.id === id); if (it) T.put('shop_items', it); }); T.commit();
     };
 
     /* Свайпы: вправо = плюс (или вернуть в список), влево = минус (или перестать ждать) */
@@ -1913,7 +1956,7 @@ window.LifeShopCss = `
     };
     S.setBagPrices = function (small, large) {
       const a = M.parsePrice(small), b = M.parsePrice(large); if (!isFinite(a) || !isFinite(b) || a < 0 || b < 0) return { error: 'Цены пакетов должны быть числами.' };
-      const T = tx(); T.put('shop_settings', Object.assign({}, D.settings, { bag_small_price: a, bag_large_price: b })); T.log('change', 'settings', 'main', `Цены пакетов: М ${a}, Б ${b}`); T.commit(); return { ok: true };
+      const T = tx(); LISTS.forEach(l => { if (l === 1 || D.setts[setId(l)]) T.put('shop_settings', Object.assign({}, D.setts[setId(l)] || defSettings(l), { bag_small_price: a, bag_large_price: b })); }); T.log('change', 'settings', 'main', `Цены пакетов: М ${a}, Б ${b}`); T.commit(); return { ok: true };
     };
 
     /* ---------- покупка ---------- */
@@ -1959,20 +2002,29 @@ window.LifeShopCss = `
     };
 
     /* ---------- перенос из старого приложения (резервная копия kartochki-vremeni/backup/v1, раздел shop) ---------- */
+    const rowStamp = (at, now) => ({ created_at: at, updated_at: now, deleted_at: null });
     S.importLegacy = async function (obj) {
-      const sh = obj && obj.shop; if (!sh || !Array.isArray(sh.items) || !Array.isArray(sh.purchases)) return { ok: false, msg: 'В копии нет раздела покупок (нужна кнопка «Резервная копия» старых Карточек времени).' };
+      /* копия «Карточек времени»: shops = три списка ({items, bags}), purchases = общие чеки; в более старой копии один список shop = {items, purchases, bags} */
+      const lists = obj && Array.isArray(obj.shops) && obj.shops.length ? obj.shops : (obj && obj.shop && Array.isArray(obj.shop.items) ? [obj.shop] : null);
+      const purchases = obj && Array.isArray(obj.purchases) ? obj.purchases : (obj && obj.shop && Array.isArray(obj.shop.purchases) ? obj.shop.purchases : null);
+      if (!lists || !lists.every(l => l && Array.isArray(l.items)) || !purchases) return { ok: false, msg: 'В копии нет раздела покупок (нужна кнопка «Резервная копия» старых Карточек времени).' };
+      const sh = { purchases, bags: lists[0].bags };
       const at = iso(Date.now()), now = core.now(), uid = s => TM.detUuid(s);
-      const items = [], idMap = {};
-      sh.items.forEach(o => {
-        const id = 'si_kv' + uid('item' + o.id).slice(0, 10); idMap[o.id] = id;
-        items.push({ id, name: String(o.name || 'Без названия').slice(0, 60), price: M.round2(+o.price || 0), unit: String(o.unit || 'шт'), days: Math.max(1, Math.floor(+o.days) || 1), ref_qty: +o.refQty > 0 ? M.round3(+o.refQty) : 1,
-          status: ['on', 'off', 'bought'].includes(o.status) ? o.status : 'off', qty: +o.qty > 0 ? M.round3(+o.qty) : 1, price_now: o.priceNow != null ? M.round2(+o.priceNow) : null, ord_at: iso(+o.ord || Date.now()),
-          due_on: o.status === 'bought' && o.dueKey ? o.dueKey : null, checked: !!o.checked, created_at: at, updated_at: now, deleted_at: null });
+      const items = [], states = [], idMap = {}, seen = {}, setts = [];
+      lists.slice(0, 3).forEach((lst, li) => {
+        const list = li + 1;
+        lst.items.forEach(o => {
+          const id = 'si_kv' + uid('item' + o.id).slice(0, 10); idMap[o.id] = id;
+          const st = ['on', 'off', 'bought'].includes(o.status) ? o.status : 'off', due = st === 'bought' && o.dueKey ? o.dueKey : null;
+          const f = { name: String(o.name || 'Без названия').slice(0, 60), price: M.round2(+o.price || 0), unit: String(o.unit || 'шт'), days: Math.max(1, Math.floor(+o.days) || 1), ref_qty: +o.refQty > 0 ? M.round3(+o.refQty) : 1 };
+          if (!seen[id]) { seen[id] = 1; items.push(Object.assign({ id, status: 'off', qty: 1, price_now: null, ord_at: iso(+o.ord || Date.now()), due_on: null, checked: false }, f, rowStamp(at, now))); }
+          states.push(Object.assign({ id: 'l' + list + '_' + id, list_no: list, item_id: id, status: st === 'bought' && !due ? 'off' : st, qty: +o.qty > 0 ? M.round3(+o.qty) : 1, price_now: o.priceNow != null ? M.round2(+o.priceNow) : null, ord_at: iso(+o.ord || Date.now()), due_on: due, checked: !!o.checked }, rowStamp(at, now)));
+        });
+        const b = lst.bags || {}, cur = D.setts[setId(list)] || defSettings(list);
+        const row = Object.assign({}, cur, { bags_small: Math.max(0, +b.s || 0), bags_large: Math.max(0, +b.l || 0), updated_at: now, deleted_at: null }); delete row.user_id; delete row.updated_by; setts.push(row);
       });
-      items.forEach(i => { if (i.status === 'bought' && !i.due_on) { i.status = 'off'; } });
       /* чеки: подряд идущие покупки одного дня, не дальше 5 минут друг от друга */
       const ps = sh.purchases.filter(p => p && p.at).slice().sort((a, b) => a.at - b.at), receipts = [], lines = [], money = []; let cur = null;
-      const set = Object.assign({}, D.settings, { bags_small: Math.max(0, +(sh.bags && sh.bags.s) || 0), bags_large: Math.max(0, +(sh.bags && sh.bags.l) || 0), updated_at: now });
       ps.forEach(p => {
         const day = TM.dayKey(p.at, TZ);
         if (!cur || cur.date !== day || p.at - cur.last > M.RECEIPT_GAP_MS) { cur = { id: 'rc_kv' + uid('receipt' + p.id).slice(0, 10), date: day, last: p.at }; receipts.push({ id: cur.id, started_at: iso(p.at), local_date: day, created_at: at, updated_at: now, deleted_at: null }); }
@@ -1988,8 +2040,8 @@ window.LifeShopCss = `
       });
       lines.forEach(l => money.push({ id: l.id, subject_module: 'shop', subject_kind: 'purchase', subject_id: l.id, direction: 'out', kind: 'fact', amount: l.amount, currency: 'KZT', fx_rate: null, occurred_on: l.local_date, tz: TZ, category: '', comment: l.name,
         meta: { receipt: l.receipt_id, kind: l.kind, legacy: 'kv' }, source_device: 'import', created_at: l.created_at, updated_at: now, deleted_at: null }));
-      const writes = [['shop_items', items], ['shop_receipts', receipts], ['shop_purchases', lines], ['money_entries', money], ['shop_settings', [(() => { const o = Object.assign({}, set, { deleted_at: null }); delete o.user_id; delete o.updated_by; return o; })()]]].filter(w => w[1].length).map(w => ({ table: w[0], rows: w[1] }));
-      const summary = `Импорт покупок из «Карточек времени»: карточек ${items.length}, чеков ${receipts.length}, строк ${lines.length}`;
+      const writes = [['shop_items', items], ['shop_receipts', receipts], ['shop_purchases', lines], ['money_entries', money], ['shop_list_state', states], ['shop_settings', setts]].filter(w => w[1].length).map(w => ({ table: w[0], rows: w[1] }));
+      const summary = `Импорт покупок из «Карточек времени»: списков ${lists.length}, карточек ${items.length}, чеков ${receipts.length}, строк ${lines.length}`;
       core.commit({ writes, journal: [{ op: 'create', module: MOD, entity_kind: 'import', entity_id: 'kv', summary }] });
       await S.load(); return { ok: true, text: summary + '.' };
     };
@@ -2000,7 +2052,7 @@ window.LifeShopCss = `
     S.importPurchases = async function (data) {
       if (!data || data.schema !== 'kartochki-vremeni/purchases/v1' || !Array.isArray(data.receipts)) return { ok: false, msg: 'Это не выгрузка чеков (нужен формат purchases/v1).' };
       const at = iso(Date.now()), now = core.now(), uid = x => TM.detUuid(x), today = TM.dayKey(Date.now(), TZ);
-      const haveItem = new Set(D.items.map(i => i.id)), haveLine = new Set(D.lines.map(l => l.id)), haveRc = new Set(D.receipts.map(r => r.id));
+      const haveItem = new Set(D.cards.map(i => i.id)), haveLine = new Set(D.lines.map(l => l.id)), haveRc = new Set(D.receipts.map(r => r.id));
       const price = { s: +(data.bagPrices && data.bagPrices.small) || 25, l: +(data.bagPrices && data.bagPrices.large) || 39 };
       const newItems = {}, receipts = [], lines = [], money = [], dayOf = ts => String(ts).slice(0, 10); let skipped = 0, bad = 0;
       data.receipts.forEach(r => {
@@ -2029,9 +2081,11 @@ window.LifeShopCss = `
         return { id: itemId, name: String(p.name || 'Без названия').slice(0, 60), price: M.round2(+p.unitPrice || 0), unit, days: Math.max(1, Math.floor(+p.referenceDays) || 1), ref_qty: ref, status: due ? 'bought' : 'off',
           qty: M.weightKind(unit) ? ref : 1, price_now: null, ord_at: iso(ms), due_on: due, checked: false, created_at: at, updated_at: now, deleted_at: null };
       });
+      const newStates = items.map(i => ({ id: 'l1_' + i.id, list_no: 1, item_id: i.id, status: i.status, qty: i.qty, price_now: null, ord_at: i.ord_at, due_on: i.due_on, checked: false, created_at: at, updated_at: now, deleted_at: null }));
+      items.forEach(i => { i.status = 'off'; i.qty = 1; i.due_on = null; });
       lines.forEach(l => money.push({ id: l.id, subject_module: 'shop', subject_kind: 'purchase', subject_id: l.id, direction: 'out', kind: 'fact', amount: l.amount, currency: 'KZT', fx_rate: null, occurred_on: l.local_date, tz: TZ, category: '', comment: l.name,
         meta: { receipt: l.receipt_id, kind: l.kind, legacy: 'kv' }, source_device: 'import', created_at: l.created_at, updated_at: now, deleted_at: null }));
-      const writes = [['shop_items', items], ['shop_receipts', receipts], ['shop_purchases', lines], ['money_entries', money]].filter(w => w[1].length).map(w => ({ table: w[0], rows: w[1] }));
+      const writes = [['shop_items', items], ['shop_list_state', newStates], ['shop_receipts', receipts], ['shop_purchases', lines], ['money_entries', money]].filter(w => w[1].length).map(w => ({ table: w[0], rows: w[1] }));
       const summary = `Импорт выгрузки чеков: чеков ${receipts.length}, строк ${lines.length}` + (skipped ? ` (уже были: ${skipped})` : '') + `, новых карточек ${items.length}`;
       if (writes.length) core.commit({ writes, journal: [{ op: 'create', module: MOD, entity_kind: 'import', entity_id: 'kv-purchases', summary }] });
       await S.load(); return { ok: true, text: summary + (bad ? `, с ошибкой ${bad}` : '') + '.', lines: lines.length, skipped };
@@ -2093,10 +2147,10 @@ window.LifeShopCss = `
     q('.i-file').addEventListener('change', ev => { const f = ev.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { iin.value = String(r.result || ''); delete igo.dataset.confirm; igo.textContent = 'Перенести'; }; r.readAsText(f); });
     igo.addEventListener('click', async () => {
       iinfo.hidden = false; let obj = null; try { obj = JSON.parse(iin.value.trim()); } catch (e) { /* ниже скажем */ }
-      const sh = obj && obj.shop, isPur = !!obj && obj.schema === 'kartochki-vremeni/purchases/v1' && Array.isArray(obj.receipts), isBackup = !!sh && Array.isArray(sh.items) && Array.isArray(sh.purchases);
+      const sh = obj && obj.shop, isPur = !!obj && obj.schema === 'kartochki-vremeni/purchases/v1' && Array.isArray(obj.receipts), isBackup = !!obj && ((Array.isArray(obj.shops) && obj.shops.length > 0 && Array.isArray(obj.purchases)) || (!!sh && Array.isArray(sh.items) && Array.isArray(sh.purchases)));
       if (!isPur && !isBackup) { iinfo.textContent = 'Не узнал файл. Подойдёт JSON из кнопки «Резервная копия» старых Карточек времени или выгрузка чеков (формат purchases/v1).'; return; }
       const cnt = isPur ? obj.receipts.reduce((a, r) => a + (r.items || []).length, 0) : 0;
-      if (!igo.dataset.confirm) { igo.dataset.confirm = '1'; igo.textContent = 'Точно перенести?'; iinfo.textContent = isPur ? `В выгрузке чеков: чеков ${obj.receipts.length}, товарных строк ${cnt}. Недостающие карточки товаров будут созданы. Нажмите ещё раз.` : `В копии: карточек ${sh.items.length}, покупок ${sh.purchases.length}. Нажмите ещё раз.`; return; }
+      if (!igo.dataset.confirm) { igo.dataset.confirm = '1'; igo.textContent = 'Точно перенести?'; iinfo.textContent = isPur ? `В выгрузке чеков: чеков ${obj.receipts.length}, товарных строк ${cnt}. Недостающие карточки товаров будут созданы. Нажмите ещё раз.` : (Array.isArray(obj.shops) ? `В копии: списков ${obj.shops.length}, карточек ${obj.shops[0].items.length}, покупок ${obj.purchases.length}. Состояния всех списков будут перенесены. Нажмите ещё раз.` : `В копии: карточек ${sh.items.length}, покупок ${sh.purchases.length}. Нажмите ещё раз.`); return; }
       delete igo.dataset.confirm; igo.textContent = 'Перенос…'; igo.disabled = true;
       try { const r = await (isPur ? S.importPurchases(obj) : S.importLegacy(obj)); iinfo.textContent = r.ok ? r.text : r.msg; if (r.ok) iin.value = ''; } catch (e) { iinfo.textContent = 'Не удалось: ' + (e.message || e); }
       igo.disabled = false; igo.textContent = 'Перенести';
@@ -2329,8 +2383,11 @@ window.LifeShopCss = `
     const offs = [core.on('queue', () => render(false)), core.on('drained', () => { if (S.note && S.state === 'ready' && !core.status().pending) S.load(); else render(false); }), core.on('net', () => { if (S.note && S.state === 'ready' && core.status().online && !core.status().pending) S.load(); else render(false); })];
     const onVis = () => { if (document.visibilityState === 'visible' && S.state === 'ready' && Date.now() - S.loadedAt > 60000 && !core.status().pending) S.load(); };
     document.addEventListener('visibilitychange', onVis);
-    render(false); S.load();
-    return { reload: () => S.load(), unmount() { alive = false; clearInterval(tick); offs.forEach(f => f()); document.removeEventListener('visibilitychange', onVis); S.flushPending(); el.innerHTML = ''; } };
+    const title = () => { if (ctxIn.onTitle) ctxIn.onTitle(S.list > 1 ? 'Покупки' + S.list : 'Покупки'); el.querySelector('.app').setAttribute('data-list', String(S.list)); el.querySelector('main.list').setAttribute('aria-label', 'Покупки, список ' + S.list); };
+    const baseChange = S.onChange; let lastList = S.list;
+    S.onChange = () => { if (lastList !== S.list) { lastList = S.list; openMenu = null; closeSearch(); title(); } baseChange(); };
+    render(false); title(); S.load();
+    return { reload: () => S.load(), cycle() { S.nextList(); return S.list; }, list: () => S.list, unmount() { alive = false; clearInterval(tick); offs.forEach(f => f()); document.removeEventListener('visibilitychange', onVis); S.flushPending(); el.innerHTML = ''; } };
   }
   global.LifeModules = global.LifeModules || {};
   global.LifeModules.shop = { mount };
@@ -3007,6 +3064,7 @@ html,body{margin:0}
     ];
     let tab = core.store.get(TAB_KEY, 'timers'); if (!modules.some(m => m.id === tab)) tab = 'timers';
     let mod = null;
+    const shopTitle = () => { const n = +core.store.get('lifeerp-shop-list', 1); return n > 1 && n <= 3 ? 'Покупки' + n : 'Покупки'; };
     el.innerHTML = '<div class="pk-wrap"><div class="pk-main"></div></div><nav class="pk-nav" hidden></nav><button class="pk-out" type="button">Выйти</button>';
     const main = el.querySelector('.pk-main'), nav = el.querySelector('.pk-nav'), out = el.querySelector('.pk-out');
     function unmount() { if (mod) { try { mod.unmount(); } catch (e) { /* уже убрано */ } mod = null; } main.innerHTML = ''; }
@@ -3015,12 +3073,12 @@ html,body{margin:0}
       if (!core.session() && embedded) { nav.hidden = true; try { global.parent.LifeShell.refresh(); } catch (e) { /* оболочка сама покажет вход */ } return; }
       if (!core.session()) { nav.hidden = true; out.style.display = 'none'; global.LifeLogin.mount(main, { onDone: show }); return; }
       core.reloadSession(); nav.hidden = false; out.style.display = 'block';
-      nav.innerHTML = modules.map(m => `<button type="button" data-tab="${m.id}" class="${m.id === tab ? 'on' : ''}">${m.title}</button>`).join('');
+      nav.innerHTML = modules.map(m => `<button type="button" data-tab="${m.id}" class="${m.id === tab ? 'on' : ''}">${m.id === 'shop' ? shopTitle() : m.title}</button>`).join('');
       const m = modules.find(x => x.id === tab);
       if (m.soon) { main.innerHTML = '<p class="pk-soon"></p>'; main.firstChild.textContent = m.soon; }
-      else mod = m.mount(main, { core, onAuthLost: show });
+      else mod = m.mount(main, { core, onAuthLost: show, onTitle: t => { const b = nav.querySelector('[data-tab=shop]'); if (b) b.textContent = t; } });
     }
-    nav.addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (!b || b.dataset.tab === tab) return; tab = b.dataset.tab; core.store.set(TAB_KEY, tab); show(); });
+    nav.addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (!b) return; if (b.dataset.tab === tab) { if (tab === 'shop' && mod && mod.cycle) mod.cycle(); return; } tab = b.dataset.tab; core.store.set(TAB_KEY, tab); show(); });
     out.addEventListener('click', async () => { if (core.status().pending && !confirm('Есть неотправленные изменения. Выйти всё равно? Они останутся на телефоне до следующего входа.')) return; await core.signOut(); show(); });
     const offAuth = core.on('auth', ok => { if (!ok) show(); });
     if (embedded) global.addEventListener('pagehide', () => { offAuth(); unmount(); });
