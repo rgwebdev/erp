@@ -2293,9 +2293,646 @@ window.LifeShopCss = `
 
 </script>
 <script>
+/* ---- modules/emo-model.js ---- */
+/* «Эмоции» (общие с «Состоянием»): чистые расчёты без экрана и без базы. Логика режима «Эмо» из «Карточек времени» без изменений.
+   Данные D = {tags (с убранными), marks}. Запись = отметка (mood_marks): момент ts, сила value (−5…−1, 1…5 или null), комментарий, метки tag_ids.
+   День — строка YYYY-MM-DD по поясу владельца. window.LifeEmoModel */
+(function (global) {
+  'use strict';
+  const TM = global.LifeTimersModel;
+  const MAX_TAGS = 40, NOTE_MAX = 500, NAME_MAX = 60, HALF = 30 * 60000;
+  const clean = (text, max) => String(text == null ? '' : text).replace(/\s+/g, ' ').trim().slice(0, max);
+  const norm = s => clean(s, 200).toLowerCase();
+  const fmtVal = v => (v == null ? '–' : (v > 0 ? '+' : '−') + Math.abs(v));
+  const fmtAvg = v => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(1).replace('.', ',');
+  function preview(note) { const ch = Array.from(note || ''); return ch.length > 10 ? ch.slice(0, 10).join('') + '…' : ch.join(''); }
+  const MON = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+  const chartDate = date => date.slice(8, 10) + MON[+date.slice(5, 7) - 1];
+  /* красный при −5, жёлтый около 0, зелёный при +5 */
+  const moodColor = (v, dark) => 'hsl(' + Math.round(125 * (v + 5) / 10) + ' ' + (dark ? 80 : 72) + '% ' + (dark ? 60 : 40) + '%)';
+
+  const dayBounds = (date, tz) => ({ from: TM.zonedTs(date, '00:00', tz), to: TM.zonedTs(TM.shiftDay(date, 1), '00:00', tz) });
+  const tsOf = m => Date.parse(m.ts);
+  const marksOfDay = (D, date) => D.marks.filter(m => m.local_date === date).sort((a, b) => tsOf(a) - tsOf(b) || String(a.id).localeCompare(String(b.id)));
+  const tagById = (D, id) => D.tags.find(t => t.id === id) || null;
+  const tagName = (D, id) => { const t = tagById(D, id); return t ? t.name : '?'; };
+  const markTags = (D, m) => (m.tag_ids || []).map(id => tagName(D, id));
+  const activeTags = D => D.tags.filter(t => !t.deleted_at).sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, 'ru'));
+  /* активная метка с таким названием (без учёта регистра и пробелов); exceptId — не считая этой */
+  const findActive = (D, name, exceptId) => { const n = norm(name); return D.tags.find(t => !t.deleted_at && t.id !== exceptId && norm(t.name) === n) || null; };
+
+  /* Куда встанет перетаскиваемая запись. Между двумя: ровно посередине. В начало дня: на 30 минут раньше самой ранней.
+     Наверх (самая поздняя): на 30 минут позже самой поздней, но не позже «сейчас». rest — остальные записи дня по убыванию времени (as в списке), idx — место. */
+  function dropTime(g, rest, idx, from, to, now) {
+    const m = rest.length; let t; if (!m) return g.at;
+    if (idx <= 0) { const b = rest[0].at; t = Math.min(b + HALF, now, to - 1000); if (t <= b) t = Math.min(b + 1000, to - 1000); }
+    else if (idx >= m) t = Math.max(rest[m - 1].at - HALF, from);
+    else t = Math.floor((rest[idx - 1].at + rest[idx].at) / 2000) * 1000;
+    return t;
+  }
+
+  /* точки графика: период из N дней, заканчивающийся днём endDate; avg — одна точка в день (среднее) */
+  function chartPoints(D, endDate, N, avg, tz) {
+    const days = []; for (let i = N - 1; i >= 0; i--) days.push(TM.shiftDay(endDate, -i));
+    const start = dayBounds(days[0], tz).from, end = dayBounds(endDate, tz).to;
+    const pts = D.marks.filter(m => m.value != null).map(m => ({ id: m.id, at: tsOf(m), val: m.value, note: m.note || '', tags: markTags(D, m), date: m.local_date }))
+      .filter(p => p.at >= start && p.at < end).sort((a, b) => a.at - b.at);
+    if (!avg) return { days, start, end, pts };
+    const out = [];
+    days.forEach(d => { const b = dayBounds(d, tz), r = pts.filter(p => p.at >= b.from && p.at < b.to); if (!r.length) return; out.push({ id: 'avg' + b.from, at: (b.from + b.to) / 2, val: r.reduce((a, p) => a + p.val, 0) / r.length, n: r.length, avg: true, date: d, tags: [], note: '' }); });
+    return { days, start, end, pts: out };
+  }
+
+  /* время из импорта: «14:30» с датой дня или полная строка времени */
+  function parseTime(t, date, tz) {
+    if (typeof t === 'string' && /^\d{1,2}:\d{2}(:\d{2})?$/.test(t.trim()) && /^\d{4}-\d{2}-\d{2}$/.test(date || '')) {
+      const p = t.trim().split(':').map(Number); if (p[0] > 23 || p[1] > 59 || (p[2] || 0) > 59) return null;
+      const ms = TM.zonedTs(date, String(p[0]).padStart(2, '0') + ':' + String(p[1]).padStart(2, '0') + ':' + String(p[2] || 0).padStart(2, '0'), tz); return isFinite(ms) ? ms : null;
+    }
+    if (typeof t === 'string' && t.trim()) { const ms = Date.parse(t.trim()); return isNaN(ms) ? null : ms; }
+    return null;
+  }
+  /* разбор файла импорта emo/v1 и emo-days/v1 → записи по одной метке: [{at, val, tag, note}] */
+  function parseImport(data, tz) {
+    if (data && typeof data.schema === 'string' && data.schema.indexOf('kartochki-vremeni/emo') !== 0) return { error: 'Это не журнал Эмо (формат ' + data.schema.split('/').slice(1).join('/') + '). Нужен emo/v1 или emo-days/v1.' };
+    let days = null; if (data && Array.isArray(data.days)) days = data.days; else if (data && Array.isArray(data.entries)) days = [data]; else if (Array.isArray(data)) days = data;
+    if (!days) return { error: 'Не нашёл дни с записями. Ожидаю поле entries (один день) или days (несколько дней).' };
+    const records = [], bad = [];
+    days.forEach((day, di) => {
+      const date = day && day.date;
+      (day && Array.isArray(day.entries) ? day.entries : []).forEach((r, ri) => {
+        const where = 'день ' + (di + 1) + ', запись ' + (ri + 1);
+        if (!r || typeof r !== 'object') { bad.push(where + ': не объект'); return; }
+        const at = parseTime(r.time, date, tz); if (at === null) { bad.push(where + ': не понял время'); return; }
+        const val = Number(r.value); if (!Number.isInteger(val) || val === 0 || Math.abs(val) > 5) { bad.push(where + ': значение должно быть от −5 до −1 или от 1 до 5'); return; }
+        const tag = clean(r.tag, NAME_MAX); if (!tag) { bad.push(where + ': нет метки'); return; }
+        records.push({ at, val, tag, note: typeof r.comment === 'string' ? r.comment.trim().slice(0, NOTE_MAX) : '' });
+      });
+    });
+    return { records, bad };
+  }
+  /* копия старых Карточек времени: emo = {tags:[{id,name}], entries:[{id,at,tag,val,note}]} */
+  function fromLegacy(emo) {
+    const records = [], bad = [];
+    (emo.entries || []).forEach((e, i) => {
+      const at = Number(e && e.at), val = Number(e && e.val), tag = clean(e && e.tag, NAME_MAX);
+      if (!isFinite(at) || !Number.isInteger(val) || val === 0 || Math.abs(val) > 5 || !tag) { bad.push('запись ' + (i + 1)); return; }
+      records.push({ at, val, tag, note: typeof e.note === 'string' ? e.note.trim().slice(0, NOTE_MAX) : '' });
+    });
+    return { records, bad, tags: (emo.tags || []).map(t => clean(t && t.name, NAME_MAX)).filter(Boolean) };
+  }
+
+  /* выгрузка: emo/v1 за день и emo-days/v1 за период; одна запись на метку, как раньше. Записи без силы не выгружаются */
+  function entriesOf(D, date, tz) {
+    const out = [];
+    marksOfDay(D, date).forEach(m => { if (m.value == null) return; markTags(D, m).forEach(tag => out.push({ time: TM.isoZoned(tsOf(m), tz), tag, value: m.value, comment: m.note || '' })); });
+    return out;
+  }
+  function buildDay(D, date, tz, now) { const entries = entriesOf(D, date, tz); return { schema: 'kartochki-vremeni/emo/v1', date, timezone: tz, exportedAt: TM.isoZoned(now, tz), count: entries.length, entries }; }
+  function buildRange(D, from, to, tz, now) {
+    const days = []; for (let d = from, n = 0; d <= to && n < 3700; d = TM.shiftDay(d, 1), n++) { const e = entriesOf(D, d, tz); if (e.length) days.push({ date: d, count: e.length, entries: e }); }
+    return { schema: 'kartochki-vremeni/emo-days/v1', timezone: tz, exportedAt: TM.isoZoned(now, tz), range: { from, to }, days };
+  }
+
+  global.LifeEmoModel = { MAX_TAGS, NOTE_MAX, NAME_MAX, HALF, clean, norm, fmtVal, fmtAvg, preview, chartDate, moodColor, dayBounds, tsOf, marksOfDay, tagById, tagName, markTags, activeTags,
+    findActive, dropTime, chartPoints, parseTime, parseImport, fromLegacy, buildDay, buildRange };
+})(window);
+
+</script>
+<script>
+/* ---- modules/emo-css.js ---- */
+/* «Эмоции»: стили (из режима «Эмо» Карточек времени). Дополняет timers-css.js. window.LifeEmoCss */
+window.LifeEmoCss = `
+.app[data-mode="emo"] { --accent: var(--accent-e); --accent-ink: var(--ink-e); --ring: var(--ring-e); --glow: var(--glow-e); }
+.emo-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.emo-top h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.emo-top h2 { min-width: 0; }
+.emo-top .btn { white-space: nowrap; flex-shrink: 0; }
+.emo-cloud { display: flex; flex-wrap: wrap; gap: 8px; }
+.emochip { min-height: 40px; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; font-size: 15px; }
+.emochip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); box-shadow: 0 0 14px var(--glow); font-weight: 600; }
+.emochip.editing { border-style: dashed; border-color: var(--ring); }
+.emochip.renaming { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+.emo-edit { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px dashed var(--line); border-radius: 12px; }
+.emo-edit .row2 { display: flex; gap: 8px; }
+.emo-edit .row2 .field { flex: 1; min-width: 0; }
+.scale { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)) 10px repeat(5, minmax(0, 1fr)); gap: 4px; }
+.scale .gap { display: block; }
+.sc { min-height: 50px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); font-family: var(--font-mono); font-size: 16px; font-weight: 600; cursor: pointer; padding: 0; }
+.sc.neg { color: var(--neg); border-color: color-mix(in srgb, var(--neg) 55%, transparent); }
+.sc.pos { color: var(--pos); border-color: color-mix(in srgb, var(--pos) 55%, transparent); }
+.sc.neg[aria-pressed="true"] { background: var(--neg); border-color: var(--neg); color: var(--bg); }
+.sc.pos[aria-pressed="true"] { background: var(--pos); border-color: var(--pos); color: var(--bg); }
+.sc:disabled { opacity: .35; cursor: default; }
+.emo-note { display: flex; gap: 8px; }
+.emo-note .field { flex: 1; min-width: 0; }
+.emo-note .btn { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; box-shadow: 0 0 14px var(--glow); }
+.emolog { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.emolog li { position: relative; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; display: grid; grid-template-columns: 16px 44px minmax(0, 1fr) auto; gap: 4px 10px; align-items: baseline; padding: 10px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); cursor: pointer; }
+.emolog .t { font-family: var(--font-mono); font-size: 13px; color: var(--muted); }
+.emolog .tg { font-weight: 600; overflow-wrap: anywhere; }
+.emolog .cm { grid-column: 3 / 5; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+.emolog .v { font-family: var(--font-mono); font-weight: 700; font-size: 16px; }
+.emolog .v.neg { color: var(--neg); }
+.emolog .v.pos { color: var(--pos); }
+.emolog .act { grid-column: 3 / 5; }
+.emolog .grip { color: var(--muted); font-size: 15px; line-height: 1; letter-spacing: -3px; cursor: grab; touch-action: none; align-self: center; padding: 8px 0; text-align: center; }
+.emolog li.dragging { z-index: 5; cursor: grabbing; box-shadow: 0 10px 26px rgba(0, 0, 0, .28), 0 0 0 2px var(--accent); }
+.emolog li.drop-above::before, .emolog li.drop-below::after { content: ""; position: absolute; left: 0; right: 0; height: 3px; border-radius: 2px; background: var(--accent); box-shadow: 0 0 10px var(--glow); }
+.emolog li.drop-above::before { top: -6px; }
+.emolog li.drop-below::after { bottom: -6px; }
+.emolog .none { display: block; cursor: default; color: var(--muted); text-align: center; background: transparent; border-style: dashed; }
+.emoimp { width: 100%; min-height: 110px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font-family: var(--font-mono); font-size: 12px; }
+
+/* Эмо: график */
+.chart-ranges { display: flex; gap: 8px; margin: 8px 0; }
+.chart-ranges .btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; box-shadow: 0 0 12px var(--glow); }
+.chart-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 6px; }
+#emoChart { display: block; width: 100%; height: auto; touch-action: manipulation; }
+#emoChart text { font-family: var(--font-mono); font-size: 8.5px; fill: var(--muted); }
+#emoChart .g { stroke: var(--line); stroke-width: .6; }
+#emoChart .g0 { stroke: var(--muted); stroke-width: .8; opacity: .6; }
+#emoChart .dd { stroke: var(--muted); stroke-width: .7; stroke-dasharray: 2 3; opacity: .75; }
+#emoChart .empty { font-family: var(--font-body); font-size: 11px; text-anchor: middle; }
+#emoChart .pt { cursor: pointer; }
+.chart-pick { margin: 8px 0 0; font-size: 14px; color: var(--ink); min-height: 1.4em; overflow-wrap: anywhere; }
+
+.exportinfo{ margin: 8px 0 0; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+`;
+
+</script>
+<script>
+/* ---- modules/emo-store.js ---- */
+/* «Эмоции»: данные и действия (без экрана). LifeEmoStore.create(core) → объект S.
+   Всё пишется через core.commit (офлайн-очередь, журнал), строки целиком. Таблицы mood_tags и mood_marks общие с «Состоянием» на компьютере. */
+(function (global) {
+  'use strict';
+  const M = global.LifeEmoModel, TM = global.LifeTimersModel;
+  const MOD = 'mood', CACHE = 'emo', CACHE_DAYS = 45;
+  const TBL = { mood_tags: 'tags', mood_marks: 'marks' };
+
+  function create(core) {
+    const TZ = core.TZ;
+    const D = { tags: [], marks: [] };
+    const S = { D, TZ, state: 'loading', note: '', loadedAt: 0, onChange: null };
+    const iso = ms => new Date(ms).toISOString();
+    const changed = () => { if (S.onChange) S.onChange(); };
+    const today = () => TM.dayKey(Date.now(), TZ);
+    S.today = today;
+
+    function apply(d) { D.tags = d.tags || []; D.marks = (d.marks || []).filter(r => !r.deleted_at); }
+    function saveCache() {
+      const from = TM.shiftDay(today(), -CACHE_DAYS);
+      core.cache.set(CACHE, { tags: D.tags, marks: D.marks.filter(m => m.local_date >= from) });
+    }
+    S.load = async function () {
+      if (S.state !== 'ready') S.state = 'loading'; changed();
+      try { await core.flush(); } catch (e) { /* очередь повторит */ }
+      try {
+        if (core.status().pending > 0) throw Object.assign(new Error('очередь'), { pendingQueue: true });
+        const [tags, marks] = await Promise.all([core.select('mood_tags'), core.select('mood_marks', { filters: ['deleted_at=is.null'] })]);
+        apply({ tags, marks }); saveCache(); S.state = 'ready'; S.note = ''; S.loadedAt = Date.now();
+      } catch (e) {
+        if (e.auth) { S.state = 'error'; S.note = 'нужно войти'; S.authLost = true; changed(); return; }
+        const c = core.cache.get(CACHE);
+        if (c && (e.net || e.pendingQueue)) { apply(c.data); S.state = 'ready'; S.note = e.pendingQueue ? 'Есть неотправленные изменения, показаны данные на этом телефоне.' : 'Нет связи. Показаны данные, сохранённые на телефоне (последние ' + CACHE_DAYS + ' дней).'; S.loadedAt = Date.now(); }
+        else { S.state = 'error'; S.note = e.net ? 'нет связи с базой и нет копии на телефоне' : (e.message || 'ошибка чтения'); }
+      }
+      changed();
+    };
+
+    /* ---------- запись одним действием ---------- */
+    function tx() {
+      const w = {}, j = [], before = [];
+      const T = {
+        put(table, row) {
+          row = Object.assign({}, row, { updated_at: core.now() });
+          const arr = D[TBL[table]], i = arr.findIndex(r => r.id === row.id);
+          before.push({ table, prev: i >= 0 ? JSON.parse(JSON.stringify(arr[i])) : null, id: row.id });
+          if (table === 'mood_marks' && row.deleted_at) { if (i >= 0) arr.splice(i, 1); } else if (i >= 0) arr[i] = row; else arr.push(row);
+          const out = Object.assign({}, row); delete out.user_id; delete out.updated_by; (w[table] = w[table] || {})[row.id] = out; return row;
+        },
+        del(table, row) { return T.put(table, Object.assign({}, row, { deleted_at: core.now() })); },
+        log(op, kind, id, summary) { j.push({ op, module: MOD, entity_kind: kind, entity_id: id, summary }); },
+        commit() {
+          saveCache();
+          const writes = Object.keys(w).map(t => ({ table: t, rows: Object.keys(w[t]).map(k => w[t][k]) }));
+          try { core.commit({ writes, journal: j }); } catch (e) { S.note = 'Не сохранено: ' + (e.message || e); }
+          changed(); return T;
+        },
+        /* отмена: прежние версии возвращаются, созданное заново помечается удалённым */
+        undo(summary) {
+          const U = tx(), seen = {};
+          before.slice().reverse().forEach(b => {
+            const k = b.table + '/' + b.id; if (seen[k]) return; seen[k] = 1;
+            const first = before.find(x => x.table === b.table && x.id === b.id), cur = D[TBL[b.table]].find(r => r.id === b.id);
+            if (first.prev) U.put(b.table, first.prev); else if (cur) U.del(b.table, cur);
+          });
+          U.log('change', 'undo', '', summary || 'Отмена действия'); U.commit();
+        }
+      };
+      return T;
+    }
+    S.tx = tx;
+    const newId = p => p + '_' + core.uuid().replace(/-/g, '').slice(0, 12);
+    const tagRow = (o, base) => Object.assign({ id: o.id, name: '', sort: 0, created_at: iso(Date.now()), deleted_at: null }, base || {}, o);
+    const nextSort = () => D.tags.reduce((a, t) => Math.max(a, t.sort), -1) + 1;
+    const activeCount = () => D.tags.filter(t => !t.deleted_at).length;
+    S.tags = () => M.activeTags(D);
+
+    /* найти активную метку по названию, вернуть убранную с тем же названием или создать новую (внутри tx T) */
+    function ensureTag(T, name, st) {
+      const ex = M.findActive(D, name); if (ex) return ex;
+      const n = M.norm(name), old = D.tags.find(t => t.deleted_at && M.norm(t.name) === n);
+      if (old) { st.sort++; return T.put('mood_tags', Object.assign({}, old, { deleted_at: null, sort: st.sort })); }
+      st.sort++; return T.put('mood_tags', tagRow({ id: newId('et'), name: M.clean(name, M.NAME_MAX), sort: st.sort }));
+    }
+
+    /* ---------- метки ---------- */
+    S.addTags = function (text) {
+      const T = tx(), st = { sort: nextSort() - 1 }; let added = 0; const ids = [], names = [];
+      String(text).split(/[,;\n]/).forEach(raw => {
+        const n = M.clean(raw, M.NAME_MAX); if (!n || M.findActive(D, n) || activeCount() >= M.MAX_TAGS) return;
+        const t = ensureTag(T, n, st); ids.push(t.id); names.push(t.name); added++;
+      });
+      if (!added) return { added: 0, msg: String(text).trim() ? 'Такая метка уже есть, либо меток уже ' + M.MAX_TAGS + '.' : '' };
+      T.log('create', 'tag', ids.join(','), 'Добавлены метки: ' + names.join(', ')); T.commit(); return { added, ids, tx: T };
+    };
+    S.renameTag = function (id, name) {
+      const t = D.tags.find(x => x.id === id && !x.deleted_at); if (!t) return { error: 'Метка не найдена.' };
+      const n = M.clean(name, M.NAME_MAX); if (!n) return { error: 'Название не может быть пустым.' };
+      if (M.findActive(D, n, id)) return { error: 'Метка с таким названием уже есть.' };
+      if (n === t.name) return { ok: true };
+      const T = tx(); T.put('mood_tags', Object.assign({}, t, { name: n })); T.log('change', 'tag', id, 'Метка «' + t.name + '» переименована в «' + n + '»'); T.commit(); return { ok: true, tx: T };
+    };
+    S.deleteTag = function (id) {
+      const t = D.tags.find(x => x.id === id && !x.deleted_at); if (!t) return;
+      const T = tx(); T.del('mood_tags', t); T.log('delete', 'tag', id, 'Метка убрана из списка: ' + t.name); T.commit(); return T;
+    };
+
+    /* ---------- записи ---------- */
+    const markRow = (o) => Object.assign({ id: o.id, ts: iso(o.at), local_date: TM.dayKey(o.at, TZ), value: o.val == null ? null : o.val, note: o.note || '', tag_ids: o.tagIds || [], created_at: iso(Date.now()), deleted_at: null }, {});
+    S.addMark = function ({ tagIds, val, note, at }) {
+      const ids = (tagIds || []).filter(id => D.tags.some(t => t.id === id && !t.deleted_at));
+      if (!ids.length) return { error: 'Выберите хотя бы одно чувство.' };
+      if (!Number.isInteger(val) || val === 0 || Math.abs(val) > 5) return { error: 'Выберите значение от −5 до +5.' };
+      at = at == null ? Date.now() : at; if (at > Date.now() + 1000) return { error: 'Время записи не может быть в будущем.' };
+      note = String(note || '').trim().slice(0, M.NOTE_MAX);
+      const T = tx(), id = newId('mk'); T.put('mood_marks', markRow({ id, at, val, note, tagIds: ids }));
+      T.log('create', 'mark', id, 'Эмоция ' + M.fmtVal(val) + ': ' + ids.map(i => M.tagName(D, i)).join(', ') + (note ? ' · ' + note : '')); T.commit();
+      return { ok: true, id, tx: T, at, count: ids.length };
+    };
+    S.removeMark = function (id) {
+      const m = D.marks.find(x => x.id === id); if (!m) return null;
+      const T = tx(); T.del('mood_marks', m); T.log('delete', 'mark', id, 'Запись удалена: ' + M.fmtVal(m.value) + ' ' + M.markTags(D, m).join(', ')); T.commit(); return T;
+    };
+    S.setTime = function (id, at) {
+      const m = D.marks.find(x => x.id === id); if (!m) return null;
+      const T = tx(); T.put('mood_marks', Object.assign({}, m, { ts: iso(at), local_date: TM.dayKey(at, TZ) }));
+      T.log('change', 'mark', id, 'Время записи: ' + TM.hm(at, TZ)); T.commit(); return T;
+    };
+
+    /* ---------- импорт (общий для файла emo и старой копии) ---------- */
+    S.importRecords = function (records, extraTags, label) {
+      const T = tx(), st = { sort: nextSort() - 1 }; let added = 0, dup = 0;
+      const byKey = {}; D.marks.forEach(m => { byKey[Math.floor(M.tsOf(m) / 1000) + '|' + m.value + '|' + (m.note || '')] = m; });
+      (extraTags || []).forEach(n => { if (activeCount() < M.MAX_TAGS || M.findActive(D, n)) ensureTag(T, n, st); });
+      records.forEach(r => {
+        const tg = ensureTag(T, r.tag, st), k = Math.floor(r.at / 1000) + '|' + r.val + '|' + r.note, ex = byKey[k];
+        if (ex) { if (ex.tag_ids.includes(tg.id)) { dup++; return; } byKey[k] = T.put('mood_marks', Object.assign({}, ex, { tag_ids: ex.tag_ids.concat(tg.id) })); added++; return; }
+        byKey[k] = T.put('mood_marks', markRow({ id: newId('mk'), at: r.at, val: r.val, note: r.note, tagIds: [tg.id] })); added++;
+      });
+      const summary = label + ': записей ' + added + ', дублей пропущено ' + dup;
+      if (added || (extraTags && extraTags.length)) { T.log('create', 'import', '', summary); T.commit(); }
+      return { added, dup, tx: T, summary };
+    };
+    S.importLegacy = function (obj) {
+      const em = obj && obj.emo; if (!em || !Array.isArray(em.entries)) return { ok: false, msg: 'В копии нет раздела «Эмо» (нужна кнопка «Резервная копия» старых Карточек времени).' };
+      const p = M.fromLegacy(em), r = S.importRecords(p.records, p.tags, 'Импорт Эмо из «Карточек времени»');
+      return { ok: true, added: r.added, text: r.summary + (p.bad.length ? ', с ошибкой ' + p.bad.length : '') + '.', tx: r.tx };
+    };
+    S.importFile = function (data) {
+      const p = M.parseImport(data, TZ); if (p.error) return { error: p.error };
+      const r = S.importRecords(p.records, [], 'Импорт Эмо'); let msg = 'Добавлено ' + r.added + ', дублей пропущено ' + r.dup + ', с ошибкой ' + p.bad.length + '.';
+      if (p.bad.length) msg += ' ' + p.bad.slice(0, 3).join('; ') + (p.bad.length > 3 ? '…' : '.');
+      return { ok: true, added: r.added, msg, tx: r.tx };
+    };
+    S.firstDay = function () { let min = today(); D.marks.forEach(m => { if (m.local_date < min) min = m.local_date; }); return min; };
+    return S;
+  }
+  global.LifeEmoStore = { create };
+})(window);
+
+</script>
+<script>
+/* ---- modules/emo.js ---- */
+/* «Эмоции» (карманная версия, бывший режим «Эмо» в Карточках времени): экран. Данные и действия — emo-store.js, расчёты — emo-model.js,
+   стили — emo-css.js. Точка входа: LifeModules.emo.mount(элемент, {core, onAuthLost}) → {unmount, reload}. */
+(function (global) {
+  'use strict';
+  const M = global.LifeEmoModel, TM = global.LifeTimersModel;
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  const svgEl = (name, attrs, text) => { const e = document.createElementNS(SVGNS, name); Object.keys(attrs || {}).forEach(k => e.setAttribute(k, attrs[k])); if (text !== undefined) e.textContent = text; return e; };
+  const isDark = () => { const t = document.documentElement.getAttribute('data-theme'); if (t) return t === 'dark'; return !!(global.matchMedia && global.matchMedia('(prefers-color-scheme: dark)').matches); };
+  const SCALE = [-5, -4, -3, -2, -1, null, 1, 2, 3, 4, 5];
+
+  function mount(el, ctxIn) {
+    ctxIn = ctxIn || {};
+    const core = ctxIn.core || global.LifeCore, TZ = core.TZ, S = global.LifeEmoStore.create(core), D = S.D;
+    ['LifeTimersCss', 'LifeEmoCss'].forEach((k, i) => { const id = i ? 'emo-css' : 'tm-css'; if (!document.getElementById(id)) { const s = document.createElement('style'); s.id = id; s.textContent = global[k]; document.head.appendChild(s); } });
+    let viewDay = S.today(), sel = [], val = null, editing = false, renameId = null, open = {}, delAsk = null, range = 3, avg = false, pickId = null, pastSel = [], pastVal = null, alive = true, drag = null;
+    el.innerHTML = `<div class="app" data-mode="emo">
+  <div class="tm-bar"><span class="tm-note" role="status"></span><button type="button" class="tm-refresh">Обновить</button></div>
+  <header class="head">
+    <div class="daynav"><button type="button" class="navbtn" data-act="prev" aria-label="Предыдущий день">‹</button>
+      <div class="label"><span class="eyebrow"></span><span class="date"></span></div>
+      <button type="button" class="navbtn" data-act="next" aria-label="Следующий день">›</button></div>
+    <div class="pastnote" hidden><span>Это прошлый день. Записи добавляются только сегодня.</span><button type="button" data-act="today">К сегодня</button></div>
+  </header>
+  <section class="emo-compose" style="display:flex;flex-direction:column;gap:14px;" aria-label="Новая запись">
+    <div class="emo-top"><h2>Что чувствуете? <small style="font-weight:400;color:var(--muted);font-size:13px">можно несколько</small></h2><button type="button" class="btn small emo-editbtn" aria-pressed="false">Править метки</button></div>
+    <div class="emo-cloud" role="group" aria-label="Чувства, можно выбрать несколько"></div>
+    <p class="mergehint emo-picked" hidden style="margin:0"></p>
+    <div class="emo-edit" hidden>
+      <div class="row2"><input class="field emo-add" type="text" maxlength="60" autocomplete="off" placeholder="Новая метка, можно через запятую" aria-label="Новая метка"><button type="button" class="btn emo-addbtn">Добавить</button></div>
+      <div class="emo-renamebox" hidden style="display:flex;flex-direction:column;gap:8px;">
+        <input class="field emo-rename" type="text" maxlength="60" autocomplete="off" aria-label="Новое название метки">
+        <div class="btns"><button type="button" class="btn primary emo-rensave">Сохранить</button><button type="button" class="btn danger emo-rendel">Удалить</button><button type="button" class="btn ghost emo-rencancel">Отмена</button></div>
+      </div>
+      <p class="mergehint">Нажмите на метку, чтобы переименовать или удалить её. Переименование меняет название и в старых записях, удаление оставляет старые записи как есть.</p>
+    </div>
+    <div class="scale emo-scale" role="group" aria-label="Сила от минус пяти до плюс пяти"></div>
+    <div class="emo-note" hidden><input class="field emo-notein" type="text" maxlength="500" autocomplete="off" placeholder="Комментарий" aria-label="Комментарий"><button type="button" class="btn emo-save">Записать</button></div>
+  </section>
+  <section style="display:flex;flex-direction:column;gap:10px;" aria-label="Журнал">
+    <div class="total"><span>Журнал за день</span><span class="num emo-count">0</span></div>
+    <ul class="emolog"></ul>
+  </section>
+  <footer style="display:flex;flex-direction:column;gap:12px;">
+    <details class="data emo-chartbox"><summary>График настроения</summary>
+      <div class="chart-ranges" role="group" aria-label="Период графика"><button type="button" class="btn small" data-range="1" aria-pressed="false">День</button><button type="button" class="btn small" data-range="3" aria-pressed="true">3 дня</button><button type="button" class="btn small" data-range="10" aria-pressed="false">10 дней</button></div>
+      <label class="mrow"><input type="checkbox" class="emo-avg"><span>Среднее</span></label>
+      <p class="mergehint">Период заканчивается днём, выбранным вверху страницы.</p>
+      <div class="chart-wrap"><svg id="emoChart" viewBox="0 0 340 250" role="img" aria-label="График записей"></svg></div>
+      <p class="chart-pick" aria-live="polite">Нажмите на точку, чтобы увидеть запись.</p>
+    </details>
+    <details class="data"><summary>Импорт и экспорт Эмо</summary>
+      <p>Экспорт: «День» выгружает день, выбранный вверху (формат emo/v1), «7 дней» и «Всё» дают список дней (формат emo-days/v1). Импорт принимает оба формата и резервную копию старых «Карточек времени» (раздел Эмо), добавляет записи (в том числе в прошлые дни), пропускает дубли и добавляет новые метки. Записи без силы не выгружаются.</p>
+      <div class="btns" role="group" aria-label="Экспорт Эмо в JSON"><button type="button" class="btn primary x-day">День</button><button type="button" class="btn primary x-week">7 дней</button><button type="button" class="btn primary x-all">Всё</button></div>
+      <p class="exportinfo x-info" aria-live="polite" hidden></p>
+      <input type="file" class="emo-file" accept=".json,application/json,text/plain" aria-label="Файл для импорта">
+      <textarea class="emoimp emo-io" spellcheck="false" aria-label="JSON для импорта или экспорта" placeholder="Вставьте сюда JSON для импорта"></textarea>
+      <div class="btns"><button type="button" class="btn emo-impbtn">Импортировать</button></div>
+      <p class="exportinfo i-info" aria-live="polite" hidden></p>
+    </details>
+    <details class="data emo-pastbox"><summary>Добавить запись за прошлое</summary>
+      <p>Если не успели записать чувство вовремя: укажите дату и время, выберите чувства и значение.</p>
+      <div class="pastrow"><label class="lbl">Дата<input class="field p-date" type="date"></label><label class="lbl">Время<input class="field p-time" type="time"></label></div>
+      <div class="emo-cloud p-cloud" role="group" aria-label="Чувства, можно выбрать несколько"></div>
+      <div class="scale p-scale" role="group" aria-label="Сила от минус пяти до плюс пяти" style="margin-top:10px"></div>
+      <label class="lbl" style="margin-top:10px">Комментарий<input class="field p-note" type="text" maxlength="500" autocomplete="off" placeholder="Можно оставить пустым"></label>
+      <p class="formerr p-err" hidden></p>
+      <div class="btns"><button type="button" class="btn primary p-btn">Добавить запись</button></div>
+    </details>
+  </footer></div><div class="toast" role="status" aria-live="polite" hidden></div>`;
+    const $ = s => el.querySelector(s), logEl = $('.emolog'), toastEl = $('.toast'), cloud = $('.emo-cloud'), scaleEl = $('.emo-scale'), noteRow = $('.emo-note'), noteIn = $('.emo-notein');
+    const isToday = () => viewDay === S.today();
+
+    let toastTimer = null;
+    function toast(msg, label, fn) {
+      toastEl.textContent = ''; const sp = document.createElement('span'); sp.textContent = msg; toastEl.appendChild(sp);
+      if (label) { const b = document.createElement('button'); b.type = 'button'; b.className = 'toastbtn'; b.textContent = label; b.addEventListener('click', () => { toastEl.hidden = true; clearTimeout(toastTimer); fn(); }); toastEl.appendChild(b); }
+      toastEl.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { toastEl.hidden = true; }, label ? 7000 : 3200);
+    }
+    const undoToast = (msg, T, sum) => toast(msg, 'Отменить', () => T.undo(sum));
+
+    /* ---------- шкала ---------- */
+    function buildScale(box, onPick) {
+      box.textContent = '';
+      SCALE.forEach(v => {
+        if (v === null) { const g = document.createElement('span'); g.className = 'gap'; box.appendChild(g); return; }
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'sc ' + (v < 0 ? 'neg' : 'pos'); b.dataset.v = String(v); b.textContent = M.fmtVal(v);
+        b.setAttribute('aria-label', 'Сила ' + (v < 0 ? 'минус ' : 'плюс ') + Math.abs(v)); b.addEventListener('click', () => onPick(v)); box.appendChild(b);
+      });
+    }
+    buildScale(scaleEl, v => { if (!sel.length || !isToday()) return; val = val === v ? null : v; render(); if (val !== null) noteIn.focus(); });
+    buildScale($('.p-scale'), v => { pastVal = pastVal === v ? null : v; renderPast(); });
+
+    /* ---------- облако меток ---------- */
+    function chips(box, selected, onTap, editingMode) {
+      box.textContent = '';
+      const tags = S.tags();
+      if (!tags.length) { const none = document.createElement('span'); none.style.color = 'var(--muted)'; none.textContent = editingMode === 'past' ? 'Меток пока нет. Добавьте их в блоке выше.' : 'Меток пока нет. Нажмите «Править метки» и добавьте первую.'; box.appendChild(none); return; }
+      tags.forEach(t => {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'emochip' + (editingMode === true ? ' editing' : '') + (editingMode === true && renameId === t.id ? ' renaming' : ''); b.textContent = t.name; b.dataset.tag = t.id;
+        b.setAttribute('aria-pressed', String(editingMode !== true && selected.indexOf(t.id) >= 0)); b.addEventListener('click', () => onTap(t)); box.appendChild(b);
+      });
+    }
+
+    /* ---------- запись времени перетаскиванием (только сегодня) ---------- */
+    function dragSetup(li, g, rows) {
+      let timer = null, sx = 0, sy = 0, pid = null;
+      const cancelTimer = () => { if (timer) { clearTimeout(timer); timer = null; } };
+      function begin(e) {
+        const b = M.dayBounds(S.today(), TZ), lis = Array.prototype.slice.call(logEl.children).filter(x => x !== li), rest = rows.filter(x => x !== g);
+        drag = { li, g, lis, rest, from: b.from, to: b.to, origIdx: rows.indexOf(g), idx: rows.indexOf(g), startPageY: e.pageY, pageY: e.pageY, clientY: e.clientY, at: g.at, moved: false, scroller: null };
+        try { li.setPointerCapture(pid); } catch (err) { /* не критично */ }
+        li.classList.add('dragging'); try { if (navigator.vibrate) navigator.vibrate(15); } catch (err) { /* нет вибрации */ }
+        drag.scroller = setInterval(() => { if (!drag) return; const y = drag.clientY, vh = global.innerHeight, dy = y < 70 ? -12 : (y > vh - 70 ? 12 : 0); if (dy) { global.scrollBy(0, dy); drag.pageY += dy; dragUpdate(); } }, 16);
+      }
+      li.addEventListener('pointerdown', e => {
+        if (e.button > 0 || e.target.closest('button')) return;
+        pid = e.pointerId; sx = e.clientX; sy = e.clientY;
+        if (e.target.closest('.grip')) { e.preventDefault(); begin(e); return; }
+        cancelTimer(); timer = setTimeout(() => { timer = null; begin({ pageY: sy + global.scrollY, clientY: sy }); }, 380);
+      });
+      li.addEventListener('pointermove', e => {
+        if (timer && (Math.abs(e.clientX - sx) > 8 || Math.abs(e.clientY - sy) > 8)) cancelTimer();
+        if (!drag || drag.li !== li) return; drag.pageY = e.pageY; drag.clientY = e.clientY; dragUpdate();
+      });
+      function finish(apply) {
+        cancelTimer(); if (!drag || drag.li !== li) return;
+        const d = drag; drag = null; clearInterval(d.scroller); d.li.classList.remove('dragging'); d.li.style.transform = '';
+        d.lis.forEach(x => x.classList.remove('drop-above', 'drop-below')); try { d.li.releasePointerCapture(pid); } catch (err) { /* уже отпущен */ }
+        d.li.dataset.noClick = String(Date.now() + 500);
+        if (apply && d.moved && d.idx !== d.origIdx && d.at !== d.g.at) applyTime(d.g, d.at); else render();
+      }
+      li.addEventListener('pointerup', () => finish(true)); li.addEventListener('pointercancel', () => finish(false));
+      li.addEventListener('contextmenu', e => { if (drag) e.preventDefault(); });
+    }
+    function dragUpdate() {
+      const d = drag; if (!d) return; const dy = d.pageY - d.startPageY; if (Math.abs(dy) > 4) d.moved = true; d.li.style.transform = 'translateY(' + dy + 'px)';
+      let idx = 0; d.lis.forEach(x => { const r = x.getBoundingClientRect(); if (r.top + global.scrollY + r.height / 2 < d.pageY) idx++; }); d.idx = idx;
+      d.lis.forEach(x => x.classList.remove('drop-above', 'drop-below'));
+      if (d.lis.length) { if (idx < d.lis.length) d.lis[idx].classList.add('drop-above'); else d.lis[d.lis.length - 1].classList.add('drop-below'); }
+      d.at = idx === d.origIdx ? d.g.at : M.dropTime(d.g, d.rest, idx, d.from, d.to, Date.now());
+      const t = d.li.querySelector('.t'); if (t) t.textContent = TM.hm(d.at, TZ);
+    }
+    function applyTime(g, newAt) {
+      const T = S.setTime(g.id, newAt); if (!T) { render(); return; }
+      toast('Время записи: ' + TM.hm(newAt, TZ) + '.', 'Отменить', () => { S.setTime(g.id, g.at); });
+    }
+
+    /* ---------- отрисовка ---------- */
+    function render() {
+      if (!alive) return;
+      const today = isToday();
+      $('.date').textContent = new Date(viewDay + 'T12:00:00Z').toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+      const diff = Math.round((Date.parse(S.today() + 'T12:00:00Z') - Date.parse(viewDay + 'T12:00:00Z')) / 86400000);
+      $('.eyebrow').textContent = diff === 0 ? 'Сегодня' : (diff === 1 ? 'Вчера' : 'Прошлый день');
+      $('[data-act=next]').disabled = today; $('.pastnote').hidden = today; $('.emo-compose').hidden = !today;
+      sel = sel.filter(id => D.tags.some(t => t.id === id && !t.deleted_at)); if (!sel.length) val = null;
+      const picked = $('.emo-picked'); picked.hidden = !(sel.length && !editing); picked.textContent = 'Выбрано: ' + sel.map(id => M.tagName(D, id)).join(', ');
+      if (renameId && !D.tags.some(t => t.id === renameId && !t.deleted_at)) renameId = null;
+      const eb = $('.emo-editbtn'); eb.setAttribute('aria-pressed', String(editing)); eb.textContent = editing ? 'Готово' : 'Править метки';
+      $('.emo-edit').hidden = !editing; $('.emo-renamebox').hidden = !(editing && renameId);
+      chips(cloud, sel, t => {
+        if (editing) { renameId = t.id; $('.emo-rename').value = t.name; delAsk = null; $('.emo-rendel').textContent = 'Удалить'; render(); return; }
+        const at = sel.indexOf(t.id); if (at >= 0) sel.splice(at, 1); else sel.push(t.id); if (!sel.length) val = null; render();
+      }, editing);
+      const scaleOn = sel.length > 0 && !editing;
+      scaleEl.querySelectorAll('.sc').forEach(b => { b.disabled = !scaleOn; b.setAttribute('aria-pressed', String(scaleOn && val === Number(b.dataset.v))); });
+      noteRow.hidden = !(scaleOn && val !== null);
+      /* журнал */
+      const rows = M.marksOfDay(D, viewDay).map(m => ({ id: m.id, at: M.tsOf(m), val: m.value, note: m.note || '', tags: M.markTags(D, m) })).sort((a, b) => b.at - a.at);
+      $('.emo-count').textContent = String(rows.length); logEl.textContent = '';
+      if (!rows.length) { const li0 = document.createElement('li'); li0.className = 'none'; li0.textContent = today ? 'Записей сегодня пока нет.' : 'В этот день записей нет.'; logEl.appendChild(li0); }
+      rows.forEach(g => {
+        const li = document.createElement('li'), isOpen = !!open[g.id]; li.dataset.mark = g.id;
+        const t = document.createElement('span'); t.className = 't'; t.textContent = TM.hm(g.at, TZ);
+        const tg = document.createElement('span'); tg.className = 'tg'; tg.textContent = g.tags.join(' · ');
+        const v = document.createElement('span'); v.className = 'v ' + (g.val != null && g.val < 0 ? 'neg' : 'pos'); v.textContent = M.fmtVal(g.val);
+        const grip = document.createElement('span'); grip.className = 'grip'; if (today) { grip.textContent = '⋮⋮'; grip.setAttribute('aria-hidden', 'true'); grip.title = 'Перетащите, чтобы изменить время'; }
+        li.append(grip, t, tg, v);
+        if (g.note) { const cm = document.createElement('span'); cm.className = 'cm'; cm.textContent = isOpen ? g.note : M.preview(g.note); li.appendChild(cm); }
+        if (isOpen && today) {
+          const act = document.createElement('div'), del = document.createElement('button'); act.className = 'act'; del.type = 'button'; del.className = 'btn danger small del'; del.textContent = delAsk === g.id ? 'Точно удалить?' : 'Удалить';
+          del.addEventListener('click', ev => { ev.stopPropagation(); if (delAsk !== g.id) { delAsk = g.id; render(); return; } delAsk = null; const T = S.removeMark(g.id); if (T) undoToast('Запись удалена.', T, 'Отмена удаления записи'); });
+          act.appendChild(del); li.appendChild(act);
+        }
+        li.addEventListener('click', () => { if (Date.now() < Number(li.dataset.noClick || 0)) return; open[g.id] = !open[g.id]; delAsk = null; render(); });
+        if (today) dragSetup(li, g, rows);
+        logEl.appendChild(li);
+      });
+      const nt = $('.tm-note'), st = core.status();
+      nt.className = 'tm-note' + (st.dead > 0 ? ' warn' : '');
+      nt.textContent = S.state === 'loading' ? 'Загрузка…' : S.state === 'error' ? 'Ошибка: ' + S.note : st.dead > 0 ? 'Не все изменения отправлены (' + st.dead + '). Откройте «Технический журнал».' : (S.note || (st.pending > 0 ? 'Не отправлено: ' + st.pending + (st.online ? '' : ' (нет связи)') : ''));
+      if ($('.emo-chartbox').open) renderChart(); if ($('.emo-pastbox').open) renderPast();
+    }
+    logEl.addEventListener('touchmove', e => { if (drag) e.preventDefault(); }, { passive: false });
+
+    /* ---------- график ---------- */
+    function ptText(e, withDate) {
+      if (e.avg) return M.chartDate(e.date) + ' · среднее ' + M.fmtAvg(e.val) + ' · записей ' + e.n;
+      return (withDate ? M.chartDate(e.date) + ' ' : '') + TM.hm(e.at, TZ) + ' · ' + e.tags.join(', ') + ' ' + M.fmtVal(e.val) + (e.note ? ' · ' + e.note : '');
+    }
+    function renderChart() {
+      const svg = $('#emoChart'), pick = $('.chart-pick'), W = 340, H = 250, L = 30, R = 8, TOP = 10, BOT = 24, pw = W - L - R, ph = H - TOP - BOT, dark = isDark(), N = range;
+      const cp = M.chartPoints(D, viewDay, N, avg, TZ), span = cp.end - cp.start, X = t => L + (t - cp.start) / span * pw, Y = v => TOP + (5 - v) / 10 * ph;
+      svg.textContent = '';
+      for (let v = 5; v >= -5; v--) { svg.appendChild(svgEl('line', { x1: L, x2: W - R, y1: Y(v), y2: Y(v), 'class': v === 0 ? 'g0' : 'g' })); if (v !== 0) svg.appendChild(svgEl('text', { x: L - 4, y: Y(v) + 3, 'text-anchor': 'end' }, (v > 0 ? '+' : '−') + Math.abs(v))); }
+      cp.days.forEach(d => {
+        const ds = M.dayBounds(d, TZ).from, x = X(ds);
+        svg.appendChild(svgEl('line', { x1: x, x2: x, y1: TOP, y2: H - BOT + 6, 'class': 'dd' })); svg.appendChild(svgEl('text', { x: x + 1.5, y: H - 6, style: N === 10 ? 'font-size:7.5px' : '' }, M.chartDate(d)));
+        if (N === 1) [6, 12, 18].forEach(h => { const hx = X(ds + h * 3600000); svg.appendChild(svgEl('line', { x1: hx, x2: hx, y1: TOP, y2: H - BOT, 'class': 'g' })); svg.appendChild(svgEl('text', { x: hx + 2, y: TOP + 9 }, String(h))); });
+      });
+      const pts = cp.pts;
+      if (!pts.length) { svg.appendChild(svgEl('text', { x: L + pw / 2, y: TOP + ph / 2, 'class': 'empty' }, 'В этом периоде записей нет')); pick.textContent = ''; svg.setAttribute('aria-label', 'График записей: в этом периоде записей нет'); return; }
+      for (let k = 0; k < pts.length - 1; k++) svg.appendChild(svgEl('line', { x1: X(pts[k].at), y1: Y(pts[k].val), x2: X(pts[k + 1].at), y2: Y(pts[k + 1].val), stroke: M.moodColor(pts[k].val, dark), 'stroke-width': 2, 'stroke-linecap': 'round' }));
+      const bg = getComputedStyle(document.body).backgroundColor;
+      pts.forEach(e => {
+        const cx = X(e.at), cy = Y(e.val), on = pickId === e.id, g = svgEl('g', { 'class': 'pt' }); g.dataset.pt = e.id;
+        g.appendChild(svgEl('title', {}, ptText(e, false)));
+        if (on) g.appendChild(svgEl('circle', { cx, cy, r: 8, fill: 'none', stroke: M.moodColor(e.val, dark), 'stroke-width': 1.5 }));
+        g.appendChild(svgEl('circle', { cx, cy, r: 4.6, fill: M.moodColor(e.val, dark), stroke: bg, 'stroke-width': 1.2 })); g.appendChild(svgEl('circle', { cx, cy, r: 11, fill: 'transparent' }));
+        g.addEventListener('click', () => { pickId = e.id; renderChart(); }); svg.appendChild(g);
+      });
+      const picked = pts.filter(e => e.id === pickId)[0];
+      pick.textContent = picked ? ptText(picked, true) : (avg ? 'Дней со средним: ' : 'Записей в периоде: ') + pts.length + '. Нажмите на точку, чтобы увидеть ' + (avg ? 'среднее.' : 'запись.');
+      svg.setAttribute('aria-label', 'График записей: ' + pts.length + ' точек за ' + N + ' дн.');
+    }
+    $('.emo-chartbox').addEventListener('toggle', () => { if ($('.emo-chartbox').open) renderChart(); });
+    $('.emo-avg').addEventListener('change', e => { avg = e.target.checked; pickId = null; renderChart(); });
+    el.querySelectorAll('[data-range]').forEach(b => b.addEventListener('click', () => { range = Number(b.dataset.range); pickId = null; el.querySelectorAll('[data-range]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); renderChart(); }));
+
+    /* ---------- действия ---------- */
+    const step = n => { viewDay = TM.shiftDay(viewDay, n); delAsk = null; render(); };
+    $('[data-act=prev]').addEventListener('click', () => step(-1));
+    $('[data-act=next]').addEventListener('click', () => { if (!isToday()) step(1); });
+    $('[data-act=today]').addEventListener('click', () => { viewDay = S.today(); render(); });
+    $('.emo-editbtn').addEventListener('click', () => { editing = !editing; renameId = null; render(); });
+    function addTags() { const inp = $('.emo-add'), r = S.addTags(inp.value); if (r.added) { inp.value = ''; render(); } else if (r.msg) toast(r.msg); }
+    $('.emo-addbtn').addEventListener('click', addTags); $('.emo-add').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addTags(); } });
+    function renameSave() { if (!renameId) return; const r = S.renameTag(renameId, $('.emo-rename').value); if (r.error) { toast(r.error); return; } renameId = null; render(); }
+    $('.emo-rensave').addEventListener('click', renameSave); $('.emo-rename').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); renameSave(); } });
+    $('.emo-rencancel').addEventListener('click', () => { renameId = null; render(); });
+    $('.emo-rendel').addEventListener('click', e => {
+      const btn = e.currentTarget; if (delAsk !== 'tag:' + renameId) { delAsk = 'tag:' + renameId; btn.textContent = 'Точно удалить?'; return; }
+      const id = renameId; S.deleteTag(id); sel = sel.filter(x => x !== id); renameId = null; delAsk = null; btn.textContent = 'Удалить'; render();
+    });
+    function saveEntry() {
+      if (!isToday() || !sel.length || val === null) return;
+      const r = S.addMark({ tagIds: sel.slice(), val, note: noteIn.value }); if (r.error) { toast(r.error); return; }
+      sel = []; val = null; noteIn.value = ''; render(); toast(r.count > 1 ? 'Записано: ' + r.count + ' чувства.' : 'Записано.');
+    }
+    $('.emo-save').addEventListener('click', saveEntry); noteIn.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveEntry(); } });
+
+    /* ---------- запись за прошлое ---------- */
+    function renderPast() {
+      pastSel = pastSel.filter(id => D.tags.some(t => t.id === id && !t.deleted_at));
+      const d = $('.p-date'), tm = $('.p-time'); d.max = S.today(); if (!d.value) d.value = TM.shiftDay(S.today(), -1); if (!tm.value) tm.value = TM.hm(Date.now(), TZ);
+      chips($('.p-cloud'), pastSel, t => { const at = pastSel.indexOf(t.id); if (at >= 0) pastSel.splice(at, 1); else pastSel.push(t.id); renderPast(); }, 'past');
+      el.querySelectorAll('.p-scale .sc').forEach(b => b.setAttribute('aria-pressed', String(pastVal === Number(b.dataset.v))));
+    }
+    $('.emo-pastbox').addEventListener('toggle', () => { if ($('.emo-pastbox').open) renderPast(); });
+    const pastFail = msg => { const e = $('.p-err'); e.textContent = msg; e.hidden = false; };
+    $('.p-btn').addEventListener('click', () => {
+      $('.p-err').hidden = true; const d = $('.p-date').value, tm = $('.p-time').value; if (!d || !tm) return pastFail('Укажите дату и время.');
+      const at = TM.zonedTs(d, tm, TZ); if (!isFinite(at)) return pastFail('Не понял дату или время.'); if (at > Date.now()) return pastFail('Время записи не может быть в будущем.');
+      if (!pastSel.length) return pastFail('Выберите хотя бы одно чувство.'); if (pastVal === null) return pastFail('Выберите значение от −5 до +5.');
+      const r = S.addMark({ tagIds: pastSel.slice(), val: pastVal, note: $('.p-note').value, at }); if (r.error) return pastFail(r.error);
+      pastSel = []; pastVal = null; $('.p-note').value = ''; render(); renderPast();
+      undoToast('Добавлено: ' + d.split('-').reverse().slice(0, 2).join('.') + ' ' + TM.hm(at, TZ) + '.', r.tx, 'Отмена записи за прошлое');
+    });
+
+    /* ---------- выгрузка и импорт ---------- */
+    const io = $('.emo-io'), xinfo = $('.x-info'), iinfo = $('.i-info');
+    function runExport(btn, label, obj) {
+      const n = obj.days ? obj.days.reduce((a, d) => a + d.entries.length, 0) : obj.entries.length; xinfo.hidden = false;
+      xinfo.textContent = 'Выгружено: ' + label + '. Формат ' + obj.schema.split('/').slice(1).join('/') + ', записей ' + n + '.';
+      const text = JSON.stringify(obj, null, 2); io.value = text;
+      try { navigator.clipboard.writeText(text).then(() => { btn.textContent = 'Скопировано'; setTimeout(() => { btn.textContent = label; }, 1500); }, () => { io.focus(); io.select(); }); } catch (e) { io.focus(); io.select(); }
+      io.scrollTop = 0;
+    }
+    const xb = (sel_, label, f) => $(sel_).addEventListener('click', e => runExport(e.currentTarget, label, f()));
+    xb('.x-day', 'День', () => M.buildDay(D, viewDay, TZ, Date.now()));
+    xb('.x-week', '7 дней', () => M.buildRange(D, TM.shiftDay(viewDay, -6), viewDay, TZ, Date.now()));
+    xb('.x-all', 'Всё', () => M.buildRange(D, S.firstDay(), S.today(), TZ, Date.now()));
+    $('.emo-file').addEventListener('change', ev => { const f = ev.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { io.value = String(r.result || ''); }; r.readAsText(f); });
+    $('.emo-impbtn').addEventListener('click', () => {
+      iinfo.hidden = false; let data; try { data = JSON.parse(io.value); } catch (e) { iinfo.textContent = 'Не получилось прочитать: это не JSON. Вставьте текст целиком.'; return; }
+      if (data && data.emo && Array.isArray(data.emo.entries)) { const r = S.importLegacy(data); iinfo.textContent = r.ok ? r.text : r.msg; if (r.ok) { io.value = ''; render(); if (r.added) undoToast('Импортировано записей: ' + r.added + '.', r.tx, 'Отмена импорта Эмо'); } return; }
+      const r = S.importFile(data); if (r.error) { iinfo.textContent = r.error; return; }
+      iinfo.textContent = r.msg; if (r.added) { render(); undoToast('Импортировано записей: ' + r.added + '.', r.tx, 'Отмена импорта Эмо'); }
+    });
+
+    S.onChange = () => { if (S.authLost) { S.authLost = false; if (ctxIn.onAuthLost) ctxIn.onAuthLost(); return; } render(); };
+    $('.tm-refresh').addEventListener('click', () => S.load());
+    const offs = [core.on('queue', () => render()), core.on('drained', () => { if (S.note && S.state === 'ready' && !core.status().pending) S.load(); else render(); }), core.on('net', () => { if (S.note && S.state === 'ready' && !core.status().pending) S.load(); else render(); })];
+    const onVis = () => { if (document.visibilityState === 'visible' && S.state === 'ready' && Date.now() - S.loadedAt > 60000 && !core.status().pending) S.load(); };
+    document.addEventListener('visibilitychange', onVis);
+    render(); S.load();
+    return { reload: () => S.load(), unmount() { alive = false; offs.forEach(f => f()); document.removeEventListener('visibilitychange', onVis); el.innerHTML = ''; } };
+  }
+  global.LifeModules = global.LifeModules || {};
+  global.LifeModules.emo = { mount };
+})(window);
+
+</script>
+<script>
 /* ---- pocket/pocket.js ---- */
 /* Карманная оболочка (телефон): вход, нижние вкладки, индикатор очереди, работа без сети.
-   LifePocket.start(элемент). Подключены «Таймеры» и «Покупки»; «Эмоции» добавятся следующими (список modules). */
+   LifePocket.start(элемент). Подключены «Таймеры», «Покупки» и «Эмоции» (список modules). */
 (function (global) {
   'use strict';
   const TAB_KEY = 'lifeerp-pocket-tab';
@@ -2311,11 +2948,11 @@ html,body{margin:0}
 `;
   function start(el) {
     const core = global.LifeCore.init({ device: 'pocket' });
-    if (!document.getElementById('pk-css')) { const s = document.createElement('style'); s.id = 'pk-css'; s.textContent = global.LifeTimersCss + global.LifeShopCss + CSS; document.head.appendChild(s); }
+    if (!document.getElementById('pk-css')) { const s = document.createElement('style'); s.id = 'pk-css'; s.textContent = global.LifeTimersCss + global.LifeShopCss + global.LifeEmoCss + CSS; document.head.appendChild(s); }
     const modules = [
       { id: 'timers', title: 'Таймеры', mount: (box, ctx) => global.LifeModules.timers.mount(box, ctx) },
       { id: 'shop', title: 'Покупки', mount: (box, ctx) => global.LifeModules.shop.mount(box, ctx) },
-      { id: 'emo', title: 'Эмоции', soon: 'Эмоции переедут сюда после Покупок. Пока пользуйтесь старым приложением «Карточки времени».' }
+      { id: 'emo', title: 'Эмоции', mount: (box, ctx) => global.LifeModules.emo.mount(box, ctx) }
     ];
     let tab = core.store.get(TAB_KEY, 'timers'); if (!modules.some(m => m.id === tab)) tab = 'timers';
     let mod = null;
