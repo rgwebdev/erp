@@ -1933,12 +1933,13 @@
    LifeShell.start(элемент) */
 (function (global) {
   'use strict';
-  const TAB_KEY = 'lifeerp-shell-tab';
+  const TAB_KEY = 'lifeerp-shell-tab', DOCK_KEY = 'lifeerp-shell-dock';
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   const CSS = `
 body{margin:0;background:#f2f2f2}
 .sh-top{position:sticky;top:0;z-index:1000;display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:6px 14px;background:#fff;border-bottom:1px solid #dcdcdc;font:13px system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#404040;min-height:32px}
+.sh-top[hidden]{display:none}
 .sh-top b{font-size:15px}.sh-fill{flex:1}
 .sh-tabs{display:flex;gap:4px;flex-wrap:wrap}
 .sh-tab{border:1px solid transparent;background:transparent;border-radius:6px;padding:5px 10px;font:inherit;color:inherit;cursor:pointer}
@@ -1947,15 +1948,22 @@ body{margin:0;background:#f2f2f2}
 .sh-sync{font-size:12px;opacity:.75}.sh-sync.warn{color:#b3261e;opacity:1}
 .sh-out{font:inherit;padding:4px 10px;border:1px solid #c9c9c9;background:#fff;border-radius:6px;cursor:pointer}
 .sh-banner{background:#fff4d6;border-bottom:1px solid #e6d29a;padding:6px 14px;font:13px system-ui,sans-serif;color:#5b4a10}
-.sh-main iframe{display:block;width:100%;height:calc(100vh - 46px);border:0;background:#fff}`;
+.sh-main iframe{display:block;width:100%;height:calc(100vh - 46px);border:0;background:#fff}
+.sh-body{display:flex;align-items:flex-start}
+.sh-main{flex:1 1 auto;min-width:0}
+.sh-dock{flex:none;width:min(420px,50vw);box-sizing:border-box;position:sticky;top:var(--sh-top,46px);height:calc(100vh - var(--sh-top,46px));border-left:1px solid #dcdcdc;background:#fff}
+.sh-dock[hidden]{display:none}
+.sh-dock iframe{display:block;width:100%;height:100%;border:0;background:#fff}
+.sh-phone{display:inline-flex;align-items:center;padding:5px 8px}
+.sh-phone svg{width:16px;height:16px;display:block}`;
 
   function start(el) {
     const core = global.LifeCore.init({ device: 'desktop' });
     if (!document.getElementById('sh-css')) { const s = document.createElement('style'); s.id = 'sh-css'; s.textContent = CSS; document.head.appendChild(s); }
     el.innerHTML = `<header class="sh-top" hidden><b>LifeERP</b><nav class="sh-tabs"></nav><span class="sh-fill"></span>
       <label class="sh-view" hidden>Данные: <select></select></label><span class="sh-sync"></span><span class="sh-who"></span><button class="sh-out" type="button">Выйти</button></header>
-      <div class="sh-banner" hidden></div><main class="sh-main"></main>`;
-    const $ = s => el.querySelector(s), top = $('.sh-top'), main = $('.sh-main'), banner = $('.sh-banner'), sel = $('.sh-view select');
+      <div class="sh-banner" hidden></div><div class="sh-body"><main class="sh-main"></main><aside class="sh-dock" hidden aria-label="Телефонная версия: Таймеры, Покупки, Эмоции"></aside></div>`;
+    const $ = s => el.querySelector(s), top = $('.sh-top'), main = $('.sh-main'), banner = $('.sh-banner'), sel = $('.sh-view select'), dock = $('.sh-dock');
 
     const modules = [
       { id: 'things', title: 'Вещицы', mount: (box, ctx) => global.LifeModules.things.mount(box, ctx) },
@@ -1968,6 +1976,21 @@ body{margin:0;background:#f2f2f2}
     let tab = (core.store.get(TAB_KEY, 'things') || 'things'), mod = null, profiles = [];
     if (!modules.some(m => m.id === tab)) tab = 'things';
 
+    /* Правый док «Телефон»: та же страница pocket.html в узкой колонке (?embed=1). Она берёт у оболочки общий core:
+       один вход, одна очередь записи. Включён/выключен запоминается; выключенный док выгружается целиком. */
+    let dockOn = !!core.store.get(DOCK_KEY, false);
+    const PHONE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>';
+    function dockMounted() { return !!dock.querySelector('iframe'); }
+    function unloadDock() { dock.innerHTML = ''; dock.hidden = true; }
+    function applyDock(force) {
+      document.documentElement.style.setProperty('--sh-top', (top.hidden ? 0 : top.offsetHeight) + 'px');
+      if (!core.session() || !dockOn) { unloadDock(); return; }
+      if (force) dock.innerHTML = '';
+      if (!dockMounted()) { const f = document.createElement('iframe'); f.src = 'pocket.html?embed=1'; f.title = 'Телефонная версия'; dock.appendChild(f); }
+      dock.hidden = false;
+    }
+    global.addEventListener('resize', () => applyDock());
+
     function unmountModule() { if (mod) { try { mod.unmount(); } catch (e) { /* окно уже убрано */ } mod = null; } main.innerHTML = ''; }
     function updateBanner() {
       const m = modules.find(x => x.id === tab), other = core.viewUser() !== core.me();
@@ -1977,18 +2000,20 @@ body{margin:0;background:#f2f2f2}
     }
     function show() {
       unmountModule();
-      if (!core.session()) { top.hidden = true; banner.hidden = true; global.LifeLogin.mount(main, { onDone: show }); return; }
+      if (!core.session()) { top.hidden = true; banner.hidden = true; unloadDock(); global.LifeLogin.mount(main, { onDone: show }); return; }
       core.reloadSession();
       top.hidden = false; $('.sh-who').textContent = core.email();
-      renderTabs(); updateBanner();
+      renderTabs(); updateBanner(); applyDock();
       const m = modules.find(x => x.id === tab);
       mod = m.mount(main, { core, onAuthLost: show });
       loadProfiles();
     }
     function renderTabs() {
-      $('.sh-tabs').innerHTML = modules.map(m => `<button type="button" class="sh-tab ${m.id === tab ? 'on' : ''}" data-tab="${esc(m.id)}">${esc(m.title)}</button>`).join('');
+      const phone = `<button type="button" class="sh-tab sh-phone ${dockOn ? 'on' : ''}" data-phone aria-pressed="${dockOn}" title="Телефонная версия: Таймеры, Покупки, Эмоции (правая колонка)" aria-label="Телефонная версия">${PHONE_SVG}</button>`;
+      $('.sh-tabs').innerHTML = modules.map(m => `<button type="button" class="sh-tab ${m.id === tab ? 'on' : ''}" data-tab="${esc(m.id)}">${esc(m.title)}</button>` + (m.id === 'spheres' ? phone : '')).join('');
     }
     $('.sh-tabs').addEventListener('click', e => {
+      if (e.target.closest('[data-phone]')) { dockOn = !dockOn; core.store.set(DOCK_KEY, dockOn); renderTabs(); applyDock(); return; }
       const b = e.target.closest('[data-tab]'); if (!b || b.dataset.tab === tab) return;
       tab = b.dataset.tab; core.store.set(TAB_KEY, tab); show();
     });
@@ -2011,7 +2036,7 @@ body{margin:0;background:#f2f2f2}
       if (n && !confirm('Есть неотправленные изменения: ' + n + '. Они уйдут тому, чьи данные были выбраны, когда вы их вносили. Переключить?')) { sel.value = core.viewUser(); return; }
       core.setViewUser(sel.value === core.me() ? null : sel.value);
     });
-    core.on('view', () => { if (core.session()) show(); });
+    core.on('view', () => { if (core.session()) { show(); applyDock(true); } });
 
     /* Индикатор очереди записи для любой вкладки. */
     function syncBadge() {
@@ -2028,7 +2053,8 @@ body{margin:0;background:#f2f2f2}
     });
     core.on('auth', ok => { if (!ok) show(); });
     show();
-    return { show };
+    global.LifeShell.core = core; global.LifeShell.refresh = show;
+    return { show, core };
   }
 
   global.LifeShell = { start };
