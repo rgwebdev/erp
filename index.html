@@ -1927,6 +1927,349 @@
 
 </script>
 <script>
+/* ---- modules/diary-model.js ---- */
+/* «Дневник»: чистые функции (без экрана и без сети): палитра, календарь, превью, форматы дат, разбор выгрузки старой системы.
+   window.LifeDiaryModel. Никаких зависимостей от других модулей. */
+(function (global) {
+  'use strict';
+  const pad = n => String(n).padStart(2, '0');
+  const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+  const MON_GEN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+  const DOW = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
+
+  function hsl(h, s, l) { // → #rrggbb
+    s /= 100; l /= 100; const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l), f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    return '#' + [f(0), f(8), f(4)].map(v => pad(Math.round(v * 255).toString(16))).join('');
+  }
+  /* тёмная палитра для цвета дневника: 12 оттенков × 3 глубины (текст остаётся читаемым на светлом фоне) */
+  const PALETTE = (() => { const o = []; [36, 28, 20].forEach(l => { for (let h = 0; h < 360; h += 30) o.push(hsl(h, 66, l)); }); return o; })();
+
+  function dayKey(ms, tz) { return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms)); }
+  function offsetMin(ms, tz) {
+    const p = {}; new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(new Date(ms)).forEach(x => { p[x.type] = x.value; });
+    return Math.round((Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - Math.floor(ms / 1000) * 1000) / 60000);
+  }
+  function zonedTs(date, hms, tz) { // «2026-11-15» + «10:30[:05]» в поясе tz → миллисекунды (NaN, если не разобрать)
+    const d = /^(\d{4})-(\d\d)-(\d\d)$/.exec(date || ''), t = /^(\d\d):(\d\d)(?::(\d\d))?$/.exec(hms || '');
+    if (!d || !t) return NaN;
+    const g = Date.UTC(+d[1], +d[2] - 1, +d[3], +t[1], +t[2], +(t[3] || 0)); let ts = g - offsetMin(g, tz) * 60000; ts = g - offsetMin(ts, tz) * 60000; return ts;
+  }
+  function hms(ms, tz) { const p = {}; new Intl.DateTimeFormat('en-GB', { timeZone: tz, hourCycle: 'h23', hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(new Date(ms)).forEach(x => { p[x.type] = x.value; }); return p.hour + ':' + p.minute + ':' + p.second; }
+  const hm = (ms, tz) => hms(ms, tz).slice(0, 5);
+  const isDay = s => /^\d{4}-\d\d-\d\d$/.test(String(s || '')) && !isNaN(Date.parse(s + 'T12:00:00Z'));
+  const dayParts = d => ({ y: +d.slice(0, 4), m: +d.slice(5, 7) - 1, d: +d.slice(8, 10) });
+  const fmtDay = d => { const p = dayParts(d); return p.d + ' ' + MON_GEN[p.m] + ' ' + p.y; };
+  const fmtDM = (ms, tz) => { const p = dayParts(dayKey(ms, tz)); return p.d + ' ' + MON_GEN[p.m] + ', ' + hm(ms, tz); };
+  const fmtShort = (ms, tz) => { const p = dayParts(dayKey(ms, tz)); return p.d + ' ' + MON_GEN[p.m]; };
+
+  function monthGrid(y, m) { return { lead: (new Date(Date.UTC(y, m, 1)).getUTCDay() + 6) % 7, days: new Date(Date.UTC(y, m + 1, 0)).getUTCDate(), prefix: y + '-' + pad(m + 1) + '-' }; }
+  /* число записей по дням месяца и дневникам: {'2026-11-18': {y1: 2}} (только по видимым дневникам) */
+  function counts(entries, visible, prefix) {
+    const c = {}; entries.forEach(e => { if (e.day.slice(0, 8) === prefix && visible(e.diary_id)) { const o = c[e.day] = c[e.day] || {}; o[e.diary_id] = (o[e.diary_id] || 0) + 1; } }); return c;
+  }
+  const byTsDesc = (a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0);
+  /* превью свёрнутой записи: первое-второе предложение, не длиннее 140 знаков */
+  function preview(x) {
+    const t = String(x).replace(/\s+/g, ' ').trim(), m = t.match(/^[^.!?…]*[.!?…]+(\s+[^.!?…]*[.!?…]+)?/); let p = m ? m[0] : t;
+    if (p.length > 140) p = p.slice(0, 140).trim(); return p.length < t.length ? p + '…' : p;
+  }
+  const validColor = c => /^#[0-9a-fA-F]{6}$/.test(String(c || ''));
+
+  /* Выгрузка старой системы: {app:'life-system', diary:{diaries:[{id,name,c}], entries:[{id,dy,d,t,cr,ed,x}]}} или сам объект diary.
+     Возвращает строки для таблиц и подсчёт пропущенного (запись без дневника, без текста, с неверной датой). */
+  function legacyRows(obj, nowIso) {
+    const dy = obj && obj.diary && Array.isArray(obj.diary.diaries) ? obj.diary : (obj && Array.isArray(obj.diaries) && Array.isArray(obj.entries) ? obj : null);
+    if (!dy) return null;
+    const at = nowIso || new Date().toISOString(), ids = new Set(), diaries = [], entries = [], skipped = { noDiary: 0, noText: 0, badDate: 0 };
+    dy.diaries.forEach(d => { if (!d || !d.id || ids.has(d.id)) return; ids.add(d.id);
+      diaries.push({ id: String(d.id), name: String(d.name || 'Без названия').slice(0, 80), color: validColor(d.c) ? d.c : PALETTE[0], created_at: at, deleted_at: null }); });
+    dy.entries.forEach(e => {
+      if (!e || !e.id) return;
+      if (!ids.has(e.dy)) { skipped.noDiary++; return; }
+      const body = typeof e.x === 'string' ? e.x : ''; if (!body.trim()) { skipped.noText++; return; }
+      const ts = Date.parse(e.t); if (!isDay(e.d) || isNaN(ts)) { skipped.badDate++; return; }
+      const cr = Date.parse(e.cr), ed = Date.parse(e.ed);
+      entries.push({ id: String(e.id), diary_id: e.dy, day: e.d, ts: new Date(ts).toISOString(), created_at: new Date(isNaN(cr) ? ts : cr).toISOString(), edited_at: isNaN(ed) ? null : new Date(ed).toISOString(), body, is_encrypted: false, deleted_at: null });
+    });
+    return { diaries, entries, skipped };
+  }
+
+  global.LifeDiaryModel = { MONTHS, MON_GEN, DOW, PALETTE, hsl, dayKey, zonedTs, hms, hm, isDay, dayParts, fmtDay, fmtDM, fmtShort, monthGrid, counts, byTsDesc, preview, validColor, legacyRows };
+})(window);
+
+</script>
+<script>
+/* ---- modules/diary-css.js ---- */
+/* «Дневник»: стили (светлая оболочка компьютера). window.LifeDiaryCss */
+window.LifeDiaryCss = `
+.dy-app{--line:#d6d6d6;font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#404040;padding:14px;max-width:920px}
+.dy-app *{box-sizing:border-box}.dy-app button{font:inherit;color:inherit;cursor:pointer}
+.dy-bar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.dy-note{flex:1;font-size:12px;opacity:.75;min-width:120px}.dy-note.warn{color:#b3261e;opacity:1}
+.dy-btn{border:1px solid #c9c9c9;background:#fff;border-radius:6px;padding:5px 10px}.dy-btn:hover{background:#efefef}
+.dy-btn.primary{background:#404040;border-color:#404040;color:#fff}.dy-btn.sm{font-size:12px;padding:2px 8px}
+.dy-btn:disabled{opacity:.5;cursor:default}
+.dy-chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.dy-chip{border:1px solid var(--line);border-radius:12px;padding:2px 10px;background:#fff;color:#777;font-size:13px}
+.dy-chip.on{font-weight:600}
+.dy-mut{font-size:12px;opacity:.7}
+.dy-nav{display:flex;gap:10px;align-items:center;margin:6px 0}
+.dy-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.dy-h{font-size:11px;text-align:center;opacity:.6}
+.dy-c{min-height:54px;border:1px solid var(--line);border-radius:6px;background:#fff;padding:3px 4px;display:flex;flex-direction:column;gap:2px;cursor:pointer;text-align:left}
+.dy-c:hover{background:#f4f4f4}.dy-c.t{outline:2px solid #404040;outline-offset:-2px}.dy-c.em{background:rgba(255,255,255,.55)}
+.dy-c .n{font-size:12px;opacity:.75}.dy-w{display:flex;gap:4px;flex-wrap:wrap}
+.dy-w b{font-size:13px;border-radius:4px;padding:0 4px;background:rgba(0,0,0,.06);cursor:pointer}
+.dy-box{background:#fff;border:1px solid var(--line);border-radius:8px;margin-top:10px;padding:8px 10px}
+.dy-top{display:flex;gap:8px;align-items:baseline;margin-bottom:6px;flex-wrap:wrap}.dy-top b{font-size:15px}.dy-top .dy-mut{flex:1}
+.dy-e{padding:6px 4px;border-top:1px dashed #ddd;cursor:pointer}.dy-e:first-of-type{border-top:0}
+.dy-stamp{font-size:12px}.dy-badge{display:inline-block;font-size:11px;border:1px solid #c9c9c9;border-radius:8px;padding:0 6px;margin-left:6px;color:#666}
+.dy-x{white-space:pre-wrap;word-break:break-word;margin:4px 0}
+.dy-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
+.dy-ta{width:100%;min-height:120px;border:1px solid #c9c9c9;border-radius:6px;padding:8px;font:inherit;resize:vertical}
+.dy-in,.dy-sel{border:1px solid #c9c9c9;border-radius:6px;padding:5px 8px;font:inherit;background:#fff}
+.dy-warn{color:#b3261e;font-size:13px;margin:4px 0}
+.dy-sw{display:flex;gap:5px;flex-wrap:wrap;margin:6px 0}.dy-sw i{width:22px;height:22px;border-radius:50%;border:2px solid transparent;cursor:pointer}.dy-sw i.on{border-color:#222;box-shadow:0 0 0 2px #fff inset}
+.dy-det{margin-top:16px;font-size:13px}.dy-det summary{cursor:pointer;opacity:.8}
+.dy-empty{padding:24px;text-align:center;opacity:.75}
+@media (max-width:560px){.dy-app{padding:8px}.dy-c{min-height:44px}}
+`;
+
+</script>
+<script>
+/* ---- modules/diary-store.js ---- */
+/* «Дневник»: данные и действия (без экрана). LifeDiaryStore.create(core) → объект S.
+   Таблицы diaries и diary_entries (миграция 0008). Пишется через core.commit (офлайн-очередь), строки целиком.
+   В журнал уходят короткие строки БЕЗ текста записей. */
+(function (global) {
+  'use strict';
+  const M = global.LifeDiaryModel;
+  const MOD = 'diary', CACHE = 'diary';
+
+  function create(core) {
+    const TZ = core.TZ;
+    const D = { diaries: [], entries: [] };
+    const S = { D, TZ, state: 'loading', note: '', loadedAt: 0, onChange: null };
+    const iso = ms => new Date(ms).toISOString();
+    const changed = () => { if (S.onChange) S.onChange(); };
+    S.today = () => M.dayKey(Date.now(), TZ);
+    const diary = id => D.diaries.find(d => d.id === id) || null;
+    S.diary = diary;
+
+    function apply(d) { D.diaries = (d.diaries || []).filter(r => !r.deleted_at); D.entries = (d.entries || []).filter(r => !r.deleted_at); }
+    S.load = async function () {
+      if (S.state !== 'ready') S.state = 'loading'; changed();
+      try { await core.flush(); } catch (e) { /* очередь повторит */ }
+      try {
+        if (core.status().pending > 0) throw Object.assign(new Error('очередь'), { pendingQueue: true });
+        const f = { filters: ['deleted_at=is.null'] };
+        const [diaries, entries] = await Promise.all([core.select('diaries', f), core.select('diary_entries', f)]);
+        apply({ diaries, entries }); core.cache.set(CACHE, { diaries: D.diaries, entries: D.entries }); S.state = 'ready'; S.note = ''; S.loadedAt = Date.now();
+      } catch (e) {
+        if (e.auth) { S.state = 'error'; S.note = 'нужно войти'; S.authLost = true; changed(); return; }
+        const c = core.cache.get(CACHE);
+        if (c && (e.net || e.pendingQueue)) { apply(c.data); S.state = 'ready'; S.note = e.pendingQueue ? 'Есть неотправленные изменения, показаны данные на устройстве.' : 'Нет связи, показаны данные на устройстве.'; }
+        else { S.state = 'error'; S.note = e.net ? 'нет связи с базой и нет копии на устройстве' : (e.message || 'ошибка чтения'); }
+      }
+      changed();
+    };
+
+    function tx() {
+      const w = {}, j = [];
+      const T = {
+        put(table, row) {
+          row = Object.assign({}, row, { updated_at: core.now() });
+          const arr = table === 'diaries' ? D.diaries : D.entries, i = arr.findIndex(r => r.id === row.id);
+          if (row.deleted_at) { if (i >= 0) arr.splice(i, 1); } else if (i >= 0) arr[i] = row; else arr.push(row);
+          const out = Object.assign({}, row); delete out.user_id; delete out.updated_by; (w[table] = w[table] || {})[row.id] = out; return row;
+        },
+        log(op, kind, id, summary) { j.push({ op, module: MOD, entity_kind: kind, entity_id: id, summary }); },
+        commit() {
+          core.cache.set(CACHE, { diaries: D.diaries, entries: D.entries });
+          const writes = ['diaries', 'diary_entries'].filter(t => w[t]).map(t => ({ table: t, rows: Object.keys(w[t]).map(k => w[t][k]) }));
+          try { core.commit({ writes, journal: j }); } catch (e) { S.note = 'Не сохранено: ' + (e.message || e); }
+          changed();
+        }
+      };
+      return T;
+    }
+    const entryRow = (e, over) => Object.assign({ id: e.id, diary_id: e.diary_id, day: e.day, ts: e.ts, created_at: e.created_at, edited_at: e.edited_at || null, body: e.body, is_encrypted: false, deleted_at: null }, over || {});
+    const diaryRow = (d, over) => Object.assign({ id: d.id, name: d.name, color: d.color, created_at: d.created_at, deleted_at: null }, over || {});
+
+    S.addDiary = function (name, color) {
+      name = String(name || '').trim(); if (!name) return { ok: false, msg: 'Введите название дневника' };
+      if (name.length > 80) return { ok: false, msg: 'Название длиннее 80 знаков' };
+      if (D.diaries.some(d => d.name.toLowerCase() === name.toLowerCase())) return { ok: false, msg: 'Дневник с таким названием уже есть' };
+      const d = { id: 'y' + Date.now(), name, color: M.validColor(color) ? color : M.PALETTE[0], created_at: iso(Date.now()), deleted_at: null };
+      const T = tx(); T.put('diaries', d); T.log('create', 'diary', d.id, 'Дневник «' + name + '» создан'); T.commit(); return { ok: true, id: d.id };
+    };
+    S.addEntry = function (diaryId, day, text) {
+      const dr = diary(diaryId), body = String(text || '').trim();
+      if (!dr) return { ok: false, msg: 'Сначала выберите или создайте дневник' };
+      if (!body) return { ok: false, msg: 'Введите текст записи' };
+      if (!M.isDay(day)) return { ok: false, msg: 'Неверная дата' };
+      const now = Date.now(), ts = day === S.today() ? now : M.zonedTs(day, M.hms(now, TZ), TZ);
+      const e = { id: 'e' + now, diary_id: dr.id, day, ts: iso(ts), created_at: iso(now), edited_at: null, body, is_encrypted: false, deleted_at: null };
+      const T = tx(); T.put('diary_entries', e); T.log('create', 'entry', e.id, 'Запись в дневнике «' + dr.name + '», ' + day + ', символов ' + body.length); T.commit(); return { ok: true, id: e.id };
+    };
+    S.editEntry = function (id, text) {
+      const e = D.entries.find(x => x.id === id), body = String(text || '').trim(); if (!e) return { ok: false, msg: 'Запись не найдена' };
+      if (!body) return { ok: false, msg: 'Текст не может быть пустым (для удаления есть кнопка «Удалить»)' };
+      if (body === e.body) return { ok: true, same: true };
+      const dr = diary(e.diary_id), old = e.body.length, T = tx();
+      T.put('diary_entries', entryRow(e, { body, edited_at: iso(Date.now()) })); T.log('change', 'entry', id, 'Запись в дневнике «' + (dr ? dr.name : '?') + '», ' + e.day + ', символов ' + old + ' → ' + body.length); T.commit(); return { ok: true };
+    };
+    S.deleteEntry = function (id) {
+      const e = D.entries.find(x => x.id === id); if (!e) return { ok: false };
+      const dr = diary(e.diary_id), T = tx(); T.put('diary_entries', entryRow(e, { deleted_at: iso(Date.now()) })); T.log('delete', 'entry', id, 'Запись в дневнике «' + (dr ? dr.name : '?') + '», ' + e.day + ', символов ' + e.body.length); T.commit(); return { ok: true };
+    };
+
+    /* Перенос из выгрузки старой системы. Уже существующие в базе дневники и записи (по id) не трогаются: повторный перенос безопасен. */
+    S.importLegacy = async function (obj) {
+      const r = M.legacyRows(obj, iso(Date.now()));
+      if (!r) return { ok: false, msg: 'В файле нет раздела дневника (нужна выгрузка «Данные браузера» старой системы с полем diary).' };
+      try { await S.load(); } catch (e) { /* ниже проверим состояние */ }
+      if (S.state !== 'ready' || S.note) return { ok: false, msg: 'Не удалось сверить с базой (' + (S.note || 'нет связи') + '). Перенос отложен, чтобы не перезаписать правки.' };
+      const haveD = new Set(D.diaries.map(d => d.id)), haveE = new Set(D.entries.map(e => e.id));
+      const nd = r.diaries.filter(d => !haveD.has(d.id)), ne = r.entries.filter(e => !haveE.has(e.id));
+      const T = tx(); nd.forEach(d => T.put('diaries', d)); ne.forEach(e => T.put('diary_entries', e));
+      const text = `Перенос дневника: дневников ${nd.length}, записей ${ne.length}; уже были ${r.diaries.length - nd.length} и ${r.entries.length - ne.length}` +
+        (r.skipped.noDiary + r.skipped.noText + r.skipped.badDate ? `; пропущено (нет дневника ${r.skipped.noDiary}, пустой текст ${r.skipped.noText}, неверная дата ${r.skipped.badDate})` : '') + '.';
+      if (nd.length || ne.length) { T.log('sys', 'import', 'diary', text); T.commit(); } else changed();
+      await S.flush(); return { ok: true, text, added: { diaries: nd.length, entries: ne.length } };
+    };
+    S.flush = async function () { try { await core.flush(); } catch (e) { /* повторится */ } };
+    return S;
+  }
+  global.LifeDiaryStore = { create };
+})(window);
+
+</script>
+<script>
+/* ---- modules/diary.js ---- */
+/* «Дневник» (компьютер): экран. Данные и действия — diary-store.js, расчёты — diary-model.js, стили — diary-css.js.
+   Точка входа: LifeModules.diary.mount(элемент, {core, onAuthLost}) → {unmount, reload}.
+   Календарь месяца с числом записей по дневникам; чипы дневников (видимость хранится на устройстве); последние 5 записей каждого
+   видимого дневника; день выбранного дневника; новая запись (клик по дате или кнопка), правка (значок «Редакция»), удаление в два нажатия. */
+(function (global) {
+  'use strict';
+  const M = global.LifeDiaryModel;
+  global.LifeModules = global.LifeModules || {};
+  const UI_KEY = 'lifeerp-diary-ui';
+
+  function mount(el, ctxIn) {
+    ctxIn = ctxIn || {};
+    const core = ctxIn.core || global.LifeCore, TZ = core.TZ, S = global.LifeDiaryStore.create(core), D = S.D;
+    if (!document.getElementById('dy-css')) { const s = document.createElement('style'); s.id = 'dy-css'; s.textContent = global.LifeDiaryCss; document.head.appendChild(s); }
+    const ui = (() => { const u = core.store.get(UI_KEY, null) || {}; return { on: Array.isArray(u.on) ? u.on : null }; })();
+    const saveUi = () => core.store.set(UI_KEY, { on: ui.on });
+    const t0 = S.today(), p0 = M.dayParts(t0);
+    let y = p0.y, mo = p0.m, sel = null, form = null, editing = null, delAsk = null, open = {}, mk = null, alive = true, imp = { text: '', busy: false, confirm: false };
+    const visible = id => ui.on === null ? true : ui.on.indexOf(id) >= 0;
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const diaryColor = d => (d && M.validColor(d.color) ? d.color : '#404040');
+    el.innerHTML = '<div class="dy-app"></div>'; const root = el.firstChild;
+
+    function entryHtml(e, dr, withDate) {
+      const c = diaryColor(dr), ed = editing && editing.id === e.id, ts = Date.parse(e.ts), stamp = withDate ? M.fmtDM(ts, TZ) : M.hm(ts, TZ);
+      let body;
+      if (ed) body = `<textarea class="dy-ta" data-f="edit" style="color:${c}">${esc(editing.tx)}</textarea>${editing.err ? `<div class="dy-warn">${esc(editing.err)}</div>` : ''}<div class="dy-row"><button class="dy-btn primary" data-act="edit-save">Сохранить</button><button class="dy-btn" data-act="edit-cancel">Отмена</button></div>`;
+      else if (open[e.id]) body = `<div class="dy-x" style="color:${c}">${esc(e.body)}</div><div class="dy-row"><button class="dy-btn sm" data-act="edit" data-id="${esc(e.id)}">Исправить</button><button class="dy-btn sm" data-act="del" data-id="${esc(e.id)}">${delAsk === e.id ? 'Точно удалить?' : 'Удалить'}</button></div>`;
+      else body = `<div class="dy-x" style="color:${c}">${esc(M.preview(e.body))}</div>`;
+      return `<div class="dy-e" ${ed ? '' : `data-act="tog" data-id="${esc(e.id)}"`}><span class="dy-stamp" style="color:${c}">${esc(stamp)}</span>${e.edited_at ? `<span class="dy-badge" title="Запись исправлена">Редакция · ${esc(M.fmtShort(Date.parse(e.edited_at), TZ))}</span>` : ''}${body}</div>`;
+    }
+
+    function render() {
+      if (!alive) return;
+      const keep = { y: window.scrollY }; const ta = root.querySelector('[data-f]'); const focusF = ta && document.activeElement === ta ? ta.dataset.f : null;
+      const ds = D.diaries.slice().sort((a, b) => (a.created_at < b.created_at ? -1 : 1)), vis = ds.filter(d => visible(d.id));
+      const noteBad = S.state === 'error' || /Нет связи|неотправленные/.test(S.note);
+      let h = `<div class="dy-bar"><span class="dy-note ${noteBad ? 'warn' : ''}" role="status">${S.state === 'loading' ? 'Загрузка…' : esc(S.note)}</span><button class="dy-btn" data-act="new">+ Запись</button><button class="dy-btn" data-act="reload">Обновить</button></div>`;
+      if (S.state === 'error' && !D.diaries.length && !D.entries.length) h += `<div class="dy-empty">${esc(S.note)}</div>`;
+      else {
+        h += ds.length ? `<div class="dy-chips"><span class="dy-mut">Дневники:</span>${ds.map(d => { const on = visible(d.id); return `<button class="dy-chip ${on ? 'on' : ''}" data-act="chip" data-id="${esc(d.id)}" style="border-color:${on ? diaryColor(d) : 'var(--line)'};color:${on ? diaryColor(d) : '#777'}" title="${on ? 'Скрыть' : 'Показать'} записи дневника">${esc(d.name)}</button>`; }).join('')}<button class="dy-btn sm" data-act="all-on">Показать все</button><button class="dy-btn sm" data-act="all-off">Скрыть все</button></div>${vis.length ? '' : '<div class="dy-mut">Выберите дневник, чтобы увидеть его записи на календаре и последние 5 записей.</div>'}`
+          : '<div class="dy-empty">Дневников пока нет. Нажмите «+ Запись», там же можно создать первый дневник.</div>';
+        const g = M.monthGrid(y, mo), cnt = M.counts(D.entries, visible, g.prefix);
+        h += `<div class="dy-nav"><button class="dy-btn sm" data-act="prev" aria-label="Предыдущий месяц">‹</button><b>${M.MONTHS[mo]} ${y}</b><button class="dy-btn sm" data-act="next" aria-label="Следующий месяц">›</button><button class="dy-btn sm" data-act="cur">Сегодня</button></div><div class="dy-grid">${M.DOW.map(x => `<div class="dy-h">${x}</div>`).join('')}${'<div></div>'.repeat(g.lead)}`;
+        for (let d = 1; d <= g.days; d++) {
+          const k = g.prefix + String(d).padStart(2, '0'), c = cnt[k] || {}, nums = vis.filter(x => c[x.id]);
+          h += `<div class="dy-c ${k === t0 ? 't' : ''} ${nums.length ? '' : 'em'}" data-act="open-new" data-day="${k}" title="Новая запись на эту дату"><span class="n">${d}</span><span class="dy-w">${nums.map(x => `<b style="color:${diaryColor(x)}" title="${esc(x.name)}" data-act="show" data-id="${esc(x.id)}" data-day="${k}">${c[x.id]}</b>`).join('')}</span></div>`;
+        }
+        h += '</div>';
+        if (form) {
+          const cur = ds.find(x => x.id === form.dy) || ds[0], c = cur ? diaryColor(cur) : 'inherit';
+          h += `<div class="dy-box"><div class="dy-top"><b>Новая запись · ${esc(M.fmtDay(form.day))}</b><button class="dy-btn sm" data-act="form-close">Закрыть</button></div><div class="dy-row">${ds.length ? `<select class="dy-sel" data-f="dy">${ds.map(x => `<option value="${esc(x.id)}" ${cur && x.id === cur.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>` : '<span class="dy-mut">Дневников пока нет</span>'}<button class="dy-btn sm" data-act="mk-open">Создать дневник</button><input class="dy-in" type="date" data-f="day" value="${esc(form.day)}"></div>`;
+          if (mk) h += `<div class="dy-box"><input class="dy-in" data-f="mkname" maxlength="80" placeholder="Название дневника" value="${esc(mk.name)}"><div class="dy-sw">${M.PALETTE.map(p => `<i data-act="mk-col" data-c="${p}" style="background:${p}" class="${mk.color === p ? 'on' : ''}"></i>`).join('')}</div>${mk.err ? `<div class="dy-warn">${esc(mk.err)}</div>` : ''}<div class="dy-row"><button class="dy-btn primary" data-act="mk-save">Создать</button><button class="dy-btn" data-act="mk-cancel">Отмена</button></div></div>`;
+          h += `<div class="dy-mut">Время фиксируется при записи (пояс ${esc(TZ)}).</div><textarea class="dy-ta" data-f="text" placeholder="Текст записи" style="color:${c}">${esc(form.tx)}</textarea>${form.err ? `<div class="dy-warn">${esc(form.err)}</div>` : ''}<div class="dy-row"><button class="dy-btn primary" data-act="form-save">Записать</button></div></div>`;
+        }
+        vis.forEach(dr => {
+          const es = D.entries.filter(e => e.diary_id === dr.id).sort(M.byTsDesc), top = es.slice(0, 5);
+          h += `<div class="dy-box" style="border-left:6px solid ${diaryColor(dr)}"><div class="dy-top"><b style="color:${diaryColor(dr)}">${esc(dr.name)}</b><span class="dy-mut">последние записи: ${top.length} из ${es.length}</span><button class="dy-btn sm" data-act="chip" data-id="${esc(dr.id)}">Скрыть</button></div>${top.length ? top.map(e => entryHtml(e, dr, true)).join('') : '<div class="dy-mut">Записей пока нет.</div>'}</div>`;
+        });
+        const sd = sel && D.diaries.find(x => x.id === sel.dy);
+        if (sd) { const es = D.entries.filter(e => e.diary_id === sd.id && e.day === sel.day).sort(M.byTsDesc);
+          h += `<div class="dy-box" style="border-left:6px solid ${diaryColor(sd)}"><div class="dy-top"><b style="color:${diaryColor(sd)}">${esc(sd.name)}</b><span class="dy-mut">${esc(M.fmtDay(sel.day))} · записей: ${es.length}</span><button class="dy-btn sm" data-act="show" data-id="${esc(sd.id)}" data-day="${sel.day}">Закрыть</button></div>${es.map(e => entryHtml(e, sd, false)).join('')}</div>`; }
+        h += `<details class="dy-det"><summary>Перенос из старой системы</summary><div class="dy-row"><span class="dy-mut">Вставьте файл «Данные браузера» (JSON) или выберите его. Уже существующие записи не перезаписываются, повторный перенос безопасен.</span></div><div class="dy-row"><input type="file" accept=".json,application/json" data-f="impfile"></div><textarea class="dy-ta" data-f="imp" style="min-height:70px" placeholder="JSON выгрузки">${esc(imp.text)}</textarea><div class="dy-row"><button class="dy-btn" data-act="imp-go" ${imp.busy ? 'disabled' : ''}>${imp.confirm ? 'Точно перенести?' : 'Перенести'}</button></div><div class="dy-mut" data-f="impinfo" role="status">${esc(imp.info || '')}</div></details>`;
+      }
+      root.innerHTML = h;
+      if (focusF) { const n = root.querySelector('[data-f="' + focusF + '"]'); if (n) { n.focus(); try { n.setSelectionRange(n.value.length, n.value.length); } catch (e) { /* поле без выделения */ } } }
+      window.scrollTo(0, keep.y);
+    }
+
+    S.onChange = () => { if (alive) render(); };
+    const setUi = v => { ui.on = v; saveUi(); };
+    const allIds = () => D.diaries.map(d => d.id);
+    const field = n => root.querySelector('[data-f="' + n + '"]');
+    root.addEventListener('input', ev => {
+      const f = ev.target.dataset && ev.target.dataset.f;
+      if (f === 'text' && form) form.tx = ev.target.value; else if (f === 'edit' && editing) editing.tx = ev.target.value; else if (f === 'mkname' && mk) mk.name = ev.target.value; else if (f === 'imp') { imp.text = ev.target.value; imp.confirm = false; }
+    });
+    root.addEventListener('change', ev => {
+      const f = ev.target.dataset && ev.target.dataset.f;
+      if (f === 'dy' && form) { form.dy = ev.target.value; render(); } else if (f === 'day' && form && M.isDay(ev.target.value)) { form.day = ev.target.value; render(); }
+      else if (f === 'impfile') { const file = ev.target.files && ev.target.files[0]; if (!file) return; const r = new FileReader(); r.onload = () => { imp.text = String(r.result || ''); imp.confirm = false; imp.info = 'Файл прочитан (' + Math.round(imp.text.length / 1024) + ' КБ). Нажмите «Перенести».'; render(); const d = root.querySelector('.dy-det'); if (d) d.open = true; }; r.readAsText(file); }
+    });
+    root.addEventListener('click', async ev => {
+      const t = ev.target.closest('[data-act]'); if (!t) return; const a = t.dataset.act, id = t.dataset.id;
+      if (a === 'show') { ev.stopPropagation(); sel = sel && sel.dy === id && sel.day === t.dataset.day ? null : { dy: id, day: t.dataset.day }; render(); return; }
+      if (a === 'tog') { if (ev.target.closest('button,textarea')) return; delAsk = null; open[id] = !open[id]; render(); return; }
+      if (a === 'chip') { const on = (ui.on === null ? allIds() : ui.on.slice()), k = on.indexOf(id); if (k >= 0) { on.splice(k, 1); if (sel && sel.dy === id) sel = null; } else on.push(id); setUi(on); render(); return; }
+      if (a === 'all-on') { setUi(allIds()); render(); return; }
+      if (a === 'all-off') { setUi([]); sel = null; render(); return; }
+      if (a === 'prev' || a === 'next') { mo += a === 'next' ? 1 : -1; if (mo < 0) { mo = 11; y--; } if (mo > 11) { mo = 0; y++; } render(); return; }
+      if (a === 'cur') { y = p0.y; mo = p0.m; render(); return; }
+      if (a === 'reload') { S.load(); return; }
+      if (a === 'new' || a === 'open-new') { form = { dy: (form && form.dy) || (D.diaries[0] && D.diaries[0].id) || '', day: a === 'open-new' ? t.dataset.day : S.today(), tx: form ? form.tx : '', err: '' }; mk = null; render(); const x = field('text'); if (x) { x.focus(); x.scrollIntoView({ block: 'center' }); } return; }
+      if (a === 'form-close') { form = null; mk = null; render(); return; }
+      if (a === 'mk-open') { mk = { name: '', color: M.PALETTE[0], err: '' }; render(); const x = field('mkname'); if (x) x.focus(); return; }
+      if (a === 'mk-cancel') { mk = null; render(); return; }
+      if (a === 'mk-col') { mk.color = t.dataset.c; render(); return; }
+      if (a === 'mk-save') { const r = S.addDiary(mk.name, mk.color); if (!r.ok) { mk.err = r.msg; render(); return; } form.dy = r.id; if (ui.on !== null && ui.on.indexOf(r.id) < 0) setUi(ui.on.concat(r.id)); mk = null; render(); return; }
+      if (a === 'form-save') { const r = S.addEntry(form.dy, form.day, form.tx); if (!r.ok) { form.err = r.msg; render(); return; } if (!visible(form.dy)) setUi((ui.on || []).concat(form.dy)); sel = { dy: form.dy, day: form.day }; { const p = M.dayParts(form.day); y = p.y; mo = p.m; } form = null; mk = null; render(); return; }
+      if (a === 'edit') { const e = D.entries.find(x => x.id === id); if (e) { editing = { id, tx: e.body, err: '' }; delAsk = null; render(); } return; }
+      if (a === 'edit-cancel') { editing = null; render(); return; }
+      if (a === 'edit-save') { const r = S.editEntry(editing.id, editing.tx); if (!r.ok) { editing.err = r.msg; render(); return; } editing = null; render(); return; }
+      if (a === 'del') { if (delAsk !== id) { delAsk = id; render(); return; } S.deleteEntry(id); delAsk = null; delete open[id]; render(); return; }
+      if (a === 'imp-go') {
+        let obj = null; try { obj = JSON.parse(imp.text.trim()); } catch (e) { /* ниже скажем */ }
+        const info = field('impinfo');
+        if (!obj || !M.legacyRows(obj)) { imp.info = 'Не узнал файл: нужна выгрузка «Данные браузера» старой системы (в ней есть раздел diary).'; imp.confirm = false; render(); return; }
+        const r = M.legacyRows(obj);
+        if (!imp.confirm) { imp.confirm = true; imp.info = `В файле: дневников ${r.diaries.length}, записей ${r.entries.length}. Нажмите ещё раз.`; render(); const d = root.querySelector('.dy-det'); if (d) d.open = true; return; }
+        imp.confirm = false; imp.busy = true; imp.info = 'Перенос…'; render();
+        try { const res = await S.importLegacy(obj); imp.info = res.ok ? res.text : res.msg; if (res.ok) imp.text = ''; } catch (e) { imp.info = 'Не удалось: ' + (e.message || e); }
+        imp.busy = false; render(); const d = root.querySelector('.dy-det'); if (d) d.open = true; if (info) { /* ссылка на старый узел больше не нужна */ }
+      }
+    });
+    const onAuth = setInterval(() => { if (S.authLost && ctxIn.onAuthLost) { S.authLost = false; ctxIn.onAuthLost(); } }, 800);
+    render(); S.load();
+    return { reload: () => S.load(), unmount() { alive = false; clearInterval(onAuth); S.onChange = null; el.innerHTML = ''; } };
+  }
+  global.LifeModules.diary = { mount };
+})(window);
+
+</script>
+<script>
 /* ---- shell/shell.js ---- */
 /* Оболочка (компьютер): верхняя панель, вкладки модулей, переключатель «чьи данные», индикатор очереди записи.
    Старая система подключается как есть, в окне внутри страницы (файл life-system.html рядом).
@@ -1968,6 +2311,7 @@ body{margin:0;background:#f2f2f2}
     const modules = [
       { id: 'things', title: 'Вещицы', mount: (box, ctx) => global.LifeModules.things.mount(box, ctx) },
       { id: 'spheres', title: 'Сферы и дела', mount: (box, ctx) => global.LifeModules.spheres.mount(box, ctx) },
+      { id: 'diary', title: 'Дневник', mount: (box, ctx) => global.LifeModules.diary.mount(box, ctx) },
       { id: 'legacy', title: 'Состояние, дневник (старая система)', own: true, mount(box) {
         const f = document.createElement('iframe'); f.src = 'life-system.html'; f.title = 'Старая система'; box.appendChild(f);
         return { unmount() { f.remove(); } };
