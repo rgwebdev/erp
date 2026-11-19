@@ -2270,6 +2270,513 @@ window.LifeDiaryCss = `
 
 </script>
 <script>
+/* ---- modules/tracks-model.js ---- */
+/* «Треки»: чистые функции (без экрана и сети): дни, разбор ввода в клетке, итоги строки, порог, «дней с последнего», разбор
+   выгрузки старой системы. window.LifeTracksModel. Самодостаточен (ни от каких модулей не зависит). */
+(function (global) {
+  'use strict';
+  const STATUS = { wish: 'желание', new: 'новая', cur: 'текущая', off: 'неактивная' };
+  const KIND = { habit: 'Трек', in: 'Доход', out: 'Расход' };
+  const GROUPS = ['Треки', 'Доходы', 'Расходы'];
+  const SUMMARY = { auto: 'по умолчанию (сумма)', sum: 'сумма', avg: 'среднее (по дням с записью)', last: 'последнее значение', max: 'максимум', min: 'минимум', count: 'число дней с записью' };
+  const SUMMARY_SIGN = { auto: 'Σ', sum: 'Σ', avg: 'ср', last: 'послед.', max: 'макс', min: 'мин', count: 'дней' };
+  const THR = { none: 'без порога', below: 'ниже: норма ≤ порога', exact: 'точное значение: норма = порога', above: 'выше: норма ≥ порога' };
+  const WD = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+  const isDay = s => /^\d{4}-\d\d-\d\d$/.test(String(s || '')) && !isNaN(Date.parse(s + 'T12:00:00Z'));
+  const dayKey = (ms, tz) => new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms));
+  const shiftDay = (k, n) => { const d = new Date(k + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  const daysBetween = (a, b) => Math.round((Date.parse(b + 'T12:00:00Z') - Date.parse(a + 'T12:00:00Z')) / 864e5); // b - a
+  const weekday = k => WD[new Date(k + 'T12:00:00Z').getUTCDay()];
+  const round1 = x => Math.round(x * 10) / 10;
+  const fmt = x => String(Math.round(x * 100) / 100).replace('.', ',');
+  const groupOf = t => (t.kind === 'in' ? 1 : t.kind === 'out' ? 2 : 0);
+
+  /* Что набрано в клетке: пусто → удалить; «5» или «5,5» → установить сумму дня; «+5» → прибавить; иное → ошибка */
+  function parseCell(raw) {
+    const t = String(raw == null ? '' : raw).trim().replace(/\s/g, '');
+    if (t === '') return { kind: 'empty' };
+    const m = /^(\+)?(\d+(?:[.,]\d+)?|[.,]\d+)$/.exec(t); if (!m) return { kind: 'bad', text: String(raw).trim() };
+    const v = parseFloat(m[2].replace(',', '.')); if (!isFinite(v)) return { kind: 'bad', text: String(raw).trim() };
+    return { kind: m[1] ? 'add' : 'set', v };
+  }
+  const sumOf = list => list.reduce((a, e) => a + (+e.value || 0), 0);
+  function indexEntries(entries) { // {trackId: {day: [entry,...]}}
+    const m = {}; entries.forEach(e => { ((m[e.track_id] = m[e.track_id] || {})[e.day] = m[e.track_id][e.day] || []).push(e); }); return m;
+  }
+  /* Последний столбец строки по видимым дням: days = [{day, sum|null}] (sum = null, если в этот день записей нет) */
+  function summarize(mode, days) {
+    const v = days.filter(d => d.sum != null).map(d => d.sum), m = !mode || mode === 'auto' ? 'sum' : mode;
+    if (!v.length) return { mode: m, value: null, text: '' };
+    let x;
+    if (m === 'sum') x = v.reduce((a, b) => a + b, 0); else if (m === 'avg') x = v.reduce((a, b) => a + b, 0) / v.length;
+    else if (m === 'last') x = days.filter(d => d.sum != null).sort((a, b) => (a.day < b.day ? 1 : -1))[0].sum;
+    else if (m === 'max') x = Math.max(...v); else if (m === 'min') x = Math.min(...v); else if (m === 'count') x = v.length; else x = v.reduce((a, b) => a + b, 0);
+    x = round1(x); return { mode: m, value: x, text: fmt(x) };
+  }
+  const okThreshold = (mode, v, s) => (mode === 'below' ? s <= v + 1e-9 : mode === 'above' ? s >= v - 1e-9 : mode === 'exact' ? Math.abs(s - v) < 1e-9 : null);
+  /* последнее событие: самая свежая из базовой даты и дней с записью > 0 (не позже сегодня) */
+  function lastEventDay(t, byDay, today) {
+    let m = t.baseline_last || ''; Object.keys(byDay || {}).forEach(d => { if (d <= today && d > m && sumOf(byDay[d]) > 0) m = d; }); return m;
+  }
+  const daysSince = (t, byDay, today) => { const l = lastEventDay(t, byDay, today); return l ? Math.max(0, daysBetween(l, today)) : null; };
+  const lastEntryDay = byDay => Object.keys(byDay || {}).sort().pop() || '';
+  /* «спит»: для желания и новой дней с самого свежего из создания, записи, «оставить» */
+  const dormantDays = (t, byDay, today) => { const a = [t.created, lastEntryDay(byDay), t.acked].filter(Boolean).sort().pop(); return a ? Math.max(0, daysBetween(a, today)) : 0; };
+  const periodStats = (byDay, today, n) => { // за последние n дней (включая сегодня)
+    const from = shiftDay(today, -(n - 1)); let s = 0; const days = new Set();
+    Object.keys(byDay || {}).forEach(d => { if (d >= from && d <= today) { s += sumOf(byDay[d]); days.add(d); } }); return { sum: round1(s), days: days.size };
+  };
+
+  /* Выгрузка старой системы {state:{habits:[{id,name,unit,kind,st,created,start,ack,need,rel,th:{m,v},dsl,last,cm:{день:текст},en:[{d,v}]}], cfg}}
+     → строки таблиц. Поддерживается и сам объект state, и объект {habits}. */
+  function legacyRows(obj) {
+    const st = obj && obj.state && Array.isArray(obj.state.habits) ? obj.state : (obj && Array.isArray(obj.habits) ? obj : null);
+    if (!st) return null;
+    const tracks = [], entries = [], notes = [], skipped = { badEntry: 0, badNote: 0, dupTrack: 0 }, seen = new Set(), cnt = [0, 0, 0];
+    st.habits.forEach(h => {
+      if (!h || !h.id || seen.has(h.id)) { skipped.dupTrack++; return; } seen.add(h.id);
+      const kind = KIND[h.kind] ? h.kind : 'habit', status = kind !== 'habit' ? 'cur' : (STATUS[h.st] ? h.st : 'cur'), g = groupOf({ kind });
+      const dt = x => (isDay(x) ? x : null), th = h.th || {};
+      tracks.push({ id: String(h.id), name: String(h.name || 'Без названия').slice(0, 80), kind, unit: kind !== 'habit' ? 'тыс. ₸' : String(h.unit || '').slice(0, 20), status, created: dt(h.created) || dt(((h.en || []).map(e => e.d).sort()[0])) || '2026-01-01',
+        started: dt(h.start), acked: dt(h.ack), need: String(h.need || ''), released: dt(h.rel), threshold_mode: kind === 'habit' && ['below', 'above', 'exact'].includes(th.m) ? th.m : 'none',
+        threshold_value: kind === 'habit' && th.m ? (+th.v || 0) : 0, show_days_since: !!h.dsl, baseline_last: dt(h.last), sort_order: cnt[g]++, summary_mode: 'auto', deleted_at: null });
+      const per = {}; (h.en || []).forEach(e => {
+        const v = +e.v; if (!e || !isDay(e.d) || !isFinite(v) || v < 0) { skipped.badEntry++; return; }
+        const k = per[e.d] = (per[e.d] || 0) + 1; entries.push({ id: 'te_' + h.id + '_' + e.d + '_' + k, track_id: String(h.id), day: e.d, value: v, deleted_at: null });
+      });
+      Object.keys(h.cm || {}).forEach(d => { const t = String(h.cm[d] || '').trim(); if (!isDay(d) || !t) { skipped.badNote++; return; } notes.push({ id: 'tn_' + h.id + '_' + d, track_id: String(h.id), day: d, note: t, deleted_at: null }); });
+    });
+    return { tracks, entries, notes, skipped, cfg: st.cfg || null };
+  }
+
+  global.LifeTracksModel = { STATUS, KIND, GROUPS, SUMMARY, SUMMARY_SIGN, THR, WD, isDay, dayKey, shiftDay, daysBetween, weekday, round1, fmt, groupOf, parseCell, sumOf, indexEntries, summarize, okThreshold, lastEventDay, daysSince, lastEntryDay, dormantDays, periodStats, legacyRows };
+})(window);
+
+</script>
+<script>
+/* ---- modules/tracks-css.js ---- */
+/* «Треки»: стили (светлая оболочка компьютера). window.LifeTracksCss */
+window.LifeTracksCss = `
+.tk-app{--line:#d6d6d6;--ok:#2e7d32;--bad:#c62828;--cn:#2e7d32;--cc:#546e7a;--co:#9e9e9e;--cin:#2e7d32;--cout:#b3261e;font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#404040;padding:14px}
+.tk-app *{box-sizing:border-box}.tk-app button{font:inherit;color:inherit;cursor:pointer}
+.tk-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.tk-note{flex:1;font-size:12px;opacity:.75;min-width:120px}.tk-note.warn{color:#b3261e;opacity:1}
+.tk-btn{border:1px solid #c9c9c9;background:#fff;border-radius:6px;padding:4px 10px}.tk-btn:hover{background:#efefef}
+.tk-btn.sm{font-size:12px;padding:2px 8px}.tk-btn.on{background:#404040;border-color:#404040;color:#fff}.tk-btn.primary{background:#404040;border-color:#404040;color:#fff}
+.tk-btn:disabled{opacity:.45;cursor:default}
+.tk-mut{font-size:12px;opacity:.7}.tk-warn{color:#b3261e;font-size:13px;margin:4px 0}
+.tk-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
+.tk-in,.tk-sel{border:1px solid #c9c9c9;border-radius:6px;padding:4px 8px;font:inherit;background:#fff}
+.tk-gw{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:#fff}
+table.tk-g{border-collapse:separate;border-spacing:0;width:100%;font-size:13px}
+.tk-g th,.tk-g td{border-bottom:1px solid #ececec;border-right:1px solid #f0f0f0;padding:0;text-align:center;min-width:38px}
+.tk-g th{font-weight:500;font-size:12px;padding:3px 2px;background:#fafafa;position:sticky;top:0}.tk-g th.td{background:#404040;color:#fff}
+.tk-g .nmc{position:sticky;left:0;z-index:2;background:#fff;text-align:left;padding:3px 8px;min-width:170px;max-width:230px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.tk-g th.nmc{background:#fafafa;z-index:3}.tk-g .nmc.sel{background:#eef3f8}
+.tk-g tr.gh td{background:#f2f2f2;text-align:left;font-weight:600;padding:3px 8px;position:static}
+.tk-g tr.ro td{font-size:12px;opacity:.8}
+.tk-sq{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px}
+.tk-ar{opacity:.18;font-size:9px;margin-left:8px;white-space:nowrap}.tk-ar a{cursor:pointer;padding:1px 2px}.nmc:hover .tk-ar{opacity:.85}
+.tk-c{position:relative;padding:0}.tk-c.hcm::after{content:"";position:absolute;top:0;right:0;border-top:7px solid #e53935;border-left:7px solid transparent;pointer-events:none}
+.tk-c.cs{outline:2px solid #404040;outline-offset:-2px}
+input.tk-ci{width:100%;min-width:38px;height:28px;border:0;background:transparent;text-align:center;font:inherit;color:inherit;padding:0 2px}
+input.tk-ci:focus{outline:none;background:rgba(255,255,255,.7)}input.tk-ci::placeholder{opacity:.35}
+.tk-sg{min-width:62px;font-weight:600;padding:0 8px;white-space:nowrap}.tk-sg small{font-weight:400;opacity:.65;margin-right:3px}
+.tk-gp{background:#fff;border:1px solid var(--line);border-radius:8px;margin-top:10px;padding:10px 12px}
+.tk-gp .top{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}.tk-gp .nm{font:inherit;font-weight:600;font-size:15px;border:1px solid transparent;border-radius:6px;padding:2px 6px;min-width:200px}.tk-gp .nm:hover,.tk-gp .nm:focus{border-color:#c9c9c9}
+.tk-badge{font-size:11px;border:1px solid #c9c9c9;border-radius:8px;padding:0 6px;color:#666}
+.tk-dots{display:flex;gap:4px;align-items:center}.tk-dots i{width:10px;height:10px;border-radius:50%;border:1px solid #888}.tk-dots i.f{background:#404040}
+.tk-det{margin-top:14px;font-size:13px}.tk-det summary{cursor:pointer;opacity:.85}
+.tk-ent{display:inline-flex;gap:4px;align-items:center;margin-right:10px}
+.tk-ta{width:100%;border:1px solid #c9c9c9;border-radius:6px;padding:6px 8px;font:inherit}
+.tk-empty{padding:24px;text-align:center;opacity:.75}
+@media (max-width:560px){.tk-app{padding:8px}.tk-g .nmc{min-width:120px}}
+`;
+
+</script>
+<script>
+/* ---- modules/tracks-store.js ---- */
+/* «Треки»: данные и действия (без экрана). LifeTracksStore.create(core) → S.
+   Таблицы tracks, track_entries (значения клеток, несколько записей в день), track_day_notes (комментарий клетки), миграция 0009.
+   Пишется через core.commit (офлайн-очередь), строки целиком. В журнал идут короткие строки без текста комментариев. */
+(function (global) {
+  'use strict';
+  const M = global.LifeTracksModel;
+  const MOD = 'tracks', CACHE = 'tracks', CFG_KEY = 'lifeerp-tracks-cfg';
+  const TBL = { tracks: 'tracks', track_entries: 'entries', track_day_notes: 'notes' };
+
+  function create(core) {
+    const TZ = core.TZ;
+    const D = { tracks: [], entries: [], notes: [] };
+    const S = { D, TZ, state: 'loading', note: '', loadedAt: 0, onChange: null };
+    const iso = ms => new Date(ms).toISOString();
+    const changed = () => { if (S.onChange) S.onChange(); };
+    const today = () => M.dayKey(Date.now(), TZ); S.today = today;
+    /* настройки «слоты новых / сон желаний / дней до «текущей»» лежат на устройстве (в базе под них нет подходящей таблицы) */
+    S.cfg = Object.assign({ cap: 3, sl: 60, thr: 75 }, core.store.get(CFG_KEY, null) || {});
+    S.setCfg = (k, v) => { v = parseInt(v, 10); if (!(v > 0) || v > 365) return false; S.cfg[k] = v; core.store.set(CFG_KEY, S.cfg); changed(); return true; };
+    const track = id => D.tracks.find(t => t.id === id) || null; S.track = track;
+    let idx = null; const reindex = () => { idx = M.indexEntries(D.entries); };
+    S.byDay = id => (idx && idx[id]) || {};
+    const noteOf = (id, day) => D.notes.find(n => n.track_id === id && n.day === day) || null; S.noteOf = noteOf;
+
+    function apply(d) {
+      D.tracks = (d.tracks || []).filter(r => !r.deleted_at); const live = new Set(D.tracks.map(t => t.id));
+      D.entries = (d.entries || []).filter(r => !r.deleted_at && live.has(r.track_id)); D.notes = (d.notes || []).filter(r => !r.deleted_at && live.has(r.track_id)); reindex();
+    }
+    const saveCache = () => core.cache.set(CACHE, { tracks: D.tracks, entries: D.entries, notes: D.notes });
+    S.load = async function () {
+      if (S.state !== 'ready') S.state = 'loading'; changed();
+      try { await core.flush(); } catch (e) { /* очередь повторит */ }
+      try {
+        if (core.status().pending > 0) throw Object.assign(new Error('очередь'), { pendingQueue: true });
+        const f = { filters: ['deleted_at=is.null'] };
+        const [tracks, entries, notes] = await Promise.all([core.select('tracks', f), core.select('track_entries', Object.assign({ order: 'id' }, f)), core.select('track_day_notes', Object.assign({ order: 'id' }, f))]);
+        apply({ tracks, entries, notes }); saveCache(); S.state = 'ready'; S.note = ''; S.loadedAt = Date.now();
+      } catch (e) {
+        if (e.auth) { S.state = 'error'; S.note = 'нужно войти'; S.authLost = true; changed(); return; }
+        const c = core.cache.get(CACHE);
+        if (c && (e.net || e.pendingQueue)) { apply(c.data); S.state = 'ready'; S.note = e.pendingQueue ? 'Есть неотправленные изменения, показаны данные на устройстве.' : 'Нет связи, показаны данные на устройстве.'; }
+        else { S.state = 'error'; S.note = e.net ? 'нет связи с базой и нет копии на устройстве' : (e.message || 'ошибка чтения'); }
+      }
+      changed();
+    };
+
+    function tx() {
+      const w = {}, j = [];
+      const T = {
+        put(table, row) {
+          row = Object.assign({}, row, { updated_at: core.now() });
+          const arr = D[TBL[table]], i = arr.findIndex(r => r.id === row.id);
+          if (row.deleted_at) { if (i >= 0) arr.splice(i, 1); } else if (i >= 0) arr[i] = row; else arr.push(row);
+          if (table === 'track_entries') reindex();
+          const out = Object.assign({}, row); delete out.user_id; delete out.updated_by; (w[table] = w[table] || {})[row.id] = out; return row;
+        },
+        log(op, kind, id, summary) { j.push({ op, module: MOD, entity_kind: kind, entity_id: id, summary }); },
+        commit() {
+          saveCache();
+          const writes = ['tracks', 'track_entries', 'track_day_notes'].filter(t => w[t]).map(t => ({ table: t, rows: Object.keys(w[t]).map(k => w[t][k]) }));
+          try { core.commit({ writes, journal: j }); } catch (e) { S.note = 'Не сохранено: ' + (e.message || e); }
+          changed();
+        }
+      };
+      return T;
+    }
+    const tr = (t, o) => Object.assign({ id: t.id, name: t.name, kind: t.kind, unit: t.unit, status: t.status, created: t.created, started: t.started || null, acked: t.acked || null, need: t.need || '', released: t.released || null,
+      threshold_mode: t.threshold_mode || 'none', threshold_value: t.threshold_value || 0, show_days_since: !!t.show_days_since, baseline_last: t.baseline_last || null, sort_order: t.sort_order || 0, summary_mode: t.summary_mode || 'auto', deleted_at: null }, o || {});
+    const er = (e, o) => Object.assign({ id: e.id, track_id: e.track_id, day: e.day, value: e.value, deleted_at: null }, o || {});
+    const nr = (n, o) => Object.assign({ id: n.id, track_id: n.track_id, day: n.day, note: n.note, deleted_at: null }, o || {});
+    let seq = 0; const newId = p => p + Date.now().toString(36) + (seq++).toString(36);
+    const nextSort = kind => D.tracks.filter(t => M.groupOf(t) === M.groupOf({ kind })).reduce((a, t) => Math.max(a, t.sort_order || 0), -1) + 1;
+
+    S.addTrack = function (name, kind, unit, status) {
+      name = String(name || '').trim(); if (!name) return { ok: false, msg: 'Введите название' }; if (name.length > 80) return { ok: false, msg: 'Название длиннее 80 знаков' };
+      kind = M.KIND[kind] ? kind : 'habit'; const money = kind !== 'habit', st = money ? 'cur' : (status === 'new' ? 'new' : 'wish'), now = today();
+      const t = tr({ id: 'h' + Date.now(), name, kind, unit: money ? 'тыс. ₸' : String(unit || '').trim().slice(0, 20), status: st, created: now, started: st === 'new' ? now : null, sort_order: nextSort(kind) });
+      const T = tx(); T.put('tracks', t); T.log('create', 'track', t.id, (money ? (kind === 'in' ? 'Доход' : 'Расход') : 'Трек') + ' «' + name + '», статус ' + M.STATUS[st]); T.commit(); return { ok: true, id: t.id };
+    };
+    const LBL = { name: 'название', need: 'потребность / причина', unit: 'единица', threshold_mode: 'порог: режим', threshold_value: 'порог: значение', show_days_since: 'дни с последнего события', baseline_last: 'базовая дата', summary_mode: 'последний столбец' };
+    S.editTrack = function (id, patch) {
+      const t = track(id); if (!t) return { ok: false, msg: 'Трек не найден' }; const T = tx(), next = tr(t); let any = false;
+      Object.keys(patch).forEach(k => {
+        let v = patch[k]; if (k === 'name') { v = String(v || '').trim(); if (!v) return; } if (k === 'threshold_value') v = parseFloat(String(v).replace(',', '.')) || 0; if (k === 'baseline_last') v = M.isDay(v) ? v : null;
+        if (k === 'need' || k === 'unit') v = String(v || '').trim(); if (k === 'show_days_since') v = !!v; if (k === 'summary_mode' && !M.SUMMARY[v]) return; if (k === 'threshold_mode' && !M.THR[v]) return;
+        if (!(k in next) || String(next[k] == null ? '' : next[k]) === String(v == null ? '' : v)) return;
+        next[k] = v; any = true; T.log('change', 'track', id, 'Трек «' + t.name + '»: ' + (LBL[k] || k) + (k === 'need' ? ' изменено' : ''));
+      });
+      if (any) { T.put('tracks', next); T.commit(); } return { ok: true };
+    };
+    S.setStatus = function (id, st) {
+      const t = track(id); if (!t || !M.STATUS[st] || t.status === st) return { ok: false }; const now = today();
+      const T = tx(); T.put('tracks', tr(t, { status: st, released: st === 'off' ? now : null, started: st === 'new' ? now : (t.started || null) })); T.log('change', 'track', id, 'Трек «' + t.name + '»: ' + M.STATUS[t.status] + ' → ' + M.STATUS[st]); T.commit(); return { ok: true };
+    };
+    S.keep = id => { const t = track(id); if (!t) return; const T = tx(); T.put('tracks', tr(t, { acked: today() })); T.log('change', 'track', id, 'Трек «' + t.name + '»: подтверждено «оставить»'); T.commit(); };
+    /* order — id треков в том порядке, как они показаны; двигаем внутри группы */
+    S.move = function (id, dir, order) {
+      const t = track(id); if (!t) return false; const g = M.groupOf(t), list = order.map(track).filter(x => x && M.groupOf(x) === g), k = list.findIndex(x => x.id === id), o = list[k + dir];
+      if (k < 0 || !o) return false;
+      const a = list.map(x => x.id); a.splice(k, 1); a.splice(k + dir, 0, id); const T = tx();
+      const slots = list.map(x => x.sort_order).sort((x, y) => x - y); let ch = false;
+      a.forEach((tid, n) => { const x = track(tid); let s = slots[n]; if (n > 0 && s <= slots[n - 1]) s = slots[n - 1] + 1; if (x.sort_order !== s) { T.put('tracks', tr(x, { sort_order: s })); ch = true; } });
+      if (ch) { T.log('change', 'track', id, 'Порядок строк: «' + t.name + '» ' + (dir < 0 ? 'выше' : 'ниже') + ', рядом «' + o.name + '»'); T.commit(); } return true;
+    };
+    S.deleteTrack = function (id) { const t = track(id); if (!t) return { ok: false }; const n = (S.byDay(id) && Object.keys(S.byDay(id)).length) || 0, T = tx(); T.put('tracks', tr(t, { deleted_at: iso(Date.now()) })); T.log('delete', 'track', id, 'Трек «' + t.name + '» удалён, дней с записями: ' + n); T.commit(); return { ok: true }; };
+
+    /* клетка */
+    S.setCell = function (id, day, raw, how) {
+      const t = track(id); if (!t) return { ok: false }; const p = M.parseCell(raw), es = (S.byDay(id)[day] || []).slice(), old = M.sumOf(es), u = t.unit || 'раз', T = tx(), c = id + '@' + day;
+      if (p.kind === 'bad') { T.log('error', 'cell', c, '«' + t.name + '» ' + day + ': некорректное значение, изменение отклонено'); T.commit(); return { ok: false, rejected: true, msg: 'Ожидалось число, например 5, 5,5 или +5' }; }
+      if (p.kind === 'empty') { if (!es.length) return { ok: true, same: true }; es.forEach(e => T.put('track_entries', er(e, { deleted_at: iso(Date.now()) }))); T.log('delete', 'cell', c, '«' + t.name + '» ' + day + ': ' + M.fmt(old) + ' → пусто' + (how ? ' (' + how + ')' : '')); T.commit(); return { ok: true }; }
+      if (p.kind === 'add') { T.put('track_entries', { id: newId('te'), track_id: id, day, value: p.v, deleted_at: null }); T.log(es.length ? 'change' : 'create', 'cell', c, '«' + t.name + '» ' + day + ': +' + M.fmt(p.v) + ' ' + u + ' (итого ' + M.fmt(old + p.v) + ')'); T.commit(); return { ok: true }; }
+      if (es.length && Math.abs(old - p.v) < 1e-9 && es.length === 1) return { ok: true, same: true };
+      if (es.length) { T.put('track_entries', er(es[0], { value: p.v })); es.slice(1).forEach(e => T.put('track_entries', er(e, { deleted_at: iso(Date.now()) }))); } else T.put('track_entries', { id: newId('te'), track_id: id, day, value: p.v, deleted_at: null });
+      T.log(es.length ? 'change' : 'create', 'cell', c, '«' + t.name + '» ' + day + ': ' + (es.length ? M.fmt(old) + ' → ' : 'ввод ') + M.fmt(p.v) + ' ' + u + (es.length > 1 ? ' (было записей: ' + es.length + ', объединены)' : '') + (how ? ' (' + how + ')' : '')); T.commit(); return { ok: true };
+    };
+    S.addEntry = function (id, day, raw) { // панель клетки: «Добавить» (пусто или 0 = 1, как в старой системе)
+      const t = track(id); if (!t) return { ok: false }; let v = parseFloat(String(raw).replace(',', '.')); if (!(v > 0)) v = 1;
+      const old = M.sumOf(S.byDay(id)[day] || []), T = tx(); T.put('track_entries', { id: newId('te'), track_id: id, day, value: v, deleted_at: null }); T.log(old ? 'change' : 'create', 'cell', id + '@' + day, '«' + t.name + '» ' + day + ': +' + M.fmt(v) + ' ' + (t.unit || 'раз')); T.commit(); return { ok: true };
+    };
+    S.delEntry = function (entryId) { const e = D.entries.find(x => x.id === entryId); if (!e) return; const t = track(e.track_id), T = tx(); T.put('track_entries', er(e, { deleted_at: iso(Date.now()) })); T.log('delete', 'cell', e.track_id + '@' + e.day, '«' + (t ? t.name : '?') + '» ' + e.day + ': запись ' + M.fmt(e.value) + ' удалена'); T.commit(); };
+    S.setNote = function (id, day, text) {
+      const t = track(id); if (!t) return; text = String(text || '').trim(); const cur = noteOf(id, day); if ((cur ? cur.note : '') === text) return;
+      const T = tx(), row = cur || { id: 'tn_' + id + '_' + day, track_id: id, day };
+      if (!text) { T.put('track_day_notes', nr(cur, { deleted_at: iso(Date.now()) })); T.log('delete', 'cell', id + '@' + day, '«' + t.name + '» ' + day + ': комментарий удалён'); }
+      else { T.put('track_day_notes', nr(row, { note: text })); T.log(cur ? 'change' : 'create', 'cell', id + '@' + day, '«' + t.name + '» ' + day + ': комментарий ' + (cur ? 'изменён' : 'добавлен') + ', символов ' + text.length); }
+      T.commit();
+    };
+
+    /* Перенос из выгрузки старой системы. Треки с уже существующим id пропускаются целиком (повторный перенос безопасен). */
+    S.importLegacy = async function (obj) {
+      const r = M.legacyRows(obj);
+      if (!r) return { ok: false, msg: 'В файле нет раздела треков (нужна выгрузка «Данные браузера» старой системы, в ней state.habits).' };
+      try { await S.load(); } catch (e) { /* ниже проверим состояние */ }
+      if (S.state !== 'ready' || S.note) return { ok: false, msg: 'Не удалось сверить с базой (' + (S.note || 'нет связи') + '). Перенос отложен, чтобы не перезаписать правки.' };
+      const have = new Set(D.tracks.map(t => t.id)), nt = r.tracks.filter(t => !have.has(t.id)), ids = new Set(nt.map(t => t.id));
+      /* порядок строк в группе продолжаем после уже существующих */
+      const base = [0, 1, 2].map(g => D.tracks.filter(t => M.groupOf(t) === g).reduce((a, t) => Math.max(a, t.sort_order || 0), -1) + 1);
+      nt.forEach(t => { t.sort_order += base[M.groupOf(t)]; });
+      const ne = r.entries.filter(e => ids.has(e.track_id)), nn = r.notes.filter(n => ids.has(n.track_id)), T = tx();
+      nt.forEach(t => T.put('tracks', t)); ne.forEach(e => T.put('track_entries', e)); nn.forEach(n => T.put('track_day_notes', n));
+      const text = `Перенос треков: треков ${nt.length}, значений ${ne.length}, комментариев ${nn.length}; уже были ${r.tracks.length - nt.length} из ${r.tracks.length} треков` +
+        (r.skipped.badEntry + r.skipped.badNote + r.skipped.dupTrack ? `; пропущено (значений ${r.skipped.badEntry}, комментариев ${r.skipped.badNote}, дублей треков ${r.skipped.dupTrack})` : '') + '.';
+      if (nt.length) { T.log('sys', 'import', 'tracks', text); T.commit(); } else changed();
+      try { await core.flush(); } catch (e) { /* повторится */ }
+      return { ok: true, text, added: { tracks: nt.length, entries: ne.length, notes: nn.length } };
+    };
+    return S;
+  }
+  global.LifeTracksStore = { create };
+})(window);
+
+</script>
+<script>
+/* ---- modules/tracks-card.js ---- */
+/* «Треки»: панель клетки, карточка трека, форма добавления, пул желаний, настройки и перенос (часть экрана tracks.js).
+   window.LifeTracksCard. Получает общий контекст ctx = {S, D, M, V, esc, render, core}. Своих данных не хранит, кроме состояния переноса. */
+(function (global) {
+  'use strict';
+  const imp = { text: '', info: '', busy: false, confirm: false };
+  const add = { name: '', kind: 'habit', unit: '', err: '' };
+
+  function addForm(c) {
+    const { V, esc } = c; if (!V.addOpen) return '';
+    const money = add.kind !== 'habit';
+    return `<div class="tk-gp"><div class="top"><b>Новая строка</b><button class="tk-btn sm" data-act="add-close">Закрыть</button></div><div class="tk-row"><input class="tk-in" data-f="addname" maxlength="80" placeholder="Название" value="${esc(add.name)}">` +
+      `<select class="tk-sel" data-f="addkind"><option value="habit" ${add.kind === 'habit' ? 'selected' : ''}>Трек</option><option value="in" ${add.kind === 'in' ? 'selected' : ''}>Доход</option><option value="out" ${add.kind === 'out' ? 'selected' : ''}>Расход</option></select>` +
+      (money ? '<span class="tk-mut">единица: тыс. ₸</span>' : `<input class="tk-in" data-f="addunit" maxlength="20" style="width:130px" placeholder="единица (раз)" value="${esc(add.unit)}">`) + '</div>' +
+      (add.err ? `<div class="tk-warn">${esc(add.err)}</div>` : '') + `<div class="tk-row">${money ? '<button class="tk-btn primary" data-act="add-go" data-st="cur">Добавить</button>' : '<button class="tk-btn primary" data-act="add-go" data-st="new">Сразу в работу</button><button class="tk-btn" data-act="add-go" data-st="wish">В желания</button>'}</div></div>`;
+  }
+
+  function panel(c, days) {
+    const { S, D, M, V, esc } = c, today = S.today();
+    if (V.cell && S.track(V.cell.t)) {
+      const t = S.track(V.cell.t), d = V.cell.d, es = (S.byDay(t.id)[d] || []), u = t.unit || 'раз', cm = S.noteOf(t.id, d);
+      return `<div class="tk-gp"><div class="top"><b>${esc(t.name)}</b><span class="tk-mut">${d.slice(8)}.${d.slice(5, 7)}.${d.slice(0, 4)}, ${M.weekday(d)}</span></div>` +
+        (es.length ? `<div class="tk-row">${es.map(e => `<span class="tk-ent">${M.fmt(e.value)} ${esc(u)} <button class="tk-btn sm" data-act="dele" data-id="${esc(e.id)}" title="Удалить запись">×</button></span>`).join('')}<span class="tk-mut">итого ${M.fmt(M.sumOf(es))}</span></div>` : '') +
+        `<div class="tk-row"><input class="tk-in" data-f="cmt" style="flex:1;min-width:240px" maxlength="500" placeholder="Комментарий к клетке (например: продал ноутбук)" value="${esc(cm ? cm.note : '')}"></div>` +
+        `<div class="tk-row"><input class="tk-in" data-f="addv" type="text" inputmode="decimal" style="width:90px" placeholder="1"><span class="tk-mut">${esc(u)}</span><button class="tk-btn primary" data-act="addv">Добавить</button><span class="tk-mut">Число прямо в клетке задаёт сумму дня, «+5» прибавляет к ней, пустая клетка удаляет записи дня.</span></div></div>`;
+    }
+    const t = V.card && S.track(V.card); if (!t) return '';
+    const by = S.byDay(t.id), u = t.unit || 'раз', a7 = M.periodStats(by, today, 7), a28 = M.periodStats(by, today, 28), le = M.lastEntryDay(by), st = t.status;
+    const since = k => (k ? M.daysBetween(k, today) : 0), cfg = S.cfg, money = t.kind !== 'habit';
+    const mvBtns = money ? '' : ['wish', 'new', 'cur', 'off'].filter(s => s !== st).map(s => `<button class="tk-btn sm" data-act="status" data-t="${esc(t.id)}" data-st="${s}">${{ wish: 'В желания', new: 'Новая', cur: 'Текущая', off: 'Неактивная' }[s]}</button>`).join('');
+    const opt = (map, cur) => Object.keys(map).map(k => `<option value="${k}" ${k === cur ? 'selected' : ''}>${esc(map[k])}</option>`).join('');
+    return `<div class="tk-gp"><div class="top"><input class="nm" data-f="tname" data-t="${esc(t.id)}" value="${esc(t.name)}"><span class="tk-badge">${M.STATUS[st]}${money ? ' · ' + M.KIND[t.kind].toLowerCase() : ''}</span></div>` +
+      `<div class="tk-mut">7 дней: ${M.fmt(a7.sum)} ${esc(u)}, дней с записью ${a7.days} из 7 · 28 дней: ${M.fmt(a28.sum)} ${esc(u)}, дней с записью ${a28.days} из 28${a28.days ? ', в среднем ' + M.fmt(a28.sum / a28.days) + ' на такой день' : ''}</div>` +
+      (st === 'new' && since(t.started || t.created) >= cfg.thr ? `<div class="tk-warn">В работе уже ${since(t.started || t.created)} дн. Считать текущей? <button class="tk-btn sm" data-act="status" data-t="${esc(t.id)}" data-st="cur">Да, текущая</button></div>` : '') +
+      (st === 'cur' && !money && since(le || t.created) >= 30 ? `<div class="tk-warn">Записей не было ${since(le || t.created)} дн. Сделать неактивной? <button class="tk-btn sm" data-act="status" data-t="${esc(t.id)}" data-st="off">Да, неактивная</button></div>` : '') +
+      (money ? '' : `<div class="tk-row"><input class="tk-in" data-f="tneed" data-t="${esc(t.id)}" style="flex:1;min-width:240px" placeholder="Какая потребность за этим / причина" value="${esc(t.need)}"></div>`) +
+      (money ? '' : `<div class="tk-row"><span class="tk-mut">Единица</span><input class="tk-in" data-f="tunit" data-t="${esc(t.id)}" style="width:110px" maxlength="20" value="${esc(t.unit)}"><span class="tk-mut">Порог</span><select class="tk-sel" data-f="tthm" data-t="${esc(t.id)}">${opt(M.THR, t.threshold_mode || 'none')}</select><input class="tk-in" data-f="tthv" data-t="${esc(t.id)}" style="width:80px" inputmode="decimal" value="${esc(String(t.threshold_value || 0).replace('.', ','))}"><span class="tk-mut">зелёная клетка: норма, красная: нет</span></div>`) +
+      `<div class="tk-row"><span class="tk-mut" title="Последний столбец таблицы считается по видимым клеткам этой строки">Последний столбец</span><select class="tk-sel" data-f="tsum" data-t="${esc(t.id)}">${opt(M.SUMMARY, t.summary_mode || 'auto')}</select></div>` +
+      (money ? '' : `<div class="tk-row"><label class="tk-mut"><input type="checkbox" data-f="tdsl" data-t="${esc(t.id)}" ${t.show_days_since ? 'checked' : ''}> Показывать дней с последнего события в клетке сегодняшнего дня</label></div>` +
+        `<div class="tk-row"><span class="tk-mut" title="Нужна только для событий, которых ещё нет в таблице">Базовая дата (вручную)</span><input class="tk-in" type="date" data-f="tlast" data-t="${esc(t.id)}" value="${esc(t.baseline_last || '')}"><span class="tk-mut">${M.lastEventDay(t, by, today) ? 'с учётом записей: ' + M.lastEventDay(t, by, today) + ', дней назад: ' + M.daysSince(t, by, today) : 'события пока нет'}</span></div>`) +
+      `<div class="tk-row">${mvBtns}<button class="tk-btn sm" data-act="deltrack" data-t="${esc(t.id)}">${V.delAsk === t.id ? 'Точно удалить?' : 'Удалить'}</button></div></div>`;
+  }
+
+  function wishes(c) {
+    const { S, D, M, V, esc } = c, today = S.today(), ws = D.tracks.filter(t => t.status === 'wish'), u = D.tracks.filter(t => t.status === 'new' && t.kind === 'habit').length, cap = S.cfg.cap;
+    let h = `<div class="tk-row"><div class="tk-dots">${Array.from({ length: Math.max(cap, u) }, (_, i) => `<i class="${i < u ? 'f' : ''}"></i>`).join('')}</div><span class="tk-mut">Слоты для новых: занято ${u} из ${cap}${u > cap ? ' <b style="color:#b3261e">больше лимита</b>' : ''}</span>` +
+      (ws.length ? `<button class="tk-btn sm" data-act="wishtog">${V.wishOpen ? '▾' : '▸'} Пул желаний (${ws.length})</button>` : '') + '</div>';
+    if (ws.length && V.wishOpen) ws.forEach(t => {
+      const d = M.dormantDays(t, S.byDay(t.id), today), sl = d >= S.cfg.sl;
+      h += `<div class="tk-gp"><div class="top"><input class="nm" data-f="tname" data-t="${esc(t.id)}" value="${esc(t.name)}"><span class="tk-badge">желание</span></div><div class="tk-mut">Записано ${M.daysBetween(t.created, today)} дн. назад</div>` +
+        (sl ? `<div class="tk-warn">Спит ${d} дн. Какая потребность за этим? Оставить, переформулировать (имя можно править) или отпустить.</div>` : '') +
+        `<div class="tk-row"><input class="tk-in" data-f="tneed" data-t="${esc(t.id)}" style="flex:1;min-width:240px" placeholder="Какая потребность за этим" value="${esc(t.need)}"></div>` +
+        `<div class="tk-row"><button class="tk-btn sm" data-act="status" data-t="${esc(t.id)}" data-st="new">В работу</button><button class="tk-btn sm" data-act="status" data-t="${esc(t.id)}" data-st="off">Отпустить</button>${sl ? `<button class="tk-btn sm" data-act="keep" data-t="${esc(t.id)}">Оставить</button>` : ''}</div></div>`;
+    });
+    return h;
+  }
+
+  function settings(c) {
+    const { S, esc } = c, cfg = S.cfg;
+    return `<details class="tk-det"><summary>Настройки и перенос из старой системы</summary>` +
+      `<div class="tk-row"><span class="tk-mut">Слотов для новых треков</span><input class="tk-in" data-f="cfg" data-k="cap" style="width:70px" inputmode="numeric" value="${cfg.cap}"><span class="tk-mut">Желание «спит» с, дней</span><input class="tk-in" data-f="cfg" data-k="sl" style="width:70px" inputmode="numeric" value="${cfg.sl}"><span class="tk-mut">«Считать текущей» после, дней</span><input class="tk-in" data-f="cfg" data-k="thr" style="width:70px" inputmode="numeric" value="${cfg.thr}"></div>` +
+      `<div class="tk-mut">Эти три числа хранятся на этом устройстве.</div>` +
+      `<div class="tk-row"><span class="tk-mut">Вставьте файл «Данные браузера» (JSON) или выберите его. Треки, которые уже есть в базе (по номеру), не перезаписываются, повторный перенос безопасен.</span></div>` +
+      `<div class="tk-row"><input type="file" accept=".json,application/json" data-f="impfile"></div><textarea class="tk-ta" data-f="imp" style="min-height:70px" placeholder="JSON выгрузки">${esc(imp.text)}</textarea>` +
+      `<div class="tk-row"><button class="tk-btn" data-act="imp-go" ${imp.busy ? 'disabled' : ''}>${imp.confirm ? 'Точно перенести?' : 'Перенести'}</button></div><div class="tk-mut" role="status" data-f="impinfo">${esc(imp.info)}</div></details>`;
+  }
+
+  function onInput(c, ev) {
+    const f = ev.target.dataset && ev.target.dataset.f;
+    if (f === 'imp') { imp.text = ev.target.value; imp.confirm = false; } else if (f === 'addname') add.name = ev.target.value; else if (f === 'addunit') add.unit = ev.target.value;
+  }
+  function onChange(c, ev) {
+    const { S, V, M } = c, i = ev.target, f = i.dataset && i.dataset.f, t = i.dataset && i.dataset.t; if (!f) return;
+    if (f === 'cmt' && V.cell) S.setNote(V.cell.t, V.cell.d, i.value);
+    else if (f === 'tname') S.editTrack(t, { name: i.value }); else if (f === 'tneed') S.editTrack(t, { need: i.value }); else if (f === 'tunit') S.editTrack(t, { unit: i.value });
+    else if (f === 'tthm') S.editTrack(t, { threshold_mode: i.value }); else if (f === 'tthv') S.editTrack(t, { threshold_value: i.value }); else if (f === 'tsum') S.editTrack(t, { summary_mode: i.value });
+    else if (f === 'tdsl') S.editTrack(t, { show_days_since: i.checked }); else if (f === 'tlast') S.editTrack(t, { baseline_last: i.value });
+    else if (f === 'cfg') { if (!S.setCfg(i.dataset.k, i.value)) c.render(); }
+    else if (f === 'addkind') { add.kind = i.value; c.render(); }
+    else if (f === 'impfile') { const file = i.files && i.files[0]; if (!file) return; const r = new FileReader(); r.onload = () => { imp.text = String(r.result || ''); imp.confirm = false; imp.info = 'Файл прочитан (' + Math.round(imp.text.length / 1024) + ' КБ). Нажмите «Перенести».'; c.render(); const d = document.querySelector('.tk-det'); if (d) d.open = true; }; r.readAsText(file); }
+  }
+  async function onClick(c, t, a, ev) {
+    const { S, V, M, render } = c, id = t.dataset.t;
+    if (a === 'add-open') { V.addOpen = !V.addOpen; render(); return; }
+    if (a === 'add-close') { V.addOpen = false; render(); return; }
+    if (a === 'add-go') { const r = S.addTrack(add.name, add.kind, add.unit, t.dataset.st); if (!r.ok) { add.err = r.msg; render(); return; } add.name = ''; add.unit = ''; add.err = ''; V.addOpen = false; V.card = null; if (t.dataset.st === 'wish') V.wishOpen = true; render(); return; }
+    if (a === 'dele') { S.delEntry(t.dataset.id); return; }
+    if (a === 'addv') { const i = document.querySelector('[data-f=addv]'); if (V.cell) S.addEntry(V.cell.t, V.cell.d, i ? i.value : ''); return; }
+    if (a === 'status') { S.setStatus(id, t.dataset.st); if (t.dataset.st === 'off' || t.dataset.st === 'wish') V.card = V.card === id ? V.card : V.card; render(); return; }
+    if (a === 'keep') { S.keep(id); return; }
+    if (a === 'wishtog') { V.wishOpen = !V.wishOpen; render(); return; }
+    if (a === 'deltrack') { if (V.delAsk !== id) { V.delAsk = id; render(); return; } S.deleteTrack(id); V.delAsk = null; V.card = null; render(); return; }
+    if (a === 'imp-go') {
+      let obj = null; try { obj = JSON.parse(imp.text.trim()); } catch (e) { /* ниже скажем */ }
+      const r = obj && M.legacyRows(obj);
+      if (!r) { imp.info = 'Не узнал файл: нужна выгрузка «Данные браузера» старой системы (в ней state.habits).'; imp.confirm = false; render(); return; }
+      if (!imp.confirm) { imp.confirm = true; imp.info = `В файле: треков ${r.tracks.length}, значений ${r.entries.length}, комментариев ${r.notes.length}. Нажмите ещё раз.`; render(); const d = document.querySelector('.tk-det'); if (d) d.open = true; return; }
+      imp.confirm = false; imp.busy = true; imp.info = 'Перенос…'; render();
+      try { const res = await S.importLegacy(obj); imp.info = res.ok ? res.text : res.msg; if (res.ok) imp.text = ''; } catch (e) { imp.info = 'Не удалось: ' + (e.message || e); }
+      imp.busy = false; render(); const d = document.querySelector('.tk-det'); if (d) d.open = true;
+    }
+  }
+  global.LifeTracksCard = { addForm, panel, wishes, settings, onInput, onChange, onClick };
+})(window);
+
+</script>
+<script>
+/* ---- modules/tracks.js ---- */
+/* «Треки» (компьютер): экран. Данные и действия — tracks-store.js, расчёты — tracks-model.js, стили — tracks-css.js, карточка трека,
+   желания, добавление, настройки и перенос — tracks-card.js. Точка входа: LifeModules.tracks.mount(элемент, {core, onAuthLost}) → {unmount, reload}.
+   Таблица: даты по горизонтали (14 или 28 дней, листаем неделями), строки: Треки, Доходы, Расходы; в последнем столбце расчёт по видимым клеткам
+   (сумма, среднее и др. на выбор для каждой строки); клетка: число задаёт сумму дня, «+число» прибавляет, пусто удаляет; у клетки есть комментарий. */
+(function (global) {
+  'use strict';
+  const M = global.LifeTracksModel;
+  global.LifeModules = global.LifeModules || {};
+  const UI_KEY = 'lifeerp-tracks-ui';
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  function mount(el, ctxIn) {
+    ctxIn = ctxIn || {};
+    const core = ctxIn.core || global.LifeCore, TZ = core.TZ, S = global.LifeTracksStore.create(core), D = S.D;
+    if (!document.getElementById('tk-css')) { const s = document.createElement('style'); s.id = 'tk-css'; s.textContent = global.LifeTracksCss; document.head.appendChild(s); }
+    const u0 = core.store.get(UI_KEY, null) || {};
+    const V = { n: u0.n === 28 ? 28 : 14, off: 0, showOff: false, onlyMoney: false, onlyTr: false, cell: null, card: null, wishOpen: !!u0.wishOpen, delAsk: null, addOpen: false };
+    const saveUi = () => core.store.set(UI_KEY, { n: V.n, wishOpen: V.wishOpen });
+    const ctx = { S, D, M, V, core, TZ, esc, render: () => render(), alive: () => alive };
+    let alive = true, focusNext = null;
+    el.innerHTML = '<div class="tk-app"></div>'; const root = el.firstChild;
+    const fmtDM = k => k.slice(8) + '.' + k.slice(5, 7);
+    const colorOf = t => (t.kind === 'in' ? 'var(--cin)' : t.kind === 'out' ? 'var(--cout)' : t.status === 'new' ? 'var(--cn)' : t.status === 'off' ? 'var(--co)' : 'var(--cc)');
+
+    function rowsList() {
+      return D.tracks.filter(t => (t.status === 'new' || t.status === 'cur' || (V.showOff && t.status === 'off')) && (!V.onlyMoney || t.kind !== 'habit') && (!V.onlyTr || t.kind === 'habit'))
+        .sort((a, b) => M.groupOf(a) - M.groupOf(b) || (a.sort_order || 0) - (b.sort_order || 0) || (a.created < b.created ? -1 : 1));
+    }
+    ctx.rows = rowsList;
+
+    function render() {
+      if (!alive) return;
+      const today = S.today(), offs = []; for (let o = V.n - 1 + V.off; o >= V.off; o--) offs.push(o);
+      const days = offs.map(o => M.shiftDay(today, -o)), rows = rowsList(), nOff = D.tracks.filter(t => t.status === 'off').length;
+      const noteBad = S.state === 'error' || /Нет связи|неотправленные/.test(S.note);
+      const tk = kind => M.round1(D.tracks.filter(t => t.kind === kind).reduce((a, t) => a + days.reduce((b, d) => b + M.sumOf(S.byDay(t.id)[d] || []), 0), 0));
+      let h = `<div class="tk-bar"><span class="tk-note ${noteBad ? 'warn' : ''}" role="status">${S.state === 'loading' ? 'Загрузка…' : esc(S.note)}</span><button class="tk-btn" data-act="reload">Обновить</button></div>`;
+      if (S.state === 'error' && !D.tracks.length) h += `<div class="tk-empty">${esc(S.note)}</div>`;
+      else {
+        h += `<div class="tk-row"><button class="tk-btn sm" data-act="nav" data-n="7">‹ неделя</button><span class="tk-mut">${fmtDM(days[0])} – ${fmtDM(days[days.length - 1])}</span><button class="tk-btn sm" data-act="nav" data-n="-7" ${V.off ? '' : 'disabled'}>неделя ›</button><span style="flex:1"></span>` +
+          `<button class="tk-btn sm ${V.showOff ? 'on' : ''}" data-act="showoff">Неактивные (${nOff})</button><button class="tk-btn sm ${V.onlyMoney ? 'on' : ''}" data-act="onlymoney">Только деньги</button><button class="tk-btn sm ${V.onlyTr ? 'on' : ''}" data-act="onlytr">Только треки</button>` +
+          `<button class="tk-btn sm ${V.n === 14 ? 'on' : ''}" data-act="span" data-n="14">14 дн.</button><button class="tk-btn sm ${V.n === 28 ? 'on' : ''}" data-act="span" data-n="28">28 дн.</button><button class="tk-btn primary sm" data-act="add-open">+ Добавить</button></div>`;
+        h += global.LifeTracksCard.addForm(ctx);
+        h += `<div class="tk-gw"><table class="tk-g"><tr><th class="nmc"></th>${days.map((d, j) => `<th class="${offs[j] === 0 ? 'td' : ''}">${d.slice(8)}<br><span class="tk-mut" style="${offs[j] === 0 ? 'color:#fff;opacity:.85' : ''}">${M.weekday(d)}</span></th>`).join('')}<th>Итог</th></tr>`;
+        let lg = -1;
+        rows.forEach(t => {
+          const g = M.groupOf(t);
+          if (g !== lg) { lg = g; h += `<tr class="gh"><td colspan="${days.length + 2}">${M.GROUPS[g]}${g === 1 ? ` <span style="color:var(--cin);font-weight:400;font-size:12px">${M.fmt(tk('in'))}</span>` : g === 2 ? ` <span style="color:var(--cout);font-weight:400;font-size:12px">${M.fmt(tk('out'))}</span>` : ''}</td></tr>`; }
+          const by = S.byDay(t.id), sums = days.map(d => (by[d] ? M.sumOf(by[d]) : null)), mx = Math.max(0, ...sums.filter(x => x != null)), col = colorOf(t), sm = M.summarize(t.summary_mode, days.map((d, j) => ({ day: d, sum: sums[j] })));
+          const thr = t.kind === 'habit' && t.threshold_mode && t.threshold_mode !== 'none' ? t : null, ds = t.show_days_since ? M.daysSince(t, by, today) : null;
+          h += `<tr><td class="nmc ${V.card === t.id ? 'sel' : ''}" data-act="card" data-t="${esc(t.id)}" title="${esc(t.name)}">${t.kind === 'habit' ? `<span class="tk-sq" style="background:${col}"></span>` : t.kind === 'in' ? '＋ ' : '− '}<b>${esc(t.name)}</b>${t.kind === 'habit' ? ` <span class="tk-mut">${esc(t.unit || 'раз')}</span>` : ''}<span class="tk-ar"><a data-act="mv" data-t="${esc(t.id)}" data-d="-1">▲</a><a data-act="mv" data-t="${esc(t.id)}" data-d="1">▼</a></span></td>`;
+          days.forEach((d, j) => {
+            const s = sums[j], has = s != null, cm = S.noteOf(t.id, d), on = V.cell && V.cell.t === t.id && V.cell.d === d; let bg = '';
+            if (has) { if (thr) bg = `color-mix(in srgb,${M.okThreshold(thr.threshold_mode, thr.threshold_value, s) ? 'var(--ok)' : 'var(--bad)'} 55%,transparent)`; else if (s > 0) bg = `color-mix(in srgb,${col} ${Math.round(25 + s / (mx || 1) * 65)}%,transparent)`; }
+            const ph = !has && ds != null && offs[j] === 0 ? ` placeholder="${ds}"` : '';
+            h += `<td class="tk-c ${on ? 'cs' : ''} ${cm ? 'hcm' : ''}" ${cm ? `title="${esc(cm.note)}"` : ''} ${bg ? `style="background:${bg}"` : ''}><input class="tk-ci" id="c_${esc(t.id)}_${d}" data-t="${esc(t.id)}" data-d="${d}" value="${has ? M.fmt(s) : ''}"${ph} inputmode="decimal" autocomplete="off"></td>`;
+          });
+          h += `<td class="tk-sg" title="${esc(M.SUMMARY[t.summary_mode || 'auto'])}">${sm.text ? `${sm.mode === 'sum' ? '' : `<small>${M.SUMMARY_SIGN[sm.mode]}</small>`}${sm.text}` : ''}</td></tr>`;
+        });
+        h += '</table></div>';
+        if (!rows.length) h += '<div class="tk-empty">В таблице пока пусто. Нажмите «+ Добавить» или включите «Неактивные».</div>';
+        h += global.LifeTracksCard.panel(ctx, days);
+        h += global.LifeTracksCard.wishes(ctx) + global.LifeTracksCard.settings(ctx);
+      }
+      const keep = window.scrollY, fx = focusNext; focusNext = null;
+      const ae = document.activeElement, hadFocus = ae && ae.classList && ae.classList.contains('tk-ci') ? ae.id : null;
+      root.innerHTML = h; window.scrollTo(0, keep);
+      const want = fx || hadFocus; if (want) { const n = root.querySelector('[id="' + want + '"]'); if (n) { n.focus(); n.select(); } }
+    }
+
+    /* перерисовка отложенно и не посреди нажатия мыши: иначе клик по строке, с которого ушёл фокус из клетки, теряется (элемент успевают заменить) */
+    let rt = 0, down = false, pending = false;
+    const sched = () => { clearTimeout(rt); rt = setTimeout(() => { if (down) { pending = true; return; } pending = false; render(); }, 0); };
+    const md = () => { down = true; }, mu = () => { down = false; if (pending) sched(); };
+    document.addEventListener('mousedown', md, true); document.addEventListener('mouseup', mu, true);
+    S.onChange = () => { if (alive) sched(); }; /* отложенно: иначе перерисовка отнимает фокус у соседней клетки */
+    const dayOf = o => M.shiftDay(S.today(), -o);
+    root.addEventListener('focusin', ev => {
+      const i = ev.target; if (!i.classList || !i.classList.contains('tk-ci')) return; i.select();
+      if (V.cell && V.cell.t === i.dataset.t && V.cell.d === i.dataset.d) return;
+      V.cell = { t: i.dataset.t, d: i.dataset.d }; V.card = null; const was = i.id; focusNext = was; render();
+    });
+    function commit(i, how) { const r = S.setCell(i.dataset.t, i.dataset.d, i.value, how); if (r && r.rejected) { global.alert && 0; } return r; }
+    root.addEventListener('keydown', ev => {
+      const i = ev.target; if (i.dataset && i.dataset.f === 'addv' && ev.key === 'Enter') { ev.preventDefault(); const b = root.querySelector('[data-act=addv]'); if (b) b.click(); return; }
+      if (!i.classList || !i.classList.contains('tk-ci')) return;
+      if (ev.key === 'Escape') { i.value = i.defaultValue; i.blur(); return; }
+      if (ev.key !== 'Enter') return; ev.preventDefault(); i.dataset.done = '1';
+      const t = i.dataset.t, d = i.dataset.d, rows = rowsList().map(x => x.id), k = rows.indexOf(t); let nt = t, nd = d;
+      if (ev.shiftKey) { if (k >= 0 && k < rows.length - 1) nt = rows[k + 1]; } else if (d < S.today()) nd = M.shiftDay(d, 1);
+      const r = commit(i, ev.shiftKey ? 'Shift+Enter' : 'Enter'); focusNext = 'c_' + nt + '_' + nd; V.cell = { t: nt, d: nd }; V.card = null;
+      if (!r || r.same || r.rejected) render();
+    });
+    root.addEventListener('change', ev => {
+      const i = ev.target; if (i.classList && i.classList.contains('tk-ci')) { if (i.dataset.done) { delete i.dataset.done; return; } commit(i, 'потеря фокуса'); return; }
+      global.LifeTracksCard.onChange(ctx, ev);
+    });
+    root.addEventListener('input', ev => { const i = ev.target; if (i.classList && i.classList.contains('tk-ci')) { const v = i.value.replace(/\./g, ',').replace(/[^0-9,+]/g, ''); if (v !== i.value) i.value = v; return; } global.LifeTracksCard.onInput(ctx, ev); });
+    root.addEventListener('click', async ev => {
+      const t = ev.target.closest('[data-act]'); if (!t) return; const a = t.dataset.act;
+      if (a === 'nav') { V.off = Math.max(0, V.off + +t.dataset.n); render(); return; }
+      if (a === 'span') { V.n = +t.dataset.n; saveUi(); render(); return; }
+      if (a === 'showoff') { V.showOff = !V.showOff; render(); return; }
+      if (a === 'onlymoney') { V.onlyMoney = !V.onlyMoney; if (V.onlyMoney) V.onlyTr = false; render(); return; }
+      if (a === 'onlytr') { V.onlyTr = !V.onlyTr; if (V.onlyTr) V.onlyMoney = false; render(); return; }
+      if (a === 'reload') { S.load(); return; }
+      if (a === 'mv') { ev.stopPropagation(); S.move(t.dataset.t, +t.dataset.d, rowsList().map(x => x.id)); render(); return; }
+      if (a === 'card') { focusNext = null; V.card = V.card === t.dataset.t ? null : t.dataset.t; V.cell = null; V.delAsk = null; render(); return; }
+      await global.LifeTracksCard.onClick(ctx, t, a, ev);
+    });
+    const poll0 = 0; const poll = setInterval(() => { if (S.authLost && ctxIn.onAuthLost) { S.authLost = false; ctxIn.onAuthLost(); } }, 800);
+    render(); S.load();
+    return { reload: () => S.load(), unmount() { alive = false; clearInterval(poll); clearTimeout(rt); document.removeEventListener('mousedown', md, true); document.removeEventListener('mouseup', mu, true); S.onChange = null; el.innerHTML = ''; } };
+  }
+  global.LifeModules.tracks = { mount };
+})(window);
+
+</script>
+<script>
 /* ---- shell/shell.js ---- */
 /* Оболочка (компьютер): верхняя панель, вкладки модулей, переключатель «чьи данные», индикатор очереди записи.
    Старая система подключается как есть, в окне внутри страницы (файл life-system.html рядом).
@@ -2311,6 +2818,7 @@ body{margin:0;background:#f2f2f2}
     const modules = [
       { id: 'things', title: 'Вещицы', mount: (box, ctx) => global.LifeModules.things.mount(box, ctx) },
       { id: 'spheres', title: 'Сферы и дела', mount: (box, ctx) => global.LifeModules.spheres.mount(box, ctx) },
+      { id: 'tracks', title: 'Треки', mount: (box, ctx) => global.LifeModules.tracks.mount(box, ctx) },
       { id: 'diary', title: 'Дневник', mount: (box, ctx) => global.LifeModules.diary.mount(box, ctx) },
       { id: 'legacy', title: 'Состояние, дневник (старая система)', own: true, mount(box) {
         const f = document.createElement('iframe'); f.src = 'life-system.html'; f.title = 'Старая система'; box.appendChild(f);
