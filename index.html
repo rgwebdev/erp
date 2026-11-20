@@ -2821,6 +2821,427 @@ input.tk-ci:focus{outline:none;background:rgba(255,255,255,.7)}input.tk-ci::plac
 
 </script>
 <script>
+/* ---- modules/plan-model.js ---- */
+/* «Моделирование»: чистые расчёты (без экрана и базы). window.LifePlanModel.
+   Каталог активностей (часы, цвет, статьи расходов с группами, тыс. ₸), план года по календарным неделям (с понедельника,
+   края года неполные, до 4 слотов в неделе, множители денег ×1,5 и ×2; время не умножается). */
+(function (global) {
+  'use strict';
+  const MONTHS = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+  const MULTS = [1, 1.5, 2];
+  const r1 = x => Math.round(x * 10) / 10;
+  const f2 = x => String(x).padStart(2, '0');
+  const fmt = x => String(r1(x)).replace('.', ',');
+  const isColor = c => /^#[0-9a-f]{6}$/i.test(c || '');
+  function hx(h, s, l) { s /= 100; l /= 100; const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l), f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1))); return '#' + [f(0), f(8), f(4)].map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join(''); }
+  const PALETTE = (() => { const o = []; [74, 56, 38].forEach(l => { for (let h = 0; h < 360; h += 30) o.push(hx(h, 66, l)); }); return o; })();
+
+  /* блоки (недели) года: [{n, start, end, len, month}]; month — месяц с наибольшим числом дней блока */
+  function blocks(year) {
+    const out = [], end = Date.UTC(year, 11, 31); let cur = Date.UTC(year, 0, 1);
+    const day = ms => { const d = new Date(ms); return d.getUTCFullYear() + '-' + f2(d.getUTCMonth() + 1) + '-' + f2(d.getUTCDate()); };
+    while (cur <= end) {
+      const dow = (new Date(cur).getUTCDay() + 6) % 7; let e = cur + (6 - dow) * 864e5; if (e > end) e = end;
+      const len = Math.round((e - cur) / 864e5) + 1, cnt = new Array(12).fill(0);
+      for (let k = 0; k < len; k++) cnt[new Date(cur + k * 864e5).getUTCMonth()]++;
+      out.push({ n: out.length + 1, start: day(cur), end: day(e), len, month: cnt.indexOf(Math.max.apply(null, cnt)) });
+      cur = e + 864e5;
+    }
+    return out;
+  }
+  const dm = d => d.slice(8) + '.' + d.slice(5, 7);
+  const actCost = items => items.reduce((a, p) => a + (+p.price || 0), 0);
+  /* группы статей в порядке появления; '' = без группы */
+  function groupsOf(items) { const gs = []; items.forEach(p => { const g = p.grp || ''; if (gs.indexOf(g) < 0) gs.push(g); }); return gs; }
+
+  /* итоги года. acts: [{id,hours}], itemsBy: {actId: [items]}, slots: [{block,slot,activity_id,multiplier}] */
+  function totals(year, acts, itemsBy, slots) {
+    const bl = blocks(year), byId = {}; acts.forEach(a => { byId[a.id] = a; });
+    const weeks = bl.map(b => ({ cost: 0, hours: 0 })), mo = Array.from({ length: 12 }, () => ({ cost: 0, hours: 0 }));
+    let cost = 0, hours = 0;
+    slots.forEach(s => {
+      const a = byId[s.activity_id], w = weeks[s.block - 1]; if (!a || !w) return;
+      const c = actCost(itemsBy[a.id] || []) * (+s.multiplier || 1), h = +a.hours || 0, m = bl[s.block - 1].month;
+      w.cost += c; w.hours += h; mo[m].cost += c; mo[m].hours += h; cost += c; hours += h;
+    });
+    const days = Math.round((Date.UTC(year, 11, 31) - Date.UTC(year, 0, 1)) / 864e5) + 1;
+    return { blocks: bl, weeks, months: mo, cost, hours, perWeekCost: cost / (days / 7), perWeekHours: hours / (days / 7) };
+  }
+
+  /* строки для базы из выгрузки «Данные браузера» старой системы (state.acts, state.plan, state.planM) */
+  function legacyRows(obj) {
+    const st = obj && obj.state && Array.isArray(obj.state.acts) ? obj.state : (obj && Array.isArray(obj.acts) ? obj : null);
+    if (!st) return null;
+    const acts = [], items = [], slots = [], skipped = { dupAct: 0, badSlot: 0 }, seen = new Set();
+    st.acts.forEach((a, i) => {
+      if (!a || !a.id || seen.has(a.id)) { skipped.dupAct++; return; } seen.add(a.id);
+      acts.push({ id: String(a.id), name: String(a.name || 'Без названия').slice(0, 80), hours: Math.max(0, +a.t || 0), color: isColor(a.c) ? a.c : null, note: String(a.x || ''), sort_order: i, deleted_at: null });
+      (a.parts || []).forEach((p, j) => items.push({ id: 'ci_' + a.id + '_' + (j + 1), activity_id: String(a.id), grp: String(p.g || ''), name: String(p.n || ''), price: Math.max(0, +p.p || 0), sort_order: j, deleted_at: null }));
+    });
+    const plan = st.plan || {}, pm = st.planM || {};
+    Object.keys(plan).forEach(y => Object.keys(plan[y] || {}).forEach(b => {
+      const arr = plan[y][b] || [], mm = (pm[y] || {})[b] || [];
+      for (let k = 0; k < 4; k++) {
+        const id = arr[k] || null, mu = +mm[k] || 0, year = +y, block = +b;
+        if (!id && !mu) continue;
+        if (!(year >= 2000 && year <= 2100) || !(block >= 1 && block <= 54)) { skipped.badSlot++; continue; }
+        slots.push({ id: 'ps_' + year + '_' + block + '_' + (k + 1), year, block, slot: k + 1, activity_id: id && seen.has(id) ? id : null, multiplier: MULTS.indexOf(mu) >= 0 ? mu : 1 });
+      }
+    }));
+    return { acts, items, slots, skipped };
+  }
+
+  global.LifePlanModel = { MONTHS, MULTS, PALETTE, r1, fmt, isColor, blocks, dm, actCost, groupsOf, totals, legacyRows };
+})(window);
+
+</script>
+<script>
+/* ---- modules/plan-css.js ---- */
+/* «Моделирование»: стили (светлая оболочка компьютера). window.LifePlanCss */
+window.LifePlanCss = `
+.pl-app{--line:#d6d6d6;font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#404040;padding:14px;max-width:1180px}
+.pl-app *{box-sizing:border-box}.pl-app button{font:inherit;color:inherit;cursor:pointer}
+.pl-bar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.pl-note{flex:1;font-size:12px;opacity:.75;min-width:120px}.pl-note.warn{color:#b3261e;opacity:1}
+.pl-btn{border:1px solid #c9c9c9;background:#fff;border-radius:6px;padding:5px 10px}.pl-btn:hover{background:#efefef}
+.pl-btn.primary{background:#404040;border-color:#404040;color:#fff}.pl-btn.sm{font-size:12px;padding:2px 8px}.pl-btn:disabled{opacity:.5;cursor:default}
+.pl-mut{font-size:12px;opacity:.7}
+.pl-in,.pl-sel,.pl-ta{border:1px solid #c9c9c9;border-radius:6px;padding:5px 8px;font:inherit;background:#fff;min-width:0}
+.pl-ta{width:100%;min-height:60px;resize:vertical}
+.pl-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}.pl-row .pl-in.fl{flex:1;min-width:140px}
+.pl-ag{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px;margin:8px 0}
+.pl-at{border:1px solid var(--line);border-radius:6px;background:#fff;padding:5px 8px;cursor:pointer;display:flex;flex-direction:column;gap:1px}
+.pl-at:hover{background:#f4f4f4}.pl-at span{font-size:12px;opacity:.75}
+.pl-card{grid-column:1/-1;background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.pl-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.pl-top .pl-in{flex:1;min-width:160px;font-weight:600}
+.pl-badge{font-size:12px;border:1px solid #c9c9c9;border-radius:8px;padding:0 8px;white-space:nowrap}
+.pl-sw{display:flex;gap:5px;flex-wrap:wrap;margin:6px 0}.pl-sw i{width:22px;height:22px;border-radius:50%;border:2px solid transparent;cursor:pointer}.pl-sw i.on{border-color:#222}
+.pl-sw i.none{background:#fff;border:1px dashed #999;text-align:center;line-height:18px;font-style:normal;font-size:12px}
+.pl-g{margin-top:8px;font-weight:600}
+.pl-yr{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0 4px}
+.pl-mg{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px;margin-top:8px}
+.pl-wb{border:1px solid var(--line);border-radius:6px;background:#fff;padding:5px 6px;display:flex;flex-direction:column;gap:3px}
+.pl-wb.fl{background:#fbfbf7}.pl-wh{display:flex;justify-content:space-between;font-size:12px}
+.pl-strip{display:flex;gap:2px;height:5px}.pl-strip i{flex:1;border-radius:2px}
+.pl-sr{display:flex;gap:3px;align-items:center}.pl-sr select{flex:1;min-width:0;font:inherit;font-size:12px;padding:2px;border:1px solid #c9c9c9;border-radius:4px;background:#fff}
+.pl-mx{font-size:11px;border:1px solid #c9c9c9;border-radius:8px;padding:0 4px;cursor:pointer;opacity:.6;white-space:nowrap}.pl-mx.on{opacity:1;background:#404040;color:#fff;border-color:#404040}
+.pl-wf{font-size:12px;opacity:.8;min-height:16px}
+.pl-det{margin-top:16px;font-size:13px}.pl-det summary{cursor:pointer;opacity:.8}
+.pl-empty{padding:24px;text-align:center;opacity:.75}
+@media (max-width:560px){.pl-app{padding:8px}}
+`;
+
+</script>
+<script>
+/* ---- modules/plan-store.js ---- */
+/* «Моделирование»: данные и действия (без экрана). LifePlanStore.create(core) → S.
+   Таблицы activities, activity_cost_items (статьи), plan_slots (слоты плана года), миграция 0010.
+   Пишется через core.commit (офлайн-очередь), строки целиком. */
+(function (global) {
+  'use strict';
+  const M = global.LifePlanModel;
+  const MOD = 'plan', CACHE = 'plan';
+  const TBL = { activities: 'acts', activity_cost_items: 'items', plan_slots: 'slots' };
+
+  function create(core) {
+    const D = { acts: [], items: [], slots: [] };
+    const S = { D, state: 'loading', note: '', loadedAt: 0, onChange: null };
+    const iso = ms => new Date(ms).toISOString();
+    const changed = () => { if (S.onChange) S.onChange(); };
+    const act = id => D.acts.find(a => a.id === id) || null; S.act = act;
+    const itemsOf = id => D.items.filter(i => i.activity_id === id).sort((a, b) => (a.sort_order - b.sort_order) || (a.id < b.id ? -1 : 1)); S.itemsOf = itemsOf;
+    S.itemsBy = () => { const o = {}; D.items.forEach(i => { (o[i.activity_id] = o[i.activity_id] || []).push(i); }); Object.keys(o).forEach(k => o[k].sort((a, b) => (a.sort_order - b.sort_order) || (a.id < b.id ? -1 : 1))); return o; };
+    S.slotsOf = year => D.slots.filter(s => s.year === year && s.activity_id);
+    S.slotAt = (year, block, slot) => D.slots.find(s => s.year === year && s.block === block && s.slot === slot) || null;
+    const slotId = (y, b, k) => 'ps_' + y + '_' + b + '_' + k;
+    const uid = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+    function apply(d) {
+      D.acts = (d.acts || []).filter(r => !r.deleted_at); const live = new Set(D.acts.map(a => a.id));
+      D.items = (d.items || []).filter(r => !r.deleted_at && live.has(r.activity_id));
+      D.slots = (d.slots || []).map(s => (s.activity_id && !live.has(s.activity_id) ? Object.assign({}, s, { activity_id: null }) : s));
+    }
+    const saveCache = () => core.cache.set(CACHE, { acts: D.acts, items: D.items, slots: D.slots });
+    S.load = async function () {
+      if (S.state !== 'ready') S.state = 'loading'; changed();
+      try { await core.flush(); } catch (e) { /* очередь повторит */ }
+      try {
+        if (core.status().pending > 0) throw Object.assign(new Error('очередь'), { pendingQueue: true });
+        const f = { filters: ['deleted_at=is.null'] };
+        const [acts, items, slots] = await Promise.all([core.select('activities', f), core.select('activity_cost_items', Object.assign({ order: 'id' }, f)), core.select('plan_slots', { order: 'id' })]);
+        apply({ acts, items, slots }); saveCache(); S.state = 'ready'; S.note = ''; S.loadedAt = Date.now();
+      } catch (e) {
+        if (e.auth) { S.state = 'error'; S.note = 'нужно войти'; S.authLost = true; changed(); return; }
+        const c = core.cache.get(CACHE);
+        if (c && (e.net || e.pendingQueue)) { apply(c.data); S.state = 'ready'; S.note = e.pendingQueue ? 'Есть неотправленные изменения, показаны данные на устройстве.' : 'Нет связи, показаны данные на устройстве.'; }
+        else { S.state = 'error'; S.note = e.net ? 'нет связи с базой и нет копии на устройстве' : (e.message || 'ошибка чтения'); }
+      }
+      changed();
+    };
+
+    function tx() {
+      const w = {}, j = [];
+      const T = {
+        put(table, row) {
+          row = Object.assign({}, row, { updated_at: core.now() });
+          const arr = D[TBL[table]], i = arr.findIndex(r => r.id === row.id);
+          if (row.deleted_at) { if (i >= 0) arr.splice(i, 1); } else if (i >= 0) arr[i] = row; else arr.push(row);
+          const out = Object.assign({}, row); delete out.user_id; delete out.updated_by; (w[table] = w[table] || {})[row.id] = out; return row;
+        },
+        log(op, kind, id, summary) { j.push({ op, module: MOD, entity_kind: kind, entity_id: id, summary }); },
+        commit() {
+          saveCache();
+          const writes = ['activities', 'activity_cost_items', 'plan_slots'].filter(t => w[t]).map(t => ({ table: t, rows: Object.keys(w[t]).map(k => w[t][k]) }));
+          try { core.commit({ writes, journal: j }); } catch (e) { S.note = 'Не сохранено: ' + (e.message || e); }
+          changed();
+        }
+      };
+      return T;
+    }
+    const ar = (a, o) => Object.assign({ id: a.id, name: a.name, hours: a.hours, color: a.color || null, note: a.note || '', sort_order: a.sort_order || 0, deleted_at: null }, o || {});
+    const ir = (i, o) => Object.assign({ id: i.id, activity_id: i.activity_id, grp: i.grp || '', name: i.name || '', price: i.price || 0, sort_order: i.sort_order || 0, deleted_at: null }, o || {});
+    const sr = (y, b, k, id, m) => ({ id: slotId(y, b, k), year: y, block: b, slot: k, activity_id: id || null, multiplier: id ? m : 1 });
+    const nz = x => { x = parseFloat(String(x).replace(',', '.')); return isFinite(x) && x >= 0 ? x : null; };
+
+    S.addAct = function (name) {
+      name = String(name || '').trim(); if (!name) return { ok: false, msg: 'Введите название активности' }; if (name.length > 80) return { ok: false, msg: 'Название длиннее 80 знаков' };
+      const a = { id: 'a' + Date.now(), name, hours: 0, color: null, note: '', sort_order: D.acts.reduce((m, x) => Math.max(m, x.sort_order || 0), -1) + 1 };
+      const T = tx(); T.put('activities', ar(a)); T.log('create', 'activity', a.id, 'Активность «' + name + '» создана'); T.commit(); return { ok: true, id: a.id };
+    };
+    S.editAct = function (id, patch) {
+      const a = act(id); if (!a) return { ok: false }; const p = {}, L = [];
+      if ('name' in patch) { const n = String(patch.name || '').trim(); if (!n || n.length > 80) return { ok: false, msg: 'Название от 1 до 80 знаков' }; if (n !== a.name) { p.name = n; L.push('название «' + a.name + '» → «' + n + '»'); } }
+      if ('hours' in patch) { const h = nz(patch.hours); if (h === null) return { ok: false, msg: 'Часы: число от 0' }; if (h !== +a.hours) { p.hours = h; L.push('часы ' + M.fmt(a.hours) + ' → ' + M.fmt(h)); } }
+      if ('color' in patch) { const c = patch.color && M.isColor(patch.color) ? patch.color : null; if (c !== (a.color || null)) { p.color = c; L.push('цвет изменён'); } }
+      if ('note' in patch) { const n = String(patch.note || ''); if (n !== (a.note || '')) { p.note = n; L.push('комментарий ' + (a.note ? (n ? 'изменён' : 'удалён') : 'добавлен') + ', символов ' + n.length); } }
+      if (!L.length) return { ok: true, same: true };
+      const T = tx(); T.put('activities', ar(a, p)); T.log('change', 'activity', id, '«' + a.name + '»: ' + L.join('; ')); T.commit(); return { ok: true };
+    };
+    S.deleteAct = function (id) {
+      const a = act(id); if (!a) return { ok: false }; const T = tx(), now = iso(Date.now());
+      const used = D.slots.filter(s => s.activity_id === id);
+      used.forEach(s => T.put('plan_slots', sr(s.year, s.block, s.slot, null, 1)));
+      itemsOf(id).forEach(i => T.put('activity_cost_items', ir(i, { deleted_at: now })));
+      T.put('activities', ar(a, { deleted_at: now })); T.log('delete', 'activity', id, 'Активность «' + a.name + '» удалена, снята с недель: ' + used.length); T.commit(); return { ok: true, cleared: used.length };
+    };
+    S.addItem = function (actId, grp) {
+      const a = act(actId); if (!a) return { ok: false }; const its = itemsOf(actId);
+      const i = { id: uid('ci_' + actId + '_'), activity_id: actId, grp: grp || '', name: '', price: 0, sort_order: its.reduce((m, x) => Math.max(m, x.sort_order || 0), -1) + 1 };
+      const T = tx(); T.put('activity_cost_items', ir(i)); T.log('create', 'item', i.id, '«' + a.name + '»: новая пустая статья' + (grp ? ' в группе «' + grp + '»' : '')); T.commit(); return { ok: true, id: i.id };
+    };
+    S.editItem = function (id, patch) {
+      const i = D.items.find(x => x.id === id); if (!i) return { ok: false }; const a = act(i.activity_id), p = {}, L = [];
+      if ('name' in patch) { const n = String(patch.name || '').trim().slice(0, 120); if (n !== i.name) { p.name = n; L.push('название «' + i.name + '» → «' + n + '»'); } }
+      if ('price' in patch) { const v = nz(patch.price); if (v === null) return { ok: false, msg: 'Цена: число от 0' }; if (v !== +i.price) { p.price = v; L.push('цена ' + M.fmt(i.price) + ' → ' + M.fmt(v)); } }
+      if ('grp' in patch) { const g = String(patch.grp || '').trim().slice(0, 80); if (g !== (i.grp || '')) { p.grp = g; L.push('группа «' + (i.grp || '') + '» → «' + g + '»'); } }
+      if (!L.length) return { ok: true, same: true };
+      const T = tx(); T.put('activity_cost_items', ir(i, p)); T.log('change', 'item', id, '«' + (a ? a.name : '?') + '», статья: ' + L.join('; ')); T.commit(); return { ok: true };
+    };
+    S.delItem = function (id) {
+      const i = D.items.find(x => x.id === id); if (!i) return { ok: false }; const a = act(i.activity_id), T = tx();
+      T.put('activity_cost_items', ir(i, { deleted_at: iso(Date.now()) })); T.log('delete', 'item', id, '«' + (a ? a.name : '?') + '»: статья «' + (i.name || 'без названия') + '» ' + M.fmt(i.price)); T.commit(); return { ok: true };
+    };
+    S.renGroup = function (actId, oldG, newG) {
+      const a = act(actId); newG = String(newG || '').trim().slice(0, 80); if (!a || newG === oldG) return { ok: false };
+      const its = itemsOf(actId).filter(i => (i.grp || '') === oldG); if (!its.length) return { ok: false };
+      const T = tx(); its.forEach(i => T.put('activity_cost_items', ir(i, { grp: newG }))); T.log('change', 'item', actId, '«' + a.name + '»: группа «' + oldG + '» → «' + (newG || 'без группы') + '»'); T.commit(); return { ok: true };
+    };
+    S.setSlot = function (year, block, slot, actId) {
+      const cur = S.slotAt(year, block, slot), o = cur && cur.activity_id ? act(cur.activity_id) : null, n = actId ? act(actId) : null;
+      if ((cur ? cur.activity_id || '' : '') === (actId || '')) return { ok: true, same: true };
+      const T = tx(); T.put('plan_slots', sr(year, block, slot, actId, cur ? cur.multiplier : 1));
+      T.log(!o ? 'create' : !n ? 'delete' : 'change', 'slot', slotId(year, block, slot), 'Неделя ' + block + ', слот ' + slot + ', ' + year + ': «' + (o ? o.name : '—') + '» → «' + (n ? n.name : '—') + '»'); T.commit(); return { ok: true };
+    };
+    S.setMul = function (year, block, slot, m) {
+      const cur = S.slotAt(year, block, slot); if (!cur || !cur.activity_id || M.MULTS.indexOf(m) < 0) return { ok: false };
+      const n = +cur.multiplier === m ? 1 : m, a = act(cur.activity_id), F = x => x === 1 ? 'без множителя' : '×' + String(x).replace('.', ',');
+      const T = tx(); T.put('plan_slots', sr(year, block, slot, cur.activity_id, n)); T.log('change', 'slot', slotId(year, block, slot), 'Неделя ' + block + ', слот ' + slot + ', ' + year + ': «' + (a ? a.name : '?') + '» ' + F(+cur.multiplier) + ' → ' + F(n)); T.commit(); return { ok: true };
+    };
+
+    /* Перенос из выгрузки старой системы. Активность из файла ищется в базе по номеру, затем по названию.
+       Найденная не меняется, если статьи и поля совпали; если нет, остаётся как в базе и попадает в отчёт.
+       opts.replace = true заменяет такие активности и слоты данными файла (старые статьи удаляются мягко).
+       opts.dry = true только считает и ничего не пишет. */
+    S.importLegacy = async function (obj, opts) {
+      opts = opts || {};
+      const r = M.legacyRows(obj);
+      if (!r) return { ok: false, msg: 'В файле нет раздела моделирования (нужна выгрузка «Данные браузера» старой системы, в ней state.acts).' };
+      try { await S.load(); } catch (e) { /* ниже проверим состояние */ }
+      if (S.state !== 'ready' || S.note) return { ok: false, msg: 'Не удалось сверить с базой (' + (S.note || 'нет связи') + '). Перенос отложен, чтобы не перезаписать правки.' };
+      const norm = x => String(x || '').trim().toLowerCase(), map = new Map(), used = new Set();
+      r.acts.forEach(fa => { const a = act(fa.id); if (a) { map.set(fa.id, a); used.add(a.id); } });
+      r.acts.forEach(fa => { if (map.has(fa.id)) return; const a = D.acts.find(x => !used.has(x.id) && norm(x.name) === norm(fa.name)); if (a) { map.set(fa.id, a); used.add(a.id); } });
+      const putA = [], putI = [], putS = [], conf = [], taken = new Set(D.items.map(i => i.id)), now = iso(Date.now());
+      let same = 0, repl = 0, newActs = 0, base = D.acts.reduce((m, x) => Math.max(m, x.sort_order || 0), -1) + 1;
+      const key = i => [i.grp || '', i.name || '', +i.price || 0].join('|'), sig = a => a.map(key).sort().join('\n');
+      const newItemId = (aid, j) => { let id = 'ci_' + aid + '_' + j, n = 0; while (taken.has(id)) id = 'ci_' + aid + '_' + j + 'f' + (++n); taken.add(id); return id; };
+      const addItems = (db, fi) => fi.forEach((it, j) => putI.push(Object.assign({}, it, { id: newItemId(db, j + 1), activity_id: db })));
+      r.acts.forEach(fa => {
+        const fi = r.items.filter(i => i.activity_id === fa.id), db = map.get(fa.id);
+        if (!db) { newActs++; map.set(fa.id, fa); putA.push(Object.assign({}, fa, { sort_order: base++ })); addItems(fa.id, fi); return; }
+        const cur = itemsOf(db.id), fieldsSame = (+db.hours === +fa.hours) && ((db.color || null) === (fa.color || null)) && (db.note || '') === (fa.note || '');
+        if (!cur.length && fi.length) { addItems(db.id, fi); repl += 0; }
+        else if (sig(cur) !== sig(fi) || !fieldsSame) {
+          if (opts.replace) {
+            putA.push(ar(db, { hours: fa.hours, color: fa.color, note: fa.note }));
+            if (sig(cur) !== sig(fi)) { cur.forEach(i => putI.push(ir(i, { deleted_at: now }))); addItems(db.id, fi); }
+            repl++;
+          } else conf.push(db.name + ': ' + (sig(cur) !== sig(fi) ? 'статьи ' + M.fmt(M.actCost(cur)) + ' в базе, ' + M.fmt(M.actCost(fi)) + ' в файле' : 'часы, цвет или комментарий другие'));
+        } else same++;
+      });
+      r.slots.forEach(fs => {
+        const dbAct = fs.activity_id ? (map.get(fs.activity_id) || null) : null, aid = dbAct ? dbAct.id : null, cur = S.slotAt(fs.year, fs.block, fs.slot);
+        if (!cur || !cur.activity_id) { if (aid || fs.multiplier !== 1) putS.push(sr(fs.year, fs.block, fs.slot, aid, fs.multiplier)); return; }
+        if (cur.activity_id === aid && +cur.multiplier === +fs.multiplier) { same++; return; }
+        if (opts.replace) { putS.push(sr(fs.year, fs.block, fs.slot, aid, fs.multiplier)); repl++; }
+        else conf.push('неделя ' + fs.block + ' ' + fs.year + ', слот ' + fs.slot + ': в базе другая активность или множитель');
+      });
+      const text = `${opts.dry ? 'В файле' : 'Перенос моделирования'}: активностей ${r.acts.length}, статей ${r.items.length}, слотов плана ${r.slots.length}. ` +
+        `Уже есть в базе ${r.acts.length - newActs} активностей (по номеру или названию), новых ${newActs}. Будет добавлено статей ${putI.filter(i => !i.deleted_at).length}, слотов ${putS.length}; совпало ${same}` +
+        (repl ? `; заменено ${repl}` : '') + (conf.length ? `; расходится ${conf.length}${opts.replace ? '' : ' (оставлено как в базе)'}: ${conf.slice(0, 6).join('; ')}${conf.length > 6 ? '…' : ''}` : '') +
+        (r.skipped.dupAct + r.skipped.badSlot ? `; пропущено (дубли активностей ${r.skipped.dupAct}, неверные слоты ${r.skipped.badSlot})` : '') + '.';
+      const stat = { acts: newActs, found: r.acts.length - newActs, items: putI.filter(i => !i.deleted_at).length, slots: putS.length, same, replaced: repl, conflicts: conf.length };
+      if (opts.dry) return { ok: true, text, plan: stat, conflicts: conf };
+      const T = tx(); putA.forEach(a => T.put('activities', a)); putI.forEach(i => T.put('activity_cost_items', i)); putS.forEach(s => T.put('plan_slots', s));
+      if (putA.length || putI.length || putS.length) { T.log('sys', 'import', 'plan', text.replace(/; расходится.*$/, '.')); T.commit(); } else changed();
+      try { await core.flush(); } catch (e) { /* повторится */ }
+      return { ok: true, text, added: stat, conflicts: conf };
+    };
+    return S;
+  }
+  global.LifePlanStore = { create };
+})(window);
+
+</script>
+<script>
+/* ---- modules/plan.js ---- */
+/* «Моделирование» (компьютер): экран. Данные и действия — plan-store.js, расчёты — plan-model.js, стили — plan-css.js.
+   Точка входа: LifePlanModules → LifeModules.plan.mount(элемент, {core, onAuthLost}) → {unmount, reload}.
+   Каталог активностей (статьи расходов с группами, часы, цвет, комментарий) и план года по календарным неделям
+   (4 слота, множители ×1,5 и ×2 для денег, итоги недели, месяца и года). */
+(function (global) {
+  'use strict';
+  const M = global.LifePlanModel;
+  global.LifeModules = global.LifeModules || {};
+  const UI_KEY = 'lifeerp-plan-ui';
+
+  function mount(el, ctxIn) {
+    ctxIn = ctxIn || {};
+    const core = ctxIn.core || global.LifeCore, S = global.LifePlanStore.create(core), D = S.D;
+    if (!document.getElementById('pl-css')) { const s = document.createElement('style'); s.id = 'pl-css'; s.textContent = global.LifePlanCss; document.head.appendChild(s); }
+    const cy = +new Intl.DateTimeFormat('en-CA', { timeZone: core.TZ, year: 'numeric' }).format(new Date());
+    const ui = (() => { const u = core.store.get(UI_KEY, null) || {}; return { open: u.open !== false, year: +u.year >= 2000 ? +u.year : cy }; })();
+    const saveUi = () => core.store.set(UI_KEY, { open: ui.open, year: ui.year });
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    let alive = true, ex = {}, closedG = {}, delAsk = null, newName = '', err = '', imp = { open: false, text: '', info: '', busy: false, confirm: false, replace: false };
+    el.innerHTML = '<div class="pl-app"></div>'; const root = el.firstChild;
+    const num = v => String(v == null ? 0 : v);
+
+    function actCard(a) {
+      const its = S.itemsOf(a.id), gs = M.groupsOf(its), named = gs.filter(g => g !== ''), cc = a.color || '';
+      let h = `<div class="pl-card" style="${cc ? 'border-left:8px solid ' + cc : ''}"><div class="pl-top"><input class="pl-in" data-f="aname" data-id="${esc(a.id)}" value="${esc(a.name)}" maxlength="80"><span class="pl-badge">${M.fmt(M.actCost(its))} тыс. ₸ · ${M.fmt(a.hours)} ч</span></div>`;
+      h += `<div class="pl-sw">${M.PALETTE.map(p => `<i data-act="color" data-id="${esc(a.id)}" data-c="${p}" style="background:${p}" class="${cc === p ? 'on' : ''}"></i>`).join('')}<i class="none" data-act="color" data-id="${esc(a.id)}" data-c="" title="без цвета">×</i></div>`;
+      gs.forEach((g, gi) => {
+        const idx = its.filter(i => (i.grp || '') === g), sub = idx.reduce((x, i) => x + (+i.price || 0), 0), head = g !== '' || gs.length > 1, ck = a.id + '|' + g, cl = head && closedG[ck];
+        if (head) h += `<div class="pl-row pl-g"><button class="pl-btn sm" data-act="gtog" data-k="${esc(ck)}" title="Свернуть или развернуть группу">${cl ? '▸' : '▾'}</button>${g !== '' ? `<input class="pl-in fl" data-f="gname" data-id="${esc(a.id)}" data-g="${esc(g)}" value="${esc(g)}">` : '<b class="pl-mut">Без группы</b>'}<span class="pl-badge">${M.fmt(sub)} тыс. ₸${cl ? ' · ' + idx.length + ' ст.' : ''}</span>${cl ? '' : `<button class="pl-btn sm" data-act="additem" data-id="${esc(a.id)}" data-g="${esc(g)}">+ статья в группу</button>`}</div>`;
+        if (!cl) h += idx.map(i => `<div class="pl-row"><input class="pl-in fl" data-f="iname" data-id="${esc(i.id)}" placeholder="Статья (вход, чай…)" value="${esc(i.name)}"><input class="pl-in" data-f="iprice" data-id="${esc(i.id)}" inputmode="decimal" style="width:80px" value="${esc(num(i.price))}"><span class="pl-mut">тыс. ₸</span>${named.length ? `<select class="pl-sel" data-f="igrp" data-id="${esc(i.id)}"><option value="">без группы</option>${named.map(n => `<option value="${esc(n)}" ${n === (i.grp || '') ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>` : ''}<button class="pl-btn sm" data-act="delitem" data-id="${esc(i.id)}" title="Удалить статью">×</button></div>`).join('');
+      });
+      h += `<div class="pl-row"><button class="pl-btn sm" data-act="additem" data-id="${esc(a.id)}" data-g="">+ статья</button><input class="pl-in" data-f="newgrp" data-id="${esc(a.id)}" placeholder="Новая группа" style="max-width:170px"><button class="pl-btn sm" data-act="addgrp" data-id="${esc(a.id)}">+ группа</button></div>`;
+      h += `<div class="pl-row"><textarea class="pl-ta" data-f="anote" data-id="${esc(a.id)}" placeholder="Комментарий, записки">${esc(a.note || '')}</textarea></div>`;
+      h += `<div class="pl-row"><span class="pl-mut">Время, часов</span><input class="pl-in" data-f="ahours" data-id="${esc(a.id)}" inputmode="decimal" style="width:70px" value="${esc(num(a.hours))}"><button class="pl-btn sm" data-act="aex" data-id="${esc(a.id)}">Свернуть</button><button class="pl-btn sm" data-act="adel" data-id="${esc(a.id)}">${delAsk === a.id ? 'Точно удалить?' : 'Удалить'}</button></div></div>`;
+      return h;
+    }
+
+    function settings() {
+      return `<details class="pl-det" ${imp.open ? 'open' : ''}><summary>Перенос из старой системы</summary><div class="pl-row"><span class="pl-mut">Вставьте файл «Данные браузера» (JSON) или выберите его. Активность ищется в базе по номеру или названию. Найденные не меняются, добавляются только недостающие статьи и слоты, повторный перенос безопасен.</span></div>` +
+        `<div class="pl-row"><input type="file" accept=".json,application/json" data-f="impfile"></div><textarea class="pl-ta" data-f="imp" style="min-height:70px" placeholder="JSON выгрузки">${esc(imp.text)}</textarea>` +
+        `<label class="pl-row pl-mut"><input type="checkbox" data-f="imprep" ${imp.replace ? 'checked' : ''}> Заменить активности и слоты, где в базе и в файле разное (по файлу)</label>` +
+        `<div class="pl-row"><button class="pl-btn" data-act="imp-go" ${imp.busy ? 'disabled' : ''}>${imp.confirm ? 'Точно перенести?' : 'Перенести'}</button></div><div class="pl-mut" role="status" data-f="impinfo">${esc(imp.info)}</div></details>`;
+    }
+
+    function render() {
+      if (!alive) return;
+      const keep = window.scrollY, noteBad = S.state === 'error' || /Нет связи|неотправленные/.test(S.note);
+      let h = `<div class="pl-bar"><span class="pl-note ${noteBad ? 'warn' : ''}" role="status">${S.state === 'loading' ? 'Загрузка…' : esc(S.note)}</span><button class="pl-btn" data-act="reload">Обновить</button></div>`;
+      if (S.state === 'error' && !D.acts.length) h += `<div class="pl-empty">${esc(S.note)}</div>`;
+      else {
+        const acts = D.acts.slice().sort((a, b) => ((a.sort_order || 0) - (b.sort_order || 0)) || (a.id < b.id ? -1 : 1)), itemsBy = S.itemsBy();
+        h += `<div class="pl-row"><button class="pl-btn sm" data-act="otog">${ui.open ? 'Скрыть' : 'Показать'} активности (${acts.length})</button><input class="pl-in fl" data-f="newact" placeholder="Новая активность, например «Баня»" value="${esc(newName)}" maxlength="80"><button class="pl-btn" data-act="addact">Добавить</button></div>${err ? `<div class="pl-note warn">${esc(err)}</div>` : ''}`;
+        if (ui.open) h += `<div class="pl-ag">${acts.map(a => ex[a.id] ? actCard(a) : `<div class="pl-at" data-act="aex" data-id="${esc(a.id)}" title="${esc(a.name + (a.note ? '\n' + a.note : ''))}" style="${a.color ? 'border-left:6px solid ' + a.color + ';background:color-mix(in srgb,' + a.color + ' 16%,transparent)' : ''}"><b>${esc(a.name)}</b><span>${M.fmt(M.actCost(itemsBy[a.id] || []))} тыс. ₸ · ${M.fmt(a.hours)} ч</span></div>`).join('')}</div>`;
+        const slots = S.slotsOf(ui.year), T = M.totals(ui.year, acts, itemsBy, slots), byId = {}; acts.forEach(a => { byId[a.id] = a; });
+        const slotMap = {}; slots.forEach(s => { slotMap[s.block + '_' + s.slot] = s; });
+        h += `<div class="pl-yr"><span class="pl-mut">Год</span><select class="pl-sel" data-f="year">${[cy - 1, cy, cy + 1].concat(ui.year < cy - 1 || ui.year > cy + 1 ? [ui.year] : []).sort().map(y => `<option ${y === ui.year ? 'selected' : ''}>${y}</option>`).join('')}</select><b>Итого за год: ${M.fmt(T.cost)} тыс. ₸ · ${M.fmt(T.hours)} ч</b><span class="pl-mut">в среднем за неделю ${M.fmt(T.perWeekCost)} тыс. ₸ · ${M.fmt(T.perWeekHours)} ч</span></div>`;
+        h += `<div class="pl-mut">По месяцам (тыс. ₸ / часы): ${T.months.map((m, i) => M.MONTHS[i] + ' ' + M.fmt(m.cost) + '/' + M.fmt(m.hours)).join(' · ')}</div><div class="pl-mg">`;
+        T.blocks.forEach((b, bi) => {
+          const w = T.weeks[bi], any = w.cost || w.hours;
+          h += `<div class="pl-wb ${any ? 'fl' : ''}" title="${M.dm(b.start)} – ${M.dm(b.end)} (${b.len} дн.)"><div class="pl-wh"><span>${b.n} · ${M.dm(b.start)}${b.len < 7 ? ' · ' + b.len + 'дн' : ''}</span><b>${M.MONTHS[b.month]}</b></div><div class="pl-strip">${[1, 2, 3, 4].map(k => { const s = slotMap[b.n + '_' + k], a = s && byId[s.activity_id]; return `<i style="background:${(a && a.color) || '#ddd'}"></i>`; }).join('')}</div>`;
+          [1, 2, 3, 4].forEach(k => {
+            const s = slotMap[b.n + '_' + k], a = s && byId[s.activity_id], c = a && a.color, m = s ? +s.multiplier : 1;
+            h += `<div class="pl-sr"><select data-f="slot" data-b="${b.n}" data-k="${k}" ${c ? `style="border-left:6px solid ${c};background:color-mix(in srgb,${c} 25%,#fff)"` : ''}><option value="">—</option>${acts.map(x => `<option value="${esc(x.id)}" ${a && a.id === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>${a ? [1.5, 2].map(v => `<span class="pl-mx ${m === v ? 'on' : ''}" data-act="mul" data-b="${b.n}" data-k="${k}" data-m="${v}" title="Умножить деньги на ${String(v).replace('.', ',')} (время не меняется)">×${String(v).replace('.', ',')}</span>`).join('') : ''}</div>`;
+          });
+          h += `<div class="pl-wf">${any ? M.fmt(w.cost) + ' · ' + M.fmt(w.hours) + 'ч' : '&nbsp;'}</div></div>`;
+        });
+        h += '</div>' + settings();
+      }
+      const ae = document.activeElement, fo = ae && root.contains(ae) && ae.dataset && ae.dataset.f && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) && ae.type !== 'checkbox' && ae.type !== 'file' ? ae : null;
+      const sel = fo ? ['f', 'id', 'g', 'b', 'k'].map(k => (fo.dataset[k] != null ? '[data-' + k + '="' + String(fo.dataset[k]).replace(/["\\]/g, '\\$&') + '"]' : '')).join('') : '', val = fo ? fo.value : null;
+      root.innerHTML = h; window.scrollTo(0, keep);
+      if (fo) { let n = null; try { n = root.querySelector(fo.tagName.toLowerCase() + sel); } catch (e) { /* селектор не собрался */ } if (n) { if (fo.tagName !== 'SELECT' && n.value !== val) n.value = val; n.focus(); try { n.setSelectionRange(n.value.length, n.value.length); } catch (e) { /* поле без выделения */ } } }
+    }
+
+    let rt = 0, down = false, pending = false;
+    const sched = () => { clearTimeout(rt); rt = setTimeout(() => { if (down) { pending = true; return; } pending = false; render(); }, 0); };
+    const md = () => { down = true; }, mu = () => { down = false; if (pending) sched(); };
+    document.addEventListener('mousedown', md, true); document.addEventListener('mouseup', mu, true);
+    S.onChange = () => { if (alive) sched(); };
+    const field = n => root.querySelector('[data-f="' + n + '"]');
+
+    root.addEventListener('input', ev => {
+      const f = ev.target.dataset && ev.target.dataset.f;
+      if (f === 'imp') { imp.text = ev.target.value; imp.confirm = false; } else if (f === 'newact') newName = ev.target.value;
+    });
+    root.addEventListener('change', ev => {
+      const i = ev.target, f = i.dataset && i.dataset.f, id = i.dataset && i.dataset.id; if (!f) return;
+      const bad = r => { if (r && r.ok === false && r.msg) { err = r.msg; } else err = ''; sched(); };
+      if (f === 'aname') bad(S.editAct(id, { name: i.value })); else if (f === 'ahours') bad(S.editAct(id, { hours: i.value })); else if (f === 'anote') bad(S.editAct(id, { note: i.value }));
+      else if (f === 'iname') bad(S.editItem(id, { name: i.value })); else if (f === 'iprice') bad(S.editItem(id, { price: i.value })); else if (f === 'igrp') bad(S.editItem(id, { grp: i.value }));
+      else if (f === 'gname') { S.renGroup(id, i.dataset.g, i.value); const a = S.act(id); if (a) { const k = a.id + '|' + i.dataset.g; if (k in closedG) { closedG[a.id + '|' + i.value.trim()] = closedG[k]; delete closedG[k]; } } }
+      else if (f === 'year') { ui.year = +i.value; saveUi(); render(); }
+      else if (f === 'slot') { err = ''; S.setSlot(ui.year, +i.dataset.b, +i.dataset.k, i.value); sched(); }
+      else if (f === 'imprep') { imp.open = true; imp.replace = i.checked; imp.confirm = false; imp.info = ''; sched(); }
+      else if (f === 'impfile') { const file = i.files && i.files[0]; if (!file) return; imp.open = true; const r = new FileReader(); r.onload = () => { imp.text = String(r.result || ''); imp.confirm = false; imp.info = 'Файл прочитан (' + Math.round(imp.text.length / 1024) + ' КБ). Нажмите «Перенести».'; render(); }; r.readAsText(file); }
+    });
+    root.addEventListener('click', async ev => {
+      const t = ev.target.closest('[data-act]'); if (!t) return; const a = t.dataset.act, id = t.dataset.id;
+      if (a === 'reload') { S.load(); return; }
+      if (a === 'otog') { ui.open = !ui.open; saveUi(); render(); return; }
+      if (a === 'aex') { ex[id] = !ex[id]; delAsk = null; render(); return; }
+      if (a === 'addact') { const r = S.addAct(newName); if (!r.ok) { err = r.msg; render(); return; } err = ''; newName = ''; ex[r.id] = true; ui.open = true; render(); return; }
+      if (a === 'color') { S.editAct(id, { color: t.dataset.c }); return; }
+      if (a === 'additem') { S.addItem(id, t.dataset.g); return; }
+      if (a === 'addgrp') { const i = root.querySelector('[data-f=newgrp][data-id="' + id + '"]'), g = i ? i.value.trim() : ''; if (!g) return; S.addItem(id, g); return; }
+      if (a === 'delitem') { S.delItem(id); return; }
+      if (a === 'gtog') { closedG[t.dataset.k] = !closedG[t.dataset.k]; render(); return; }
+      if (a === 'adel') { if (delAsk !== id) { delAsk = id; render(); return; } S.deleteAct(id); delAsk = null; delete ex[id]; return; }
+      if (a === 'mul') { S.setMul(ui.year, +t.dataset.b, +t.dataset.k, +t.dataset.m); return; }
+      if (a === 'imp-go') {
+        imp.open = true; let obj = null; try { obj = JSON.parse(imp.text.trim()); } catch (e) { /* ниже скажем */ }
+        if (!obj || !M.legacyRows(obj)) { imp.info = 'Не узнал файл: нужна выгрузка «Данные браузера» старой системы (в ней state.acts).'; imp.confirm = false; render(); return; }
+        if (!imp.confirm) { const pl = await S.importLegacy(obj, { dry: true, replace: imp.replace }); imp.confirm = !!pl.ok; imp.info = pl.ok ? pl.text + ' Нажмите ещё раз, чтобы записать.' : pl.msg; render(); return; }
+        imp.confirm = false; imp.busy = true; imp.info = 'Перенос…'; render();
+        try { const res = await S.importLegacy(obj, { replace: imp.replace }); imp.info = res.ok ? res.text : res.msg; if (res.ok) imp.text = ''; } catch (e) { imp.info = 'Не удалось: ' + (e.message || e); }
+        imp.busy = false; render();
+      }
+    });
+    const onAuth = setInterval(() => { if (S.authLost && ctxIn.onAuthLost) { S.authLost = false; ctxIn.onAuthLost(); } }, 800);
+    render(); S.load();
+    return { reload: () => S.load(), unmount() { alive = false; clearInterval(onAuth); clearTimeout(rt); document.removeEventListener('mousedown', md, true); document.removeEventListener('mouseup', mu, true); S.onChange = null; el.innerHTML = ''; } };
+  }
+  global.LifeModules.plan = { mount };
+})(window);
+
+</script>
+<script>
 /* ---- shell/shell.js ---- */
 /* Оболочка (компьютер): верхняя панель, вкладки модулей, переключатель «чьи данные», индикатор очереди записи.
    Старая система подключается как есть, в окне внутри страницы (файл life-system.html рядом).
@@ -2863,6 +3284,7 @@ body{margin:0;background:#f2f2f2}
       { id: 'things', title: 'Вещицы', mount: (box, ctx) => global.LifeModules.things.mount(box, ctx) },
       { id: 'spheres', title: 'Сферы и дела', mount: (box, ctx) => global.LifeModules.spheres.mount(box, ctx) },
       { id: 'tracks', title: 'Треки', mount: (box, ctx) => global.LifeModules.tracks.mount(box, ctx) },
+      { id: 'plan', title: 'Моделирование', mount: (box, ctx) => global.LifeModules.plan.mount(box, ctx) },
       { id: 'diary', title: 'Дневник', mount: (box, ctx) => global.LifeModules.diary.mount(box, ctx) },
       { id: 'legacy', title: 'Состояние, дневник (старая система)', own: true, mount(box) {
         const f = document.createElement('iframe'); f.src = 'life-system.html'; f.title = 'Старая система'; box.appendChild(f);
