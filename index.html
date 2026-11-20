@@ -2525,23 +2525,65 @@ input.tk-ci:focus{outline:none;background:rgba(255,255,255,.7)}input.tk-ci::plac
       T.commit();
     };
 
-    /* Перенос из выгрузки старой системы. Треки с уже существующим id пропускаются целиком (повторный перенос безопасен). */
-    S.importLegacy = async function (obj) {
+    /* Перенос из выгрузки старой системы. Трек из файла ищется в базе по номеру, затем по названию и типу.
+       Найденный трек не меняется: в него добавляются только дни, которых в базе нет (повторный перенос безопасен).
+       Дни, где значения в базе и в файле разные, по умолчанию остаются как в базе и попадают в отчёт;
+       opts.replace = true заменяет такие дни значениями из файла (старые записи удаляются мягко).
+       opts.dry = true только считает и ничего не пишет. */
+    S.importLegacy = async function (obj, opts) {
+      opts = opts || {};
       const r = M.legacyRows(obj);
       if (!r) return { ok: false, msg: 'В файле нет раздела треков (нужна выгрузка «Данные браузера» старой системы, в ней state.habits).' };
       try { await S.load(); } catch (e) { /* ниже проверим состояние */ }
       if (S.state !== 'ready' || S.note) return { ok: false, msg: 'Не удалось сверить с базой (' + (S.note || 'нет связи') + '). Перенос отложен, чтобы не перезаписать правки.' };
-      const have = new Set(D.tracks.map(t => t.id)), nt = r.tracks.filter(t => !have.has(t.id)), ids = new Set(nt.map(t => t.id));
-      /* порядок строк в группе продолжаем после уже существующих */
+      const norm = x => String(x || '').trim().toLowerCase(), byId = new Map(D.tracks.map(t => [t.id, t])), used = new Set(), map = new Map();
+      r.tracks.forEach(ft => { const t = byId.get(ft.id); if (t) { map.set(ft.id, t); used.add(t.id); } });
+      r.tracks.forEach(ft => {
+        if (map.has(ft.id)) return;
+        const c = D.tracks.filter(t => !used.has(t.id) && t.kind === ft.kind && norm(t.name) === norm(ft.name))
+          .sort((x, y) => (y.name === ft.name) - (x.name === ft.name) || (y.status === ft.status) - (x.status === ft.status) || D.entries.filter(e => e.track_id === y.id).length - D.entries.filter(e => e.track_id === x.id).length)[0];
+        if (c) { map.set(ft.id, c); used.add(c.id); }
+      });
+      const nt = r.tracks.filter(t => !map.has(t.id)), newIds = new Set(nt.map(t => t.id));
       const base = [0, 1, 2].map(g => D.tracks.filter(t => M.groupOf(t) === g).reduce((a, t) => Math.max(a, t.sort_order || 0), -1) + 1);
       nt.forEach(t => { t.sort_order += base[M.groupOf(t)]; });
-      const ne = r.entries.filter(e => ids.has(e.track_id)), nn = r.notes.filter(n => ids.has(n.track_id)), T = tx();
-      nt.forEach(t => T.put('tracks', t)); ne.forEach(e => T.put('track_entries', e)); nn.forEach(n => T.put('track_day_notes', n));
-      const text = `Перенос треков: треков ${nt.length}, значений ${ne.length}, комментариев ${nn.length}; уже были ${r.tracks.length - nt.length} из ${r.tracks.length} треков` +
+      const putT = [], putE = [], putN = [], conf = [], taken = new Set(D.entries.map(e => e.id));
+      let same = 0, repl = 0;
+      const vals = a => a.map(e => e.value).sort((x, y) => x - y).join(',');
+      nt.forEach(t => {
+        r.entries.filter(e => e.track_id === t.id).forEach(e => putE.push(e)); r.notes.filter(n => n.track_id === t.id).forEach(n => putN.push(n));
+      });
+      r.tracks.forEach(ft => {
+        const db = map.get(ft.id); if (!db) return;
+        const fe = r.entries.filter(e => e.track_id === ft.id), days = [...new Set(fe.map(e => e.day))].sort();
+        days.forEach(day => {
+          const f = fe.filter(e => e.day === day), cur = D.entries.filter(e => e.track_id === db.id && e.day === day);
+          const add = () => f.forEach((e, k) => { let n = k + 1, id; do { id = 'te_' + db.id + '_' + day + '_' + (n++); } while (taken.has(id)); taken.add(id); putE.push(Object.assign({}, e, { id, track_id: db.id })); });
+          if (!cur.length) add();
+          else if (vals(cur) === vals(f)) same++;
+          else if (opts.replace) { cur.forEach(e => putE.push(er(e, { deleted_at: iso(Date.now()) }))); add(); repl++; }
+          else conf.push(db.name + ' ' + day.slice(8) + '.' + day.slice(5, 7) + ': в базе ' + M.fmt(cur.reduce((a, e) => a + e.value, 0)) + ', в файле ' + M.fmt(f.reduce((a, e) => a + e.value, 0)));
+        });
+        r.notes.filter(n => n.track_id === ft.id).forEach(n => {
+          const cur = noteOf(db.id, n.day);
+          if (!cur) putN.push(Object.assign({}, n, { id: 'tn_' + db.id + '_' + n.day, track_id: db.id }));
+          else if (cur.note !== n.note) { if (opts.replace) { putN.push(nr(cur, { note: n.note })); repl++; } else conf.push(db.name + ' ' + n.day.slice(8) + '.' + n.day.slice(5, 7) + ': комментарий в базе другой'); }
+        });
+      });
+      const addE = putE.filter(e => !e.deleted_at).length, addN = putN.length, found = r.tracks.length - nt.length;
+      const text = `${opts.dry ? 'В файле' : 'Перенос треков'}: треков ${r.tracks.length}, значений ${r.entries.length}, комментариев ${r.notes.length}. ` +
+        `Уже есть в базе ${found} треков (по номеру или названию), новых ${nt.length}. ` +
+        `Будет добавлено значений ${addE}, комментариев ${addN}; совпало дней ${same}` +
+        (repl ? `; заменено дней/комментариев ${repl}` : '') +
+        (conf.length ? `; расходится ${conf.length}${opts.replace ? '' : ' (оставлено как в базе)'}${conf.length > 0 ? ': ' + conf.slice(0, 6).join('; ') + (conf.length > 6 ? '…' : '') : ''}` : '') +
         (r.skipped.badEntry + r.skipped.badNote + r.skipped.dupTrack ? `; пропущено (значений ${r.skipped.badEntry}, комментариев ${r.skipped.badNote}, дублей треков ${r.skipped.dupTrack})` : '') + '.';
-      if (nt.length) { T.log('sys', 'import', 'tracks', text); T.commit(); } else changed();
+      const stat = { tracks: nt.length, found, entries: addE, notes: addN, same, replaced: repl, conflicts: conf.length };
+      if (opts.dry) return { ok: true, text, plan: stat, conflicts: conf };
+      const T = tx();
+      nt.forEach(t => T.put('tracks', t)); putE.forEach(e => T.put('track_entries', e)); putN.forEach(n => T.put('track_day_notes', n));
+      if (nt.length || putE.length || putN.length) { T.log('sys', 'import', 'tracks', text.replace(/: расходится.*$/, '')); T.commit(); } else changed();
       try { await core.flush(); } catch (e) { /* повторится */ }
-      return { ok: true, text, added: { tracks: nt.length, entries: ne.length, notes: nn.length } };
+      return { ok: true, text, added: stat, conflicts: conf };
     };
     return S;
   }
@@ -2555,7 +2597,7 @@ input.tk-ci:focus{outline:none;background:rgba(255,255,255,.7)}input.tk-ci::plac
    window.LifeTracksCard. Получает общий контекст ctx = {S, D, M, V, esc, render, core}. Своих данных не хранит, кроме состояния переноса. */
 (function (global) {
   'use strict';
-  const imp = { text: '', info: '', busy: false, confirm: false };
+  const imp = { open: false, text: '', info: '', busy: false, confirm: false, replace: false };
   const add = { name: '', kind: 'habit', unit: '', err: '' };
 
   function addForm(c) {
@@ -2609,17 +2651,17 @@ input.tk-ci:focus{outline:none;background:rgba(255,255,255,.7)}input.tk-ci::plac
 
   function settings(c) {
     const { S, esc } = c, cfg = S.cfg;
-    return `<details class="tk-det"><summary>Настройки и перенос из старой системы</summary>` +
+    return `<details class="tk-det" ${imp.open ? 'open' : ''}><summary>Настройки и перенос из старой системы</summary>` +
       `<div class="tk-row"><span class="tk-mut">Слотов для новых треков</span><input class="tk-in" data-f="cfg" data-k="cap" style="width:70px" inputmode="numeric" value="${cfg.cap}"><span class="tk-mut">Желание «спит» с, дней</span><input class="tk-in" data-f="cfg" data-k="sl" style="width:70px" inputmode="numeric" value="${cfg.sl}"><span class="tk-mut">«Считать текущей» после, дней</span><input class="tk-in" data-f="cfg" data-k="thr" style="width:70px" inputmode="numeric" value="${cfg.thr}"></div>` +
       `<div class="tk-mut">Эти три числа хранятся на этом устройстве.</div>` +
-      `<div class="tk-row"><span class="tk-mut">Вставьте файл «Данные браузера» (JSON) или выберите его. Треки, которые уже есть в базе (по номеру), не перезаписываются, повторный перенос безопасен.</span></div>` +
+      `<div class="tk-row"><span class="tk-mut">Вставьте файл «Данные браузера» (JSON) или выберите его. Трек ищется в базе по номеру или названию. В найденные треки добавляются только недостающие дни, повторный перенос безопасен.</span></div>` +
       `<div class="tk-row"><input type="file" accept=".json,application/json" data-f="impfile"></div><textarea class="tk-ta" data-f="imp" style="min-height:70px" placeholder="JSON выгрузки">${esc(imp.text)}</textarea>` +
-      `<div class="tk-row"><button class="tk-btn" data-act="imp-go" ${imp.busy ? 'disabled' : ''}>${imp.confirm ? 'Точно перенести?' : 'Перенести'}</button></div><div class="tk-mut" role="status" data-f="impinfo">${esc(imp.info)}</div></details>`;
+      `<label class="tk-row tk-mut"><input type="checkbox" data-f="imprep" ${imp.replace ? 'checked' : ''}> Заменить значения за дни, где в базе и в файле разное (по файлу)</label><div class="tk-row"><button class="tk-btn" data-act="imp-go" ${imp.busy ? 'disabled' : ''}>${imp.confirm ? 'Точно перенести?' : 'Перенести'}</button></div><div class="tk-mut" role="status" data-f="impinfo">${esc(imp.info)}</div></details>`;
   }
 
   function onInput(c, ev) {
     const f = ev.target.dataset && ev.target.dataset.f;
-    if (f === 'imp') { imp.text = ev.target.value; imp.confirm = false; } else if (f === 'addname') add.name = ev.target.value; else if (f === 'addunit') add.unit = ev.target.value;
+    if (f === 'imprep') { imp.replace = ev.target.checked; imp.confirm = false; } else if (f === 'imp') { imp.text = ev.target.value; imp.confirm = false; } else if (f === 'addname') add.name = ev.target.value; else if (f === 'addunit') add.unit = ev.target.value;
   }
   function onChange(c, ev) {
     const { S, V, M } = c, i = ev.target, f = i.dataset && i.dataset.f, t = i.dataset && i.dataset.t; if (!f) return;
@@ -2629,7 +2671,8 @@ input.tk-ci:focus{outline:none;background:rgba(255,255,255,.7)}input.tk-ci::plac
     else if (f === 'tdsl') S.editTrack(t, { show_days_since: i.checked }); else if (f === 'tlast') S.editTrack(t, { baseline_last: i.value });
     else if (f === 'cfg') { if (!S.setCfg(i.dataset.k, i.value)) c.render(); }
     else if (f === 'addkind') { add.kind = i.value; c.render(); }
-    else if (f === 'impfile') { const file = i.files && i.files[0]; if (!file) return; const r = new FileReader(); r.onload = () => { imp.text = String(r.result || ''); imp.confirm = false; imp.info = 'Файл прочитан (' + Math.round(imp.text.length / 1024) + ' КБ). Нажмите «Перенести».'; c.render(); const d = document.querySelector('.tk-det'); if (d) d.open = true; }; r.readAsText(file); }
+    else if (f === 'imprep') { imp.open = true; imp.replace = i.checked; imp.confirm = false; imp.info = ''; c.render(); imp.open = true; const d = document.querySelector('.tk-det'); if (d) d.open = true; }
+    else if (f === 'impfile') { imp.open = true; const file = i.files && i.files[0]; if (!file) return; const r = new FileReader(); r.onload = () => { imp.text = String(r.result || ''); imp.confirm = false; imp.info = 'Файл прочитан (' + Math.round(imp.text.length / 1024) + ' КБ). Нажмите «Перенести».'; c.render(); imp.open = true; const d = document.querySelector('.tk-det'); if (d) d.open = true; }; r.readAsText(file); }
   }
   async function onClick(c, t, a, ev) {
     const { S, V, M, render } = c, id = t.dataset.t;
@@ -2643,13 +2686,14 @@ input.tk-ci:focus{outline:none;background:rgba(255,255,255,.7)}input.tk-ci::plac
     if (a === 'wishtog') { V.wishOpen = !V.wishOpen; render(); return; }
     if (a === 'deltrack') { if (V.delAsk !== id) { V.delAsk = id; render(); return; } S.deleteTrack(id); V.delAsk = null; V.card = null; render(); return; }
     if (a === 'imp-go') {
+      imp.open = true;
       let obj = null; try { obj = JSON.parse(imp.text.trim()); } catch (e) { /* ниже скажем */ }
       const r = obj && M.legacyRows(obj);
       if (!r) { imp.info = 'Не узнал файл: нужна выгрузка «Данные браузера» старой системы (в ней state.habits).'; imp.confirm = false; render(); return; }
-      if (!imp.confirm) { imp.confirm = true; imp.info = `В файле: треков ${r.tracks.length}, значений ${r.entries.length}, комментариев ${r.notes.length}. Нажмите ещё раз.`; render(); const d = document.querySelector('.tk-det'); if (d) d.open = true; return; }
+      if (!imp.confirm) { const pl = await S.importLegacy(obj, { dry: true, replace: imp.replace }); imp.confirm = !!pl.ok; imp.info = pl.ok ? pl.text + ' Нажмите ещё раз, чтобы записать.' : pl.msg; render(); imp.open = true; const d = document.querySelector('.tk-det'); if (d) d.open = true; return; }
       imp.confirm = false; imp.busy = true; imp.info = 'Перенос…'; render();
-      try { const res = await S.importLegacy(obj); imp.info = res.ok ? res.text : res.msg; if (res.ok) imp.text = ''; } catch (e) { imp.info = 'Не удалось: ' + (e.message || e); }
-      imp.busy = false; render(); const d = document.querySelector('.tk-det'); if (d) d.open = true;
+      try { const res = await S.importLegacy(obj, { replace: imp.replace }); imp.info = res.ok ? res.text : res.msg; if (res.ok) imp.text = ''; } catch (e) { imp.info = 'Не удалось: ' + (e.message || e); }
+      imp.busy = false; render(); imp.open = true; const d = document.querySelector('.tk-det'); if (d) d.open = true;
     }
   }
   global.LifeTracksCard = { addForm, panel, wishes, settings, onInput, onChange, onClick };
