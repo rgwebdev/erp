@@ -3897,6 +3897,229 @@ window.LifeStateCss = `
 
 </script>
 <script>
+/* ---- modules/data-model.js ---- */
+/* «Данные»: чистая логика единой выгрузки и восстановления (без экрана и сети). window.LifeDataModel.
+   Файл: {app:'lifeerp-backup', format:1, created, user:{id,email}, migrations:[…], tables:{имя:{module, pk:[…], rows:[…]}}}.
+   Восстановление только дописывает: новые строки добавляются, более новые версии из файла заменяют старые, более свежее в базе
+   остаётся как есть, ничего не удаляется (удалённое помечено deleted_at и едет как обычная строка). */
+(function (global) {
+  'use strict';
+  const APP = 'lifeerp-backup', FORMAT = 1;
+  /* родители раньше детей (внешние ключи); неизвестные таблицы идут в конце в порядке файла */
+  const ORDER = ['currencies', 'fx_rates', 'thing_groups', 'things', 'sphere_groups', 'spheres', 'sphere_items', 'shop_items', 'shop_receipts', 'shop_settings', 'shop_list_state', 'shop_purchases',
+    'timer_cards', 'timer_targets', 'timer_runs', 'time_entries', 'money_entries', 'entity_links', 'mood_tags', 'mood_marks', 'diaries', 'diary_entries', 'tracks', 'track_entries', 'track_day_notes',
+    'activities', 'activity_cost_items', 'plan_slots'];
+  /* служебные столбцы, которые сервер заполняет сам: при восстановлении не отправляются */
+  const STRIP = ['user_id', 'updated_by'], STRIP_TABLE = { track_entries: ['seq'], activity_cost_items: ['seq'] };
+  const CHUNK = 200;
+
+  const sortTables = names => { const o = ORDER.filter(n => names.includes(n)); return o.concat(names.filter(n => !ORDER.includes(n))); };
+  const keyOf = (row, pk) => pk.map(c => String(row[c])).join('\u0001');
+  const ts = v => { const t = Date.parse(v); return isFinite(t) ? t : 0; };
+  const chunks = (a, n) => { const o = []; for (let i = 0; i < a.length; i += n || CHUNK) o.push(a.slice(i, i + (n || CHUNK))); return o; };
+  const clean = (name, row) => { const o = Object.assign({}, row); STRIP.concat(STRIP_TABLE[name] || []).forEach(c => { delete o[c]; }); return o; };
+  const stamp = d => { const p = x => String(x).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + '-' + p(d.getHours()) + p(d.getMinutes()); };
+
+  function buildFile(o) {
+    const tables = {}; (o.tables || []).forEach(t => { tables[t.name] = { module: t.module, pk: t.pk, rows: t.rows }; });
+    return { app: APP, format: FORMAT, created: o.created || new Date().toISOString(), user: o.user || null, migrations: o.migrations || [], tables };
+  }
+  function parseFile(text) {
+    let f = text; if (typeof text === 'string') { try { f = JSON.parse(text); } catch (e) { return { ok: false, error: 'Это не JSON: файл повреждён или обрезан.' }; } }
+    if (!f || f.app !== APP) return { ok: false, error: 'Это не файл выгрузки LifeERP (нет метки app: "' + APP + '").' };
+    if (f.format !== FORMAT) return { ok: false, error: 'Формат файла ' + f.format + ' не поддерживается этой версией.' };
+    if (!f.tables || typeof f.tables !== 'object') return { ok: false, error: 'В файле нет разделов с данными.' };
+    for (const n of Object.keys(f.tables)) { const t = f.tables[n]; if (!t || !Array.isArray(t.rows) || !Array.isArray(t.pk) || !t.pk.length) return { ok: false, error: 'Раздел «' + n + '» повреждён.' }; }
+    return { ok: true, file: f };
+  }
+  const totalRows = f => Object.keys(f.tables).reduce((a, n) => a + f.tables[n].rows.length, 0);
+
+  /* сверка файла с базой: current — {таблица: строки базы}; registered — {таблица: pk_cols} (из core_sync_tables) */
+  function plan(file, current, registered) {
+    const out = [], skipped = [];
+    sortTables(Object.keys(file.tables)).forEach(name => {
+      const t = file.tables[name], reg = registered[name];
+      if (!reg) { skipped.push(name); return; }
+      const pk = reg, have = new Map((current[name] || []).map(r => [keyOf(r, pk), r])), seen = new Set(), write = []; let added = 0, upd = 0, same = 0, newer = 0;
+      t.rows.forEach(r => {
+        if (pk.some(c => r[c] == null)) return; const k = keyOf(r, pk); seen.add(k); const ex = have.get(k);
+        if (!ex) { added++; write.push(r); } else if (ts(r.updated_at) > ts(ex.updated_at)) { upd++; write.push(r); } else if (ts(r.updated_at) === ts(ex.updated_at)) same++; else newer++;
+      });
+      let extra = 0; have.forEach((v, k) => { if (!seen.has(k)) extra++; });
+      out.push({ name, module: t.module, added, upd, same, newer, extra, total: t.rows.length, write });
+    });
+    const sum = f => out.reduce((a, t) => a + t[f], 0);
+    return { tables: out, skipped, added: sum('added'), upd: sum('upd'), same: sum('same'), newer: sum('newer'), extra: sum('extra'), toWrite: sum('added') + sum('upd') };
+  }
+  function planText(p) {
+    const parts = ['Будет добавлено строк ' + p.added, 'обновится ' + p.upd, 'совпало ' + p.same, 'в базе новее, чем в файле, останется как в базе ' + p.newer];
+    return parts.join(', ') + (p.extra ? '. Есть в базе, но нет в файле: ' + p.extra + ' (не удаляются)' : '') + (p.skipped.length ? '. Пропущены таблицы, которых нет в базе: ' + p.skipped.join(', ') : '') + '.';
+  }
+  global.LifeDataModel = { APP, FORMAT, ORDER, CHUNK, sortTables, keyOf, chunks, clean, stamp, buildFile, parseFile, totalRows, plan, planText };
+})(window);
+
+</script>
+<script>
+/* ---- modules/data-css.js ---- */
+/* «Данные»: стили. window.LifeDataCss */
+window.LifeDataCss = `
+.dt-app{font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#404040;padding:14px;max-width:760px}
+.dt-app *{box-sizing:border-box}.dt-app button{font:inherit;color:inherit;cursor:pointer}
+.dt-card{background:#fff;border:1px solid #d6d6d6;border-radius:8px;padding:12px 14px;margin-bottom:12px}.dt-card h2{font-size:16px;margin:0 0 4px}
+.dt-mut{font-size:12px;opacity:.75}.dt-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
+.dt-btn{border:1px solid #c9c9c9;background:#fff;border-radius:6px;padding:6px 12px}.dt-btn:hover{background:#efefef}.dt-btn.primary{background:#404040;border-color:#404040;color:#fff}.dt-btn:disabled{opacity:.5;cursor:default}
+.dt-warn{color:#b3261e;font-size:13px}.dt-ok{color:#1b6e3a;font-size:13px}
+.dt-tb{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}.dt-tb th,.dt-tb td{border-bottom:1px solid #e4e4e4;padding:3px 6px;text-align:right}.dt-tb th:first-child,.dt-tb td:first-child{text-align:left}
+.dt-stale{background:#fff4e5;border:1px solid #f0c27a;border-radius:6px;padding:6px 10px;font-size:13px;margin-bottom:10px}
+@media (max-width:560px){.dt-app{padding:8px}}
+`;
+
+</script>
+<script>
+/* ---- modules/data-store.js ---- */
+/* «Данные»: чтение базы и запись при восстановлении. LifeDataStore.create(core) → S. Только через core.select и core.commit. */
+(function (global) {
+  'use strict';
+  const M = global.LifeDataModel;
+  function create(core) {
+    const S = { lastError: '' };
+    async function registry() {
+      const r = await core.request('/rest/v1/core_sync_tables?select=table_name,module,pk_cols'), o = {};
+      (Array.isArray(r.data) ? r.data : []).forEach(t => { o[t.table_name] = { module: t.module, pk: t.pk_cols }; });
+      return o;
+    }
+    S.exportAll = async function (progress) {
+      progress = progress || (() => {});
+      const reg = await registry(), names = M.sortTables(Object.keys(reg)), tables = [];
+      for (let i = 0; i < names.length; i++) {
+        progress('Читаю ' + names[i] + ' (' + (i + 1) + ' из ' + names.length + ')…');
+        const rows = await core.select(names[i], {});
+        tables.push({ name: names[i], module: reg[names[i]].module, pk: reg[names[i]].pk, rows });
+      }
+      let migrations = []; try { const r = await core.request('/rest/v1/core_migrations?select=id&order=id'); migrations = (Array.isArray(r.data) ? r.data : []).map(x => x.id); } catch (e) { /* не критично */ }
+      return M.buildFile({ tables, migrations, user: { id: core.viewUser(), email: core.email() } });
+    };
+    S.plan = async function (file, progress) {
+      progress = progress || (() => {});
+      const reg = await registry(), current = {}, pks = {}, names = Object.keys(file.tables).filter(n => reg[n]);
+      for (let i = 0; i < names.length; i++) { progress('Сверяю ' + names[i] + ' (' + (i + 1) + ' из ' + names.length + ')…'); current[names[i]] = await core.select(names[i], {}); pks[names[i]] = reg[names[i]].pk; }
+      Object.keys(file.tables).forEach(n => { if (reg[n]) pks[n] = reg[n].pk; });
+      return M.plan(file, current, pks);
+    };
+    /* пишет по таблицам в порядке «родители раньше детей»; после всего один повтор «не принятых» (на случай порядка ключей) */
+    S.restore = async function (file, p, progress) {
+      progress = progress || (() => {});
+      let sent = 0; const before = core.deadList().length;
+      for (const t of p.tables) {
+        if (!t.write.length) continue;
+        progress('Записываю ' + t.name + ' (' + t.write.length + ')…');
+        M.chunks(t.write.map(r => M.clean(t.name, r))).forEach(ch => core.commit({ writes: [{ table: t.name, rows: ch }], journal: [] }));
+        sent += t.write.length; await core.flush();
+      }
+      await core.flush();
+      let dead = core.deadList().length - before;
+      if (dead > 0) { progress('Повторяю не принятые строки…'); await core.retryDead(); await core.flush(); dead = core.status().dead; }
+      core.commit({ writes: [], journal: [{ op: 'sys', module: 'shell', entity_kind: 'restore', entity_id: file.created || '', summary: 'Восстановление из файла выгрузки от ' + (file.created || '?') + ': отправлено строк ' + sent }] });
+      await core.flush();
+      return { sent, dead: Math.max(0, dead), pending: core.status().pending };
+    };
+    return S;
+  }
+  global.LifeDataStore = { create };
+})(window);
+
+</script>
+<script>
+/* ---- modules/data.js ---- */
+/* «Данные»: единая выгрузка всей базы одним JSON-файлом и восстановление из него (компьютер).
+   Логика — data-model.js, чтение и запись — data-store.js, стили — data-css.js.
+   Точка входа: LifeModules.data.mount(элемент, {core, onAuthLost}) → {unmount, reload}. */
+(function (global) {
+  'use strict';
+  const M = global.LifeDataModel;
+  global.LifeModules = global.LifeModules || {};
+  const UI_KEY = 'lifeerp-data-ui', STALE_DAYS = 14;
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  function mount(el, ctxIn) {
+    ctxIn = ctxIn || {};
+    const core = ctxIn.core || global.LifeCore, S = global.LifeDataStore.create(core);
+    if (!document.getElementById('dt-css')) { const s = document.createElement('style'); s.id = 'dt-css'; s.textContent = global.LifeDataCss; document.head.appendChild(s); }
+    let alive = true, busy = '', msg = '', msgBad = false, text = '', file = null, planObj = null, foreign = false, okForeign = false, confirm = false, last = core.store.get(UI_KEY, null) || {};
+    el.innerHTML = '<div class="dt-app"></div>'; const root = el.firstChild;
+    const saveLast = o => { last = o; core.store.set(UI_KEY, o); };
+
+    function render() {
+      if (!alive) return;
+      const age = last.at ? Math.floor((Date.now() - Date.parse(last.at)) / 864e5) : null;
+      let h = '';
+      if (age === null) h += '<div class="dt-stale">С этого устройства ещё ни разу не скачивалась копия базы. Скачайте её сейчас.</div>';
+      else if (age >= STALE_DAYS) h += `<div class="dt-stale">Последняя выгрузка была ${age} дн. назад. Скачайте свежую.</div>`;
+      h += `<div class="dt-card"><h2>Скачать всю базу</h2><div class="dt-mut">Один JSON-файл со всеми вашими данными (треки, дневник, моделирование, эмоции, таймеры, покупки, вещицы, сферы и дела, удалённое тоже). Пароли и ключи в него не попадают. Файл содержит ваши личные записи, храните его у себя.</div>` +
+        `<div class="dt-row"><button class="dt-btn primary" data-act="export" ${busy ? 'disabled' : ''}>Скачать всю базу</button><span class="dt-mut">${last.at ? 'Последняя выгрузка: ' + esc(new Date(last.at).toLocaleString('ru-RU')) + ', строк ' + esc(last.rows) : ''}</span></div></div>`;
+      h += `<div class="dt-card"><h2>Восстановить из файла</h2><div class="dt-mut">Сначала будет отчёт, ничего не записывается. Восстановление только дописывает: добавляет недостающие строки и заменяет версии, которые в файле новее, чем в базе. Более свежее в базе остаётся, ничего не удаляется.</div>` +
+        `<div class="dt-row"><input type="file" accept=".json,application/json" data-f="file" ${busy ? 'disabled' : ''}></div>`;
+      if (planObj) {
+        h += `<table class="dt-tb"><tr><th>Таблица</th><th>в файле</th><th>добавится</th><th>обновится</th><th>совпало</th><th>в базе новее</th></tr>` +
+          planObj.tables.map(t => `<tr><td>${esc(t.name)}</td><td>${t.total}</td><td>${t.added}</td><td>${t.upd}</td><td>${t.same}</td><td>${t.newer}</td></tr>`).join('') + '</table>';
+        h += `<div class="dt-row">${esc(M.planText(planObj))}</div>`;
+        if (foreign) h += `<label class="dt-row dt-warn"><input type="checkbox" data-f="foreign" ${okForeign ? 'checked' : ''}> Файл сделан под другим входом (${esc(file.user && file.user.email)}). Всё равно записать в мою базу.</label>`;
+        h += `<div class="dt-row"><button class="dt-btn primary" data-act="restore" ${busy || !planObj.toWrite || (foreign && !okForeign) ? 'disabled' : ''}>${confirm ? 'Точно восстановить?' : 'Восстановить (' + planObj.toWrite + ' строк)'}</button><button class="dt-btn" data-act="cancel">Отмена</button></div>`;
+      }
+      h += '</div>';
+      h += `<div class="dt-row ${msgBad ? 'dt-warn' : 'dt-ok'}" role="status" data-f="msg">${esc(busy || msg)}</div></div>`;
+      root.innerHTML = h;
+    }
+
+    async function doExport() {
+      busy = 'Читаю базу…'; msg = ''; render();
+      try {
+        const f = await S.exportAll(p => { busy = p; render(); });
+        const rows = M.totalRows(f), blob = new Blob([JSON.stringify(f, null, 1)], { type: 'application/json' }), a = document.createElement('a');
+        a.href = URL.createObjectURL(blob); a.download = 'lifeerp-backup-' + M.stamp(new Date()) + '.json'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+        saveLast({ at: new Date().toISOString(), rows });
+        busy = ''; msg = 'Готово: выгружено таблиц ' + Object.keys(f.tables).length + ', строк ' + rows + '. Файл скачан.'; msgBad = false;
+      } catch (e) { busy = ''; msg = e.net ? 'Нет связи с базой, выгрузка не выполнена.' : 'Не удалось: ' + (e.message || e); msgBad = true; }
+      render();
+    }
+    async function loadFile(txt) {
+      planObj = null; file = null; confirm = false; msg = ''; const r = M.parseFile(txt);
+      if (!r.ok) { msg = r.error; msgBad = true; render(); return; }
+      file = r.file; foreign = !!(file.user && file.user.id && core.viewUser() && file.user.id !== core.viewUser()); okForeign = false;
+      busy = 'Сверяю с базой…'; render();
+      try { planObj = await S.plan(file, p => { busy = p; render(); }); busy = ''; msg = planObj.toWrite ? '' : 'В базе уже всё есть, восстанавливать нечего.'; msgBad = false; }
+      catch (e) { busy = ''; planObj = null; msg = e.net ? 'Нет связи с базой, сверка не выполнена.' : 'Не удалось сверить: ' + (e.message || e); msgBad = true; }
+      render();
+    }
+    async function doRestore() {
+      busy = 'Записываю…'; render();
+      try {
+        const r = await S.restore(file, planObj, p => { busy = p; render(); });
+        busy = ''; msgBad = r.dead > 0 || r.pending > 0;
+        msg = 'Отправлено строк ' + r.sent + (r.dead ? '; не принято сервером: ' + r.dead + ' (смотрите «Обновить» и список не принятого)' : '') + (r.pending ? '; ещё в очереди: ' + r.pending + ' (дождитесь связи)' : '') + (msgBad ? '' : '. Перезагрузите страницу, чтобы все вкладки перечитали базу.');
+        planObj = null; file = null; confirm = false;
+      } catch (e) { busy = ''; msg = 'Не удалось: ' + (e.message || e); msgBad = true; }
+      render();
+    }
+    root.addEventListener('change', ev => {
+      const i = ev.target, f = i.dataset && i.dataset.f;
+      if (f === 'file') { const fl = i.files && i.files[0]; if (!fl) return; const r = new FileReader(); r.onload = () => loadFile(String(r.result || '')); r.readAsText(fl); }
+      else if (f === 'foreign') { okForeign = i.checked; render(); }
+    });
+    root.addEventListener('click', ev => {
+      const t = ev.target.closest('[data-act]'); if (!t || busy) return; const a = t.dataset.act;
+      if (a === 'export') doExport();
+      else if (a === 'cancel') { planObj = null; file = null; confirm = false; msg = ''; render(); }
+      else if (a === 'restore') { if (!confirm) { confirm = true; render(); return; } confirm = false; doRestore(); }
+    });
+    render();
+    return { reload() { render(); }, unmount() { alive = false; el.innerHTML = ''; } };
+  }
+  global.LifeModules.data = { mount };
+})(window);
+
+</script>
+<script>
 /* ---- shell/shell.js ---- */
 /* Оболочка (компьютер): верхняя панель, вкладки модулей, переключатель «чьи данные», индикатор очереди записи.
    Старая система подключается как есть, в окне внутри страницы (файл life-system.html рядом).
@@ -3942,6 +4165,7 @@ body{margin:0;background:#f2f2f2}
       { id: 'tracks', title: 'Треки', mount: (box, ctx) => global.LifeModules.tracks.mount(box, ctx) },
       { id: 'plan', title: 'Моделирование', mount: (box, ctx) => global.LifeModules.plan.mount(box, ctx) },
       { id: 'diary', title: 'Дневник', mount: (box, ctx) => global.LifeModules.diary.mount(box, ctx) },
+      { id: 'data', title: 'Данные', mount: (box, ctx) => global.LifeModules.data.mount(box, ctx) },
       { id: 'legacy', title: 'Состояние, дневник (старая система)', own: true, mount(box) {
         const f = document.createElement('iframe'); f.src = 'life-system.html'; f.title = 'Старая система'; box.appendChild(f);
         return { unmount() { f.remove(); } };
