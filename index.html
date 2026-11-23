@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LifeERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
 <div id="app"></div>
@@ -303,6 +305,7 @@
   global.LifeCore = api;
 })(typeof window !== 'undefined' ? window : globalThis);
 
+
 </script>
 <script>
 /* ---- core/login-ui.js ---- */
@@ -339,6 +342,7 @@
   }
   global.LifeLogin = { mount };
 })(window);
+
 
 </script>
 <script>
@@ -763,6 +767,7 @@
   global.LifeModules.things = { id: MOD, title: 'Вещицы', mount };
 })(window);
 
+
 </script>
 <script>
 /* ---- modules/spheres-model.js ---- */
@@ -907,6 +912,7 @@
   global.LifeSpheresModel = { IMP, PALETTE0, pad, esc, fmtDT, fmtDur, fmtClock, fmtMoney, fmtCur, fmtMin, fmtPlanMoney, textOn, hexToHsl, shadeOf, tsOf, buildModel, buildCtx };
 })(window);
 
+
 </script>
 <script>
 /* ---- modules/spheres-css.js ---- */
@@ -989,6 +995,7 @@
 
   global.LifeSpheresCss = CSS;
 })(window);
+
 
 </script>
 <script>
@@ -1439,6 +1446,7 @@
   global.LifeSpheresEdit = { install };
 })(window);
 
+
 </script>
 <script>
 /* ---- modules/spheres-entries.js ---- */
@@ -1638,6 +1646,7 @@
 
   global.LifeSpheresEntries = { install };
 })(window);
+
 
 </script>
 <script>
@@ -1925,6 +1934,7 @@
 })(window);
 
 
+
 </script>
 <script>
 /* ---- modules/diary-model.js ---- */
@@ -1997,6 +2007,7 @@
   global.LifeDiaryModel = { MONTHS, MON_GEN, DOW, PALETTE, hsl, dayKey, zonedTs, hms, hm, isDay, dayParts, fmtDay, fmtDM, fmtShort, monthGrid, counts, byTsDesc, preview, validColor, legacyRows };
 })(window);
 
+
 </script>
 <script>
 /* ---- modules/diary-css.js ---- */
@@ -2034,6 +2045,7 @@ window.LifeDiaryCss = `
 .dy-empty{padding:24px;text-align:center;opacity:.75}
 @media (max-width:560px){.dy-app{padding:8px}.dy-c{min-height:44px}}
 `;
+
 
 </script>
 <script>
@@ -2143,6 +2155,7 @@ window.LifeDiaryCss = `
   }
   global.LifeDiaryStore = { create };
 })(window);
+
 
 </script>
 <script>
@@ -2267,6 +2280,7 @@ window.LifeDiaryCss = `
   }
   global.LifeModules.diary = { mount };
 })(window);
+
 
 </script>
 <script>
@@ -2418,6 +2432,7 @@ window.LifeDiaryCss = `
     selTarget, subjectOf, runOf, isSess, stats, hasDataOn, isShown, ordered, buildDayExport, buildRangeExport, firstDataDay, detUuid, esc };
 })(window);
 
+
 </script>
 <script>
 /* ---- modules/emo-model.js ---- */
@@ -2524,6 +2539,7 @@ window.LifeDiaryCss = `
   global.LifeEmoModel = { MAX_TAGS, NOTE_MAX, NAME_MAX, HALF, clean, norm, fmtVal, fmtAvg, preview, chartDate, moodColor, dayBounds, tsOf, marksOfDay, tagById, tagName, markTags, activeTags,
     findActive, dropTime, chartPoints, parseTime, parseImport, fromLegacy, buildDay, buildRange };
 })(window);
+
 
 </script>
 <script>
@@ -2688,6 +2704,7 @@ window.LifeDiaryCss = `
   global.LifeEmoStore = { create };
 })(window);
 
+
 </script>
 <script>
 /* ---- modules/tracks-model.js ---- */
@@ -2772,6 +2789,7 @@ window.LifeDiaryCss = `
   global.LifeTracksModel = { STATUS, KIND, GROUPS, SUMMARY, SUMMARY_SIGN, THR, WD, isDay, dayKey, shiftDay, daysBetween, weekday, round1, fmt, groupOf, parseCell, sumOf, indexEntries, summarize, okThreshold, lastEventDay, daysSince, lastEntryDay, dormantDays, periodStats, legacyRows };
 })(window);
 
+
 </script>
 <script>
 /* ---- modules/tracks-css.js ---- */
@@ -2812,6 +2830,7 @@ input.tk-ci:focus{outline:none;background:rgba(255,255,255,.7)}input.tk-ci::plac
 .tk-empty{padding:24px;text-align:center;opacity:.75}
 @media (max-width:560px){.tk-app{padding:8px}.tk-g .nmc{min-width:120px}}
 `;
+
 
 </script>
 <script>
@@ -3010,6 +3029,7 @@ input.tk-ci:focus{outline:none;background:rgba(255,255,255,.7)}input.tk-ci::plac
   global.LifeTracksStore = { create };
 })(window);
 
+
 </script>
 <script>
 /* ---- modules/tracks-card.js ---- */
@@ -3119,6 +3139,7 @@ input.tk-ci:focus{outline:none;background:rgba(255,255,255,.7)}input.tk-ci::plac
   }
   global.LifeTracksCard = { addForm, panel, wishes, settings, onInput, onChange, onClick };
 })(window);
+
 
 </script>
 <script>
@@ -3245,6 +3266,7 @@ input.tk-ci:focus{outline:none;background:rgba(255,255,255,.7)}input.tk-ci::plac
   global.LifeModules.tracks = { mount };
 })(window);
 
+
 </script>
 <script>
 /* ---- modules/plan-model.js ---- */
@@ -3320,6 +3342,7 @@ input.tk-ci:focus{outline:none;background:rgba(255,255,255,.7)}input.tk-ci::plac
   global.LifePlanModel = { MONTHS, MULTS, PALETTE, r1, fmt, isColor, blocks, dm, actCost, groupsOf, totals, legacyRows };
 })(window);
 
+
 </script>
 <script>
 /* ---- modules/plan-css.js ---- */
@@ -3356,6 +3379,7 @@ window.LifePlanCss = `
 .pl-empty{padding:24px;text-align:center;opacity:.75}
 @media (max-width:560px){.pl-app{padding:8px}}
 `;
+
 
 </script>
 <script>
@@ -3538,6 +3562,7 @@ window.LifePlanCss = `
   global.LifePlanStore = { create };
 })(window);
 
+
 </script>
 <script>
 /* ---- modules/plan.js ---- */
@@ -3666,6 +3691,7 @@ window.LifePlanCss = `
   global.LifeModules.plan = { mount };
 })(window);
 
+
 </script>
 <script>
 /* ---- modules/state-model.js ---- */
@@ -3762,6 +3788,7 @@ window.LifePlanCss = `
   global.LifeStateModel = { legacyChecks, CMN, MODES, vCol, dayRecs, dayAvg, dayCount, tagNames, chartModel, chartSvg, hint, corr, feelsSorted, avgA, r1 };
 })(window);
 
+
 </script>
 <script>
 /* ---- modules/state-css.js ---- */
@@ -3790,6 +3817,7 @@ window.LifeStateCss = `
 .st-empty{padding:24px;text-align:center;opacity:.75}
 @media (max-width:560px){.st-app{padding:8px}.st-r{width:30px}}
 `;
+
 
 </script>
 <script>
@@ -3895,6 +3923,1272 @@ window.LifeStateCss = `
   global.LifeModules.state = { mount };
 })(window);
 
+
+</script>
+<script>
+/* ---- modules/timers-store.js ---- */
+/* «Таймеры»: данные и действия (без экрана). LifeTimersStore.create(core) → объект S.
+   Всё пишется через core.commit (офлайн-очередь, журнал), строки отправляются целиком.
+   Время: сессии, ручные записи и поправки лежат в time_entries (meta.card = карточка, meta.target = дело карточки).
+   Остановка таймера: строка timer_runs получает deleted_at, а запись времени получает ТОТ ЖЕ id, поэтому повторная отправка ничего не дублирует.
+   Всё время идёт на дело, выбранное в момент остановки. */
+(function (global) {
+  'use strict';
+  const M = global.LifeTimersModel;
+  const MOD = 'timers', CACHE = 'timers', CACHE_DAYS = 60;
+  const TBL = { timer_cards: 'cards', timer_targets: 'targets', timer_runs: 'runs', time_entries: 'entries' };
+
+  function create(core) {
+    const TZ = core.TZ;
+    const D = { cards: [], targets: [], runs: [], entries: [], items: {} };
+    const S = { D, TZ, state: 'loading', note: '', loadedAt: 0, onChange: null };
+    const iso = ms => new Date(ms).toISOString();
+    const device = () => (core.config && core.config.device) || 'pocket';
+    const changed = () => { if (S.onChange) S.onChange(); };
+    S.today = () => M.dayKey(Date.now(), TZ);
+
+    /* ---------- чтение и копия для работы без сети ---------- */
+    function apply(d) {
+      D.cards = (d.cards || []).filter(r => !r.deleted_at);
+      D.targets = d.targets || [];
+      D.runs = (d.runs || []).filter(r => !r.deleted_at);
+      D.entries = (d.entries || []).filter(r => !r.deleted_at);
+      D.items = d.items || {};
+    }
+    function saveCache() {
+      const from = M.shiftDay(S.today(), -CACHE_DAYS);
+      core.cache.set(CACHE, { cards: D.cards, targets: D.targets, runs: D.runs, items: D.items, entries: D.entries.filter(e => e.local_date >= from) });
+    }
+    S.load = async function () {
+      if (S.state !== 'ready') S.state = 'loading'; changed();
+      try { await core.flush(); } catch (e) { /* очередь сама повторит */ }
+      try {
+        if (core.status().pending > 0) throw Object.assign(new Error('очередь'), { pendingQueue: true });
+        const nd = ['deleted_at=is.null'];
+        const [cards, targets, runs, entries, items] = await Promise.all([
+          core.select('timer_cards', { filters: nd }), core.select('timer_targets'), core.select('timer_runs', { filters: nd }),
+          core.select('time_entries', { filters: ['meta->>card=not.is.null', 'deleted_at=is.null'] }),
+          core.select('sphere_items', { filters: nd, columns: 'id,title,done,kind' })
+        ]);
+        const map = {}; items.forEach(i => { map[i.id] = { title: i.title, done: !!i.done, kind: i.kind }; });
+        apply({ cards, targets, runs, entries, items: map });
+        saveCache(); S.state = 'ready'; S.note = ''; S.loadedAt = Date.now();
+      } catch (e) {
+        if (e.auth) { S.state = 'error'; S.note = 'нужно войти'; S.authLost = true; changed(); return; }
+        const c = core.cache.get(CACHE);
+        if (c && (e.net || e.pendingQueue)) {
+          apply(c.data); S.state = 'ready';
+          S.note = e.pendingQueue ? 'Есть неотправленные изменения, показаны данные на этом телефоне.' : 'Нет связи. Показана копия от ' + new Date(c.ts).toLocaleString('ru-RU') + '.';
+        } else { S.state = 'error'; S.note = e.net ? 'нет связи с базой и нет копии на телефоне' : (e.message || 'ошибка чтения'); }
+      }
+      changed();
+    };
+
+    /* ---------- запись одним действием ---------- */
+    function tx() {
+      const w = {}, j = [], before = [];
+      const T = {
+        put(table, row) {
+          row = Object.assign({}, row, { updated_at: core.now() });
+          const arr = D[TBL[table]], i = arr.findIndex(r => r.id === row.id);
+          before.push({ table, prev: i >= 0 ? JSON.parse(JSON.stringify(arr[i])) : null, id: row.id });
+          const keepDeleted = table === 'timer_targets';
+          if (row.deleted_at && !keepDeleted) { if (i >= 0) arr.splice(i, 1); } else if (i >= 0) arr[i] = row; else arr.push(row);
+          const out = Object.assign({}, row); delete out.user_id; delete out.updated_by;
+          (w[table] = w[table] || {})[row.id] = out; return row;
+        },
+        del(table, row) { return T.put(table, Object.assign({}, row, { deleted_at: core.now() })); },
+        log(op, kind, id, summary) { j.push({ op, module: MOD, entity_kind: kind, entity_id: id, summary }); },
+        empty() { return !Object.keys(w).length; },
+        commit() {
+          saveCache();
+          const writes = Object.keys(w).map(t => ({ table: t, rows: Object.keys(w[t]).map(k => w[t][k]) }));
+          try { core.commit({ writes, journal: j }); } catch (e) { S.note = 'Не сохранено: ' + (e.message || e); }
+          changed(); return T;
+        },
+        /* отмена: возвращает прежние версии строк (с новой меткой времени), созданные заново помечает удалёнными */
+        undo(summary) {
+          const U = tx(), seen = {};
+          before.slice().reverse().forEach(b => {
+            const k = b.table + '/' + b.id; if (seen[k]) return; seen[k] = 1;
+            const first = before.find(x => x.table === b.table && x.id === b.id);
+            const cur = D[TBL[b.table]].find(r => r.id === b.id);
+            if (first.prev) U.put(b.table, first.prev); else if (cur) U.del(b.table, cur);
+          });
+          U.log('change', 'undo', '', summary || 'Отмена действия'); U.commit();
+        }
+      };
+      return T;
+    }
+    S.tx = tx;
+
+    /* ---------- полные строки ---------- */
+    const cardRow = (o, base) => Object.assign({ id: o.id, name: o.name, sort: 0, last_start: null, last_target: null, archived_from: null, created_at: iso(Date.now()), deleted_at: null }, base || {}, o.over || {});
+    const targetRow = o => ({ id: o.id, card_id: o.card_id, kind: o.kind || 'label', label: o.label || '', item_id: o.item_id || null, sort: o.sort || 0, created_at: iso(Date.now()), updated_at: core.now(), deleted_at: null });
+    const nextSort = arr => arr.reduce((m, r) => Math.max(m, r.sort || 0), 0) + 1024;
+    const newId = p => p + '_' + core.uuid().replace(/-/g, '').slice(0, 12);
+    function timeRow(o) {
+      const at = o.at || Date.now(), subj = M.subjectOf(o.target);
+      return { id: o.id || core.uuid(), subject_module: subj.module, subject_kind: subj.kind, subject_id: subj.id, kind: o.kind, duration_sec: o.sec,
+        started_at: o.start ? iso(o.start) : null, ended_at: o.end ? iso(o.end) : null, local_date: o.day || M.dayKey(at, TZ), tz: TZ, comment: o.comment || '', tags: [],
+        meta: Object.assign({ card: o.target.card_id, target: o.target.id }, o.meta || {}), source_device: device(), created_at: iso(at), updated_at: core.now(), deleted_at: null };
+    }
+    const card = id => M.cardOf(D, id), nameOf = id => (card(id) ? card(id).name : '');
+    const tname = t => M.targetName(D, t);
+    const targetById = id => D.targets.find(t => t.id === id) || null;
+
+    /* ---------- карточки ---------- */
+    S.addCard = function (name) {
+      name = String(name || '').trim().slice(0, 60); if (!name) return null;
+      const T = tx(), id = newId('tc'), c = T.put('timer_cards', cardRow({ id, name }, { sort: nextSort(D.cards) }));
+      const tg = T.put('timer_targets', targetRow({ id: newId('tg'), card_id: id, kind: 'label', label: '', sort: 1024 }));
+      T.put('timer_cards', Object.assign({}, c, { last_target: tg.id }));
+      T.log('create', 'card', id, 'Таймер добавлен: ' + name); T.commit(); return id;
+    };
+    S.renameCard = function (id, name) {
+      const c = card(id); name = String(name || '').trim().slice(0, 60); if (!c || !name || name === c.name) return;
+      const T = tx(); T.put('timer_cards', Object.assign({}, c, { name })); T.log('change', 'card', id, `Таймер переименован: «${c.name}» → «${name}»`); T.commit();
+    };
+    S.deleteCard = function (id) {
+      const c = card(id); if (!c) return;
+      const T = tx();
+      D.runs.filter(r => r.card_id === id).forEach(r => T.del('timer_runs', r));
+      D.targets.filter(t => t.card_id === id && !t.deleted_at).forEach(t => T.del('timer_targets', t));
+      D.entries.filter(e => e.meta && e.meta.card === id).forEach(e => T.del('time_entries', e));
+      T.del('timer_cards', c); T.log('delete', 'card', id, `Таймер удалён вместе с записями: ${c.name}`); T.commit();
+    };
+
+    /* ---------- дела карточки (метки и дела из СД) ---------- */
+    const liveTargets = id => M.targetsOf(D, id);
+    S.addLabels = function (cardId, text) {
+      const c = card(cardId); if (!c) return 0;
+      const T = tx(), have = liveTargets(cardId); let added = 0, sort = nextSort(D.targets.filter(t => t.card_id === cardId));
+      String(text).split(/[,;\n]/).forEach(raw => {
+        const t = raw.replace(/\s+/g, ' ').trim().slice(0, 60);
+        if (!t || have.length >= M.MAX_TARGETS) return;
+        if (have.some(x => tname(x).toLowerCase() === t.toLowerCase())) return;
+        const row = T.put('timer_targets', targetRow({ id: newId('tg'), card_id: cardId, kind: 'label', label: t, sort })); have.push(row); sort += 1024; added++;
+      });
+      if (added) { T.log('change', 'card', cardId, `Метки добавлены (${added}): ${c.name}`); T.commit(); }
+      return added;
+    };
+    S.addItemTarget = function (cardId, itemId) {
+      const c = card(cardId); if (!c || !itemId) return false;
+      const have = liveTargets(cardId);
+      if (have.length >= M.MAX_TARGETS || have.some(t => t.kind === 'item' && t.item_id === itemId)) return false;
+      const T = tx(); T.put('timer_targets', targetRow({ id: newId('tg'), card_id: cardId, kind: 'item', item_id: itemId, sort: nextSort(D.targets.filter(t => t.card_id === cardId)) }));
+      const it = D.items[itemId]; T.log('change', 'card', cardId, `В таймер «${c.name}» добавлено дело из СД: ${it ? it.title : itemId}`); T.commit(); return true;
+    };
+    S.removeTarget = function (cardId, targetId) {
+      const c = card(cardId), t = targetById(targetId), list = liveTargets(cardId);
+      if (!c || !t || list.length < 2) return false;
+      const T = tx(); T.del('timer_targets', t);
+      const rest = list.filter(x => x.id !== targetId);
+      D.runs.filter(r => r.card_id === cardId && r.target_id === targetId).forEach(r => T.put('timer_runs', Object.assign({}, r, { target_id: rest[0].id })));
+      if (c.last_target === targetId) T.put('timer_cards', Object.assign({}, c, { last_target: rest[0].id }));
+      T.log('change', 'card', cardId, `Дело убрано из таймера «${c.name}»: ${tname(t)} (записи сохранены)`); T.commit(); return true;
+    };
+    /* Выбор дела кнопкой на карточке: идущему таймеру меняет дело, неидущему меняет «выбранное». */
+    S.cycleTarget = function (cardId, allowRun) {
+      const c = card(cardId), list = liveTargets(cardId); if (!c || list.length < 2) return;
+      const run = allowRun ? M.runOf(D, cardId) : null;
+      const cur = run ? run.target_id : (M.selTarget(D, cardId) || {}).id;
+      const next = list[(list.findIndex(t => t.id === cur) + 1) % list.length];
+      const T = tx(); if (run) T.put('timer_runs', Object.assign({}, run, { target_id: next.id }));
+      T.put('timer_cards', Object.assign({}, c, { last_target: next.id }));
+      if (run) T.log('change', 'run', run.id, `Таймер «${c.name}»: дело переключено на «${tname(next)}»`);
+      T.commit();
+    };
+
+    /* ---------- запуск и остановка ---------- */
+    S.start = function (cardId) {
+      const c = card(cardId); if (!c) return { ok: false };
+      if (M.runOf(D, cardId)) return { ok: false };
+      if (D.runs.length && D.runs.some(r => r.locked)) return { ok: false, msg: 'Таймер на замке. Снимите замок: свайп вправо по идущей карточке или значок замка.' };
+      if (D.runs.length >= 2) return { ok: false, msg: 'Уже идут два таймера. Остановите один из них.' };
+      const sel = M.selTarget(D, cardId); if (!sel) return { ok: false, msg: 'У таймера нет дела.' };
+      const now = Date.now(), T = tx(), id = core.uuid();
+      T.put('timer_runs', { id, card_id: cardId, target_id: sel.id, started_at: iso(now), note: '', bell_min: 0, bell_at: null, locked: false, created_at: iso(now), updated_at: core.now(), deleted_at: null });
+      T.put('timer_cards', Object.assign({}, c, { last_start: iso(now), last_target: sel.id }));
+      T.log('create', 'run', id, `Таймер запущен: ${c.name}${liveTargets(cardId).length > 1 ? ' · ' + tname(sel) : ''}`); T.commit();
+      return { ok: true, second: D.runs.length === 2 };
+    };
+    S.stop = function (runId) {
+      const r = D.runs.find(x => x.id === runId); if (!r) return false;
+      const c = card(r.card_id), t = targetById(r.target_id) || M.selTarget(D, r.card_id), now = Date.now(), st = Date.parse(r.started_at), T = tx();
+      T.del('timer_runs', r);
+      if (now - st >= 1000 && t && !D.entries.some(e => e.id === r.id)) {
+        const sec = Math.round((now - st) / 1000);
+        T.put('time_entries', timeRow({ id: r.id, kind: 'session', sec, start: st, end: now, at: st, comment: r.note || '', target: t }));
+        T.log('create', 'time_entry', r.id, `Таймер остановлен: ${c ? c.name : ''}${t ? ' · ' + tname(t) : ''}; ${M.fmt(sec * 1000)}${r.note ? '; «' + r.note + '»' : ''}`);
+      } else T.log('change', 'run', r.id, `Таймер остановлен без записи (меньше секунды): ${c ? c.name : ''}`);
+      T.commit(); return true;
+    };
+    S.discard = function (runId) {
+      const r = D.runs.find(x => x.id === runId); if (!r) return false;
+      const T = tx(); T.del('timer_runs', r); T.log('change', 'run', r.id, `Таймер сброшен без записи: ${nameOf(r.card_id)} (${M.fmt(Date.now() - Date.parse(r.started_at))})`); T.commit(); return true;
+    };
+    S.toggleLock = function () {
+      if (D.runs.length !== 1) return { ok: false, msg: 'Замок можно ставить, только когда идёт один таймер.' };
+      const r = D.runs[0], T = tx(); T.put('timer_runs', Object.assign({}, r, { locked: !r.locked }));
+      T.log('change', 'run', r.id, r.locked ? 'Замок снят' : 'Таймер поставлен на замок'); T.commit(); return { ok: true, locked: !r.locked };
+    };
+    S.setNote = function (runId, text) {
+      const r = D.runs.find(x => x.id === runId); if (!r) return;
+      text = String(text || '').slice(0, 500); if (r.note === text) return;
+      const T = tx(); T.put('timer_runs', Object.assign({}, r, { note: text })); T.commit();
+    };
+    S.cycleBell = function (runId) {
+      const r = D.runs.find(x => x.id === runId); if (!r) return;
+      const next = M.BELLS[(M.BELLS.indexOf(r.bell_min || 0) + 1) % M.BELLS.length];
+      const T = tx(); T.put('timer_runs', Object.assign({}, r, { bell_min: next, bell_at: next ? iso(Date.now() + next * 60000) : null })); T.commit();
+    };
+    /* Сигнал, срок которого вышел: возвращает названия сработавших; давно просроченные (телефон спал) гасит молча. */
+    S.dueBells = function () {
+      const now = Date.now(), names = []; let any = false; const T = tx();
+      D.runs.forEach(r => {
+        if (r.bell_min && r.bell_at && now >= Date.parse(r.bell_at)) {
+          if (now - Date.parse(r.bell_at) < 15000) names.push(nameOf(r.card_id) + ' · ' + r.bell_min + ' мин');
+          T.put('timer_runs', Object.assign({}, r, { bell_min: 0, bell_at: null })); any = true;
+        }
+      });
+      if (any) T.commit(); return names;
+    };
+
+    /* ---------- поправки и записи ---------- */
+    S.adjust = function (cardId, day, deltaMin) {
+      const c = card(cardId), t = M.selTarget(D, cardId); if (!c || !t || !deltaMin) return false;
+      let rec = D.entries.find(e => e.kind === 'correction' && e.local_date === day && e.meta.card === cardId && e.meta.target === t.id);
+      const T = tx(), total = (rec ? rec.duration_sec : 0) + deltaMin * 60;
+      if (rec) { if (total === 0) T.del('time_entries', rec); else T.put('time_entries', Object.assign({}, rec, { duration_sec: total })); }
+      else T.put('time_entries', timeRow({ kind: 'correction', sec: deltaMin * 60, day, at: M.zonedTs(day, '12:00', TZ), target: t }));
+      T.log('change', 'time_entry', rec ? rec.id : '', `Поправка времени: ${c.name}${liveTargets(cardId).length > 1 ? ' · ' + tname(t) : ''}, ${M.fmtCorr(deltaMin)} (${day})`); T.commit(); return true;
+    };
+    S.removeEntry = function (id) {
+      const e = D.entries.find(x => x.id === id); if (!e) return false;
+      const T = tx(); T.del('time_entries', e);
+      T.log('delete', 'time_entry', id, `Запись удалена: ${nameOf(e.meta.card)}, ${e.kind === 'correction' ? 'поправка ' + M.fmtCorr(Math.round(e.duration_sec / 60)) : M.fmt(e.duration_sec * 1000)} (${e.local_date})`); T.commit(); return true;
+    };
+    S.addPast = function (o) { // {cardId, targetId, day, from:'HH:MM', to:'HH:MM', comment}
+      const c = card(o.cardId); if (!c) return { ok: false, msg: 'Выберите таймер.' };
+      if (!o.day) return { ok: false, msg: 'Выберите дату.' };
+      if (!o.from || !o.to) return { ok: false, msg: 'Укажите время начала и конца.' };
+      const st = M.zonedTs(o.day, o.from, TZ), en = M.zonedTs(o.day, o.to, TZ);
+      if (isNaN(st) || isNaN(en)) return { ok: false, msg: 'Не понял дату или время.' };
+      if (en <= st) return { ok: false, msg: 'Конец должен быть позже начала в тот же день. Ночную запись разделите на две.' };
+      if (en > Date.now()) return { ok: false, msg: 'Конец записи не может быть в будущем.' };
+      const t = targetById(o.targetId) || M.selTarget(D, o.cardId), sec = Math.round((en - st) / 1000), T = tx();
+      const row = T.put('time_entries', timeRow({ kind: 'manual', sec, start: st, end: en, at: st, comment: String(o.comment || '').trim().slice(0, 500), target: t }));
+      T.log('create', 'time_entry', row.id, `Запись за прошлое: ${c.name}${liveTargets(o.cardId).length > 1 ? ' · ' + tname(t) : ''}, ${o.from}–${o.to}, ${M.fmt(sec * 1000)} (${o.day})`); T.commit();
+      return { ok: true, tx: T, text: `${c.name}, ${o.from}–${o.to}, ${M.fmt(sec * 1000)}` };
+    };
+
+    /* ---------- объединение таймеров ---------- */
+    S.merge = function (ids, name, inHistory) {
+      name = String(name || '').trim().slice(0, 60);
+      const src = ids.map(card).filter(Boolean);
+      if (src.length < 2) return { ok: false, msg: 'Отметьте минимум два таймера.' };
+      if (!name) return { ok: false, msg: 'Введите название нового таймера.' };
+      if (src.some(c => M.runOf(D, c.id))) return { ok: false, msg: 'Один из выбранных таймеров сейчас идёт. Сначала остановите его.' };
+      const low = name.toLowerCase();
+      let dest = src.find(c => c.name.toLowerCase() === low) || null;
+      if (!dest && D.cards.some(c => !c.archived_from && c.name.toLowerCase() === low)) return { ok: false, msg: 'Таймер с таким названием уже есть. Выберите его в списке или назовите новый иначе.' };
+      const today = S.today(), T = tx();
+      const destId = dest ? dest.id : newId('tc');
+      const destTargets = dest ? liveTargets(dest.id).slice() : [];
+      /* какие дела нужны в итоговой карточке */
+      const norm = t => String(t).replace(/\s+/g, ' ').trim().slice(0, 60);
+      const mapT = {}; let sortN = nextSort(D.targets.filter(t => t.card_id === destId)), planned = destTargets.length;
+      const findDest = (kind, key) => destTargets.find(x => x.kind === kind && (kind === 'item' ? x.item_id === key : tname(x).toLowerCase() === key.toLowerCase()));
+      const newTargets = [];
+      const need = (kind, key, src0) => {
+        let t = findDest(kind, key); if (t) return t;
+        t = targetRow({ id: newId('tg'), card_id: destId, kind, label: kind === 'label' ? norm(key) : '', item_id: kind === 'item' ? key : null, sort: sortN }); sortN += 1024;
+        destTargets.push(t); newTargets.push(t); planned++; return t;
+      };
+      const moved = e => inHistory || e.local_date >= today;
+      src.forEach(c => {
+        const list = liveTargets(c.id);
+        list.forEach((t, i) => {
+          const used = D.entries.some(e => e.meta.card === c.id && e.meta.target === t.id && moved(e));
+          if (!(i === 0 || t.kind === 'item' || used)) return;
+          mapT[t.id] = t.kind === 'item' ? need('item', t.item_id) : need('label', t.label ? t.label : c.name);
+        });
+      });
+      if (planned > M.MAX_TARGETS) return { ok: false, msg: `Получится ${planned} дел в карточке, а можно не больше ${M.MAX_TARGETS}. Объедините меньше таймеров или удалите лишние метки.` };
+      if (!dest) { dest = T.put('timer_cards', cardRow({ id: destId, name }, { sort: nextSort(D.cards) })); }
+      newTargets.forEach(t => T.put('timer_targets', t));
+      const latest = src.slice().sort((a, b) => (b.last_start ? Date.parse(b.last_start) : 0) - (a.last_start ? Date.parse(a.last_start) : 0))[0];
+      const lt = mapT[latest.last_target] || mapT[(liveTargets(latest.id)[0] || {}).id];
+      const lastStart = [dest.last_start, latest.last_start].filter(Boolean).sort().pop() || null;
+      let count = 0;
+      src.forEach(c => {
+        D.entries.filter(e => e.meta.card === c.id && moved(e)).forEach(e => {
+          const nt = mapT[e.meta.target] || mapT[(liveTargets(c.id)[0] || {}).id]; if (!nt) return;
+          const subj = M.subjectOf(nt);
+          T.put('time_entries', Object.assign({}, e, { subject_module: subj.module, subject_kind: subj.kind, subject_id: subj.id, meta: Object.assign({}, e.meta, { card: destId, target: nt.id }) })); count++;
+        });
+        if (c.id !== destId) { if (inHistory) { D.targets.filter(t => t.card_id === c.id && !t.deleted_at).forEach(t => T.del('timer_targets', t)); T.del('timer_cards', c); } else T.put('timer_cards', Object.assign({}, c, { archived_from: today })); }
+      });
+      T.put('timer_cards', Object.assign({}, dest, { last_start: lastStart, last_target: lt ? lt.id : dest.last_target }));
+      /* сливаем и одинаковые поправки одного дня и дела */
+      const corr = {}; D.entries.filter(e => e.kind === 'correction' && e.meta.card === destId).forEach(e => {
+        const k = e.local_date + '|' + e.meta.target;
+        if (!corr[k]) corr[k] = e; else { const keep = corr[k]; T.put('time_entries', Object.assign({}, keep, { duration_sec: keep.duration_sec + e.duration_sec })); T.del('time_entries', e); }
+      });
+      Object.keys(corr).forEach(k => { const e = D.entries.find(x => x.id === corr[k].id); if (e && e.duration_sec === 0) T.del('time_entries', e); });
+      T.log('change', 'card', destId, `Таймеры объединены в «${name}»: ${src.map(c => c.name).join(', ')}${inHistory ? ' (с историей)' : ' (история осталась)'}; записей перенесено ${count}`); T.commit();
+      return { ok: true, tx: T, text: `Объединено в «${name}»: дел ${destTargets.length}.` };
+    };
+
+    /* ---------- перенос из старых «Карточек времени» (резервная копия kartochki-vremeni/backup/v1) ---------- */
+    S.importLegacy = async function (obj) {
+      if (!obj || !Array.isArray(obj.projects) || !Array.isArray(obj.sessions)) return { ok: false, msg: 'Это не резервная копия Карточек времени (нужна кнопка «Резервная копия»).' };
+      const sph = await core.select('spheres', { filters: ['deleted_at=is.null'] }), grs = await core.select('sphere_groups', { filters: ['deleted_at=is.null'] }), its = await core.select('sphere_items', { filters: ['deleted_at=is.null'] });
+      const T = tx(), now = core.now(), at = iso(Date.now());
+      let sp = sph.find(s => String(s.name).trim().toLowerCase() === 'развитие');
+      const sphereRows = [], groupRows = [], itemRows = [];
+      if (!sp) { sp = { id: 'sp_kv' + M.detUuid('развитие').slice(0, 8), name: 'Развитие', color: '#2e7d6b', sort: sph.reduce((m, s) => Math.max(m, s.sort || 0), 0) + 1024, created_at: at, updated_at: now, deleted_at: null }; sphereRows.push(sp); }
+      let gr = grs.find(g => g.sphere_id === sp.id && String(g.name).trim().toLowerCase() === 'карточки времени');
+      if (!gr) { gr = { id: 'gr_kv' + M.detUuid('карточки времени' + sp.id).slice(0, 8), sphere_id: sp.id, name: 'Карточки времени', collapsed: false, sort: grs.filter(g => g.sphere_id === sp.id).reduce((m, g) => Math.max(m, g.sort || 0), 0) + 1024, created_at: at, updated_at: now, deleted_at: null }; groupRows.push(gr); }
+      const existingKv = {}; its.forEach(i => { existingKv[i.id] = i; });
+      const tz = TZ, pById = {}; obj.projects.forEach(p => { pById[p.id] = p; });
+      const cardRows = [], targetRows = [], entryRows = [], runsSkipped = (obj.active || []).length;
+      let sortI = its.filter(i => i.group_id === gr.id).reduce((m, i) => Math.max(m, i.sort || 0), 0), sortC = nextSort(D.cards);
+      const tgMap = {}; // pid|tagName|'' → target id
+      obj.projects.forEach(p => {
+        const cid = 'tc_kv' + M.detUuid('card' + p.id).slice(0, 10), itemId = 'it_kv' + M.detUuid('item' + p.id).slice(0, 10);
+        if (!existingKv[itemId]) { sortI += 1024; itemRows.push({ id: itemId, sphere_id: sp.id, parent_id: null, group_id: gr.id, kind: 'project', title: String(p.name || 'Без названия').slice(0, 120), note: 'Перенесено из «Карточек времени»', done: false, importance: 0, shade: null, collapsed: false, act_days: 0, act_min: 0, timer_start: null, sort: sortI, created_at: at, updated_at: now, deleted_at: null }); }
+        const first = { id: 'tg_kv' + M.detUuid('t0' + p.id).slice(0, 10), card_id: cid, kind: 'item', label: '', item_id: itemId, sort: 1024, created_at: at, updated_at: now, deleted_at: null };
+        targetRows.push(first); tgMap[p.id + '|'] = first.id;
+        (p.tags || []).forEach((tag, k) => { const t = { id: 'tg_kv' + M.detUuid('t' + p.id + '|' + tag).slice(0, 10), card_id: cid, kind: 'label', label: String(tag).slice(0, 60), item_id: null, sort: 2048 + k * 1024, created_at: at, updated_at: now, deleted_at: null }; targetRows.push(t); tgMap[p.id + '|' + tag] = t.id; });
+        const sel = tgMap[p.id + '|' + (p.lastTag || '')] || first.id;
+        cardRows.push({ id: cid, name: String(p.name || 'Таймер').slice(0, 60), sort: sortC, last_start: p.lastStart ? iso(p.lastStart) : null, last_target: sel, archived_from: p.archivedFrom || null, created_at: at, updated_at: now, deleted_at: null }); sortC += 1024;
+      });
+      const tgOf = (p, tag) => { let k = p.id + '|' + (tag || ''); if (tgMap[k]) return tgMap[k]; if (tag) { const t = { id: 'tg_kv' + M.detUuid('t' + p.id + '|' + tag).slice(0, 10), card_id: 'tc_kv' + M.detUuid('card' + p.id).slice(0, 10), kind: 'label', label: String(tag).slice(0, 60), item_id: null, sort: 9000, created_at: at, updated_at: now, deleted_at: null }; targetRows.push(t); tgMap[k] = t.id; return t.id; } return tgMap[p.id + '|']; };
+      const subjFor = (p, tid) => { const t = targetRows.find(x => x.id === tid); return t.kind === 'item' ? ['spheres', 'item', t.item_id] : ['timers', 'target', t.id]; };
+      let nSess = 0, nCorr = 0;
+      obj.sessions.forEach(s => {
+        const p = pById[s.pid]; if (!p || !(s.end > s.start)) return;
+        const tid = tgOf(p, s.tag), sj = subjFor(p, tid), cid = 'tc_kv' + M.detUuid('card' + p.id).slice(0, 10);
+        entryRows.push({ id: M.detUuid('sess' + (s.id || s.pid + ':' + s.start)), subject_module: sj[0], subject_kind: sj[1], subject_id: sj[2], kind: 'session', duration_sec: Math.round((s.end - s.start) / 1000),
+          started_at: iso(s.start), ended_at: iso(s.end), local_date: M.dayKey(s.start, tz), tz, comment: String(s.note || '').slice(0, 500), tags: [], meta: { card: cid, target: tid, legacy: 'kv:' + (s.id || '') }, source_device: 'import', created_at: iso(s.start), updated_at: now, deleted_at: null }); nSess++;
+      });
+      (obj.corrections || []).forEach(c => {
+        const p = pById[c.pid]; if (!p || !c.min) return;
+        const tid = tgOf(p, c.tag), sj = subjFor(p, tid), cid = 'tc_kv' + M.detUuid('card' + p.id).slice(0, 10);
+        entryRows.push({ id: M.detUuid('corr' + c.pid + '|' + c.day + '|' + (c.tag || '')), subject_module: sj[0], subject_kind: sj[1], subject_id: sj[2], kind: 'correction', duration_sec: c.min * 60,
+          started_at: null, ended_at: null, local_date: c.day, tz, comment: '', tags: [], meta: { card: cid, target: tid, legacy: 'kv:corr' }, source_device: 'import', created_at: at, updated_at: now, deleted_at: null }); nCorr++;
+      });
+      const writes = [['spheres', sphereRows], ['sphere_groups', groupRows], ['sphere_items', itemRows], ['timer_cards', cardRows], ['timer_targets', targetRows], ['time_entries', entryRows]]
+        .filter(w => w[1].length).map(w => ({ table: w[0], rows: w[1] }));
+      const summary = `Импорт из «Карточек времени»: таймеров ${cardRows.length}, записей ${nSess}, поправок ${nCorr}, новых проектов в сфере «Развитие» ${itemRows.length}`;
+      core.commit({ writes, journal: [{ op: 'create', module: MOD, entity_kind: 'import', entity_id: 'kv', summary }] });
+      await S.load();
+      return { ok: true, text: summary + (runsSkipped ? `. Идущих таймеров в копии было ${runsSkipped}: они не переносятся` : '') + '.' };
+    };
+
+    return S;
+  }
+  global.LifeTimersStore = { create };
+})(window);
+
+</script>
+<script>
+/* ---- modules/shop-model.js ---- */
+/* «Покупки»: чистые расчёты без экрана и без базы. Логика перенесена из старого приложения «Карточки времени» без изменений.
+   Данные D = {items, receipts, lines, settings, lastBought}. День — строка YYYY-MM-DD по поясу владельца. window.LifeShopModel */
+(function (global) {
+  'use strict';
+  const T = global.LifeTimersModel;
+  const RECEIPT_GAP_MS = 5 * 60 * 1000, MAX_QTY = 9999, DORMANT_MS = 30 * 86400000;
+  const round2 = n => Math.round(n * 100) / 100, round3 = n => Math.round(n * 1000) / 1000, round4 = n => Math.round(n * 10000) / 10000;
+  const money = n => round2(n).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+  const fmtNum = n => round3(n).toLocaleString('ru-RU', { maximumFractionDigits: 3 });
+  const dayDiff = (a, b) => Math.round((Date.parse(a + 'T12:00:00Z') - Date.parse(b + 'T12:00:00Z')) / 86400000);
+  const fmtDay = key => new Date(key + 'T12:00:00Z').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'UTC' });
+
+  /* Весовые товары: в кг или в граммах. Остальное считается штуками. */
+  function weightKind(unit) {
+    const u = String(unit || '').trim().toLowerCase().replace(/\.$/, '');
+    if (u === 'кг' || u === 'kg' || u === 'килограмм') return 'kg';
+    if (u === 'г' || u === 'гр' || u === 'грамм' || u === 'g') return 'g';
+    return null;
+  }
+  const stepFor = unit => (weightKind(unit) === 'g' ? 100 : 1);
+  /* «1100», «1100 г», «1,1 кг», «1.1», «800г»: количество в единице самой карточки или null. Без суффикса дробное = кг, целое от 20 = граммы. */
+  function parseWeight(text, unit) {
+    const t = String(text).trim().toLowerCase().replace(/\s+/g, ' ');
+    const m = t.match(/^(\d+(?:[.,]\d+)?) ?(кг|килограмм[а-я]*|kg|г|гр|грамм[а-я]*|g)?\.?$/);
+    if (!m) return null;
+    const num = parseFloat(m[1].replace(',', '.')); if (!(num > 0)) return null;
+    let grams;
+    if (m[2]) grams = /^(кг|килограмм|kg)/.test(m[2]) ? num * 1000 : num;
+    else if (/[.,]/.test(m[1])) grams = num * 1000;
+    else grams = num < 20 ? num * 1000 : num;
+    return round3(weightKind(unit) === 'g' ? grams : grams / 1000);
+  }
+  function fmtQ(q, unit) {
+    const k = weightKind(unit);
+    if (k === 'kg') return q < 1 ? fmtNum(q * 1000) + ' г' : fmtNum(q) + ' кг';
+    if (k === 'g') return q >= 1000 ? fmtNum(q / 1000) + ' кг' : fmtNum(q) + ' г';
+    return fmtNum(q) + ' ' + unit;
+  }
+  const effPrice = it => (it.price_now != null ? +it.price_now : +it.price);
+  const startQty = it => (weightKind(it.unit) ? +it.ref_qty : 1);
+  /* ref_qty хватает на days дней; округляем вниз, не меньше одного дня */
+  const supplyDaysFor = (it, q) => Math.max(1, Math.floor(q * it.days / it.ref_qty + 1e-9));
+
+  /* «100 50», «100, 50», «100+50» → 150; «12,5» и «99,50» остаются дробными; «100,200» (три цифры) — сумма */
+  function parsePrice(text) {
+    const t = String(text).trim(); if (t === '') return NaN;
+    let total = 0; const tokens = t.split(/[\s;+]+/).filter(Boolean);
+    for (const tok of tokens) {
+      const parts = /^\d+,\d{1,2}$/.test(tok) ? [tok.replace(',', '.')] : tok.split(',').filter(Boolean);
+      for (const p of parts) { if (!/^\d+(\.\d+)?$/.test(p)) return NaN; total += Number(p); }
+    }
+    return round2(total);
+  }
+  /* Поля формы → значения карточки или {error} */
+  function readFields(f) {
+    const name = String(f.name || '').trim(); if (!name) return { error: 'Укажите название.' };
+    const ptxt = String(f.price || '').trim(), price = ptxt === '' ? 0 : parsePrice(ptxt);
+    if (!isFinite(price) || price < 0) return { error: 'Цена должна быть числом, например 250, 99,5 или 100 50 (сложу).' };
+    const days = Number(String(f.days || '').trim());
+    if (!isFinite(days) || days < 1 || Math.floor(days) !== days) return { error: 'Укажите целое число дней от 1, на сколько хватает покупки.' };
+    const unit = String(f.unit || '').trim() || 'шт', kind = weightKind(unit); let ref = 1;
+    if (kind) {
+      const rt = String(f.ref || '').trim();
+      if (rt === '') ref = kind === 'g' ? 1000 : 1; else { ref = parseWeight(rt, unit); if (ref === null) return { error: 'Не понял вес. Пример: 800 г или 0,8 кг.' }; }
+    }
+    return { name, price: round2(price), unit, days, ref_qty: ref };
+  }
+
+  /* ---- порядок и разделы ---- */
+  const ordMs = it => Date.parse(it.ord_at);
+  function isDormant(it, lastBought, now) {
+    if (it.status !== 'off') return false;
+    return now - Math.max(ordMs(it) || 0, lastBought[it.name] || 0) > DORMANT_MS;
+  }
+  function ordered(items) {
+    const rank = { on: 0, off: 1, bought: 2 };
+    return items.slice().sort((a, b) => {
+      if (a.status !== b.status) return rank[a.status] - rank[b.status];
+      if (a.status === 'on' && !!a.checked !== !!b.checked) return a.checked ? 1 : -1;
+      if (a.status === 'bought') { if (a.due_on !== b.due_on) return a.due_on < b.due_on ? -1 : 1; } else if (ordMs(b) !== ordMs(a)) return ordMs(b) - ordMs(a);
+      return a.name.localeCompare(b.name, 'ru');
+    });
+  }
+  const normQ = t => String(t).toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim();
+  function sugMatches(items, q) {
+    q = normQ(q); if (!q) return [];
+    const out = [];
+    items.forEach(it => { const n = normQ(it.name), at = n.indexOf(q); if (at < 0) return; out.push({ it, score: at === 0 ? 0 : (n.charAt(at - 1) === ' ' ? 1 : 2) }); });
+    out.sort((a, b) => a.score - b.score || a.it.name.localeCompare(b.it.name, 'ru'));
+    return out.slice(0, 8).map(x => x.it);
+  }
+  function sugStatus(it) {
+    if (it.status === 'on') return { t: 'в списке · ' + fmtQ(it.qty, it.unit), on: true };
+    if (it.status === 'bought') return { t: 'куплено, вернётся ' + fmtDay(it.due_on), on: false };
+    return { t: 'не в списке', on: false };
+  }
+
+  /* ---- чеки ---- */
+  const lineTs = l => Date.parse(l.bought_at);
+  /* Чек = строки с одним receipt_id. Итоги: товары, пакеты, сумма. */
+  function receiptsOf(D) {
+    const by = {}; D.lines.forEach(l => { (by[l.receipt_id] = by[l.receipt_id] || []).push(l); });
+    return D.receipts.filter(r => by[r.id]).map(r => {
+      const lines = by[r.id].slice().sort((a, b) => lineTs(a) - lineTs(b) || String(a.id).localeCompare(String(b.id)));
+      const goods = lines.filter(l => l.kind === 'goods'), bags = lines.filter(l => l.kind === 'bag');
+      const gAmount = round2(goods.reduce((a, l) => a + +l.amount, 0)), bAmount = round2(bags.reduce((a, l) => a + +l.amount, 0));
+      return { id: r.id, date: r.local_date, first: lineTs(lines[0]), last: lineTs(lines[lines.length - 1]), lines, goods, bags, itemsAmount: gAmount, bagsAmount: bAmount, amount: round2(gAmount + bAmount),
+        bagS: bags.filter(l => l.item_id === 'bag_s').reduce((a, l) => a + +l.qty, 0), bagL: bags.filter(l => l.item_id === 'bag_l').reduce((a, l) => a + +l.qty, 0) };
+    }).sort((a, b) => a.first - b.first);
+  }
+  /* К какому чеку отнести покупку сейчас: к последнему за этот день, если с его последней строки прошло не больше 5 минут */
+  function receiptFor(D, nowMs, day) {
+    const rs = receiptsOf(D).filter(r => r.date === day);
+    const last = rs[rs.length - 1];
+    return last && nowMs - last.last <= RECEIPT_GAP_MS ? last.id : null;
+  }
+  function bagsAmount(set, b) { return b.s * +set.bag_small_price + b.l * +set.bag_large_price; }
+
+  /* выгрузка чеков в прежнем формате kartochki-vremeni/purchases/v1; from/to — строки дней */
+  function buildPurchasesExport(D, from, to, tz, now) {
+    const rs = receiptsOf(D).filter(r => r.date >= from && r.date <= to);
+    const receipts = rs.map(r => {
+      const items = r.goods.map(p => {
+        const ref = +p.ref_qty > 0 ? +p.ref_qty : 1, supply = p.supply_days != null ? p.supply_days : p.days * p.qty;
+        return { purchaseId: p.id, itemId: p.item_id, name: p.name, unit: p.unit, unitPrice: +p.price, quantity: +p.qty, amount: +p.amount, daysPerUnit: round4(p.days / ref), referenceQuantity: ref, referenceDays: p.days, supplyDays: supply, purchasedAt: T.isoZoned(lineTs(p), tz), nextDue: T.shiftDay(p.local_date, supply) };
+      });
+      return { id: r.goods[0] ? r.goods[0].id : r.id, date: r.date, start: T.isoZoned(r.first, tz), end: T.isoZoned(r.last, tz), itemCount: items.length, itemsAmount: r.itemsAmount, bags: { small: r.bagS, large: r.bagL, amount: r.bagsAmount }, amount: r.amount, items };
+    });
+    const byDate = {}, daily = [];
+    receipts.forEach(r => { if (!byDate[r.date]) { byDate[r.date] = { date: r.date, receipts: 0, items: 0, amount: 0 }; daily.push(byDate[r.date]); } const d = byDate[r.date]; d.receipts++; d.items += r.itemCount; d.amount = round2(d.amount + r.amount); });
+    const set = D.settings;
+    return { schema: 'kartochki-vremeni/purchases/v1', exportedAt: T.isoZoned(now, tz), timezone: tz, range: { from, to }, rules: { receiptGapMinutes: RECEIPT_GAP_MS / 60000 },
+      totals: { receipts: receipts.length, items: receipts.reduce((a, r) => a + r.itemCount, 0), amount: round2(receipts.reduce((a, r) => a + r.amount, 0)), bagsAmount: round2(receipts.reduce((a, r) => a + r.bags.amount, 0)) },
+      bagPrices: { small: +set.bag_small_price, large: +set.bag_large_price }, daily, receipts };
+  }
+
+  global.LifeShopModel = { RECEIPT_GAP_MS, MAX_QTY, DORMANT_MS, round2, round3, round4, money, fmtNum, dayDiff, fmtDay, weightKind, stepFor, parseWeight, fmtQ, effPrice, startQty, supplyDaysFor,
+    parsePrice, readFields, isDormant, ordered, normQ, sugMatches, sugStatus, receiptsOf, receiptFor, bagsAmount, buildPurchasesExport };
+})(window);
+
+</script>
+<script>
+/* ---- modules/shop-store.js ---- */
+/* «Покупки»: данные и действия (без экрана). LifeShopStore.create(core) → объект S.
+   Всё пишется через core.commit (офлайн-очередь, журнал), строки целиком. Каждая строка чека дублируется в money_entries
+   (fact / out, subject shop/purchase, тот же uuid). Перенос строки в «Вещицы» — функция базы shop_move_to_thing (нужна связь). */
+(function (global) {
+  'use strict';
+  const M = global.LifeShopModel, TM = global.LifeTimersModel;
+  const MOD = 'shop', CACHE = 'shop', CACHE_DAYS = 45;
+  const TBL = { shop_items: 'cards', shop_list_state: 'st', shop_receipts: 'receipts', shop_purchases: 'lines' };
+  const LIST_KEY = 'lifeerp-shop-list', LISTS = [1, 2, 3];
+  const CARD_F = ['name', 'price', 'unit', 'days', 'ref_qty'], STATE_F = ['status', 'qty', 'price_now', 'ord_at', 'due_on', 'checked'];
+  const setId = n => (n === 1 ? 'main' : 'main' + n);
+
+  function create(core) {
+    const TZ = core.TZ;
+    /* Карточки (cards) общие, состояние карточки в каждом из трёх списков своё (st). D.items — карточки с состоянием текущего списка S.list. */
+    const D = { cards: [], st: [], setts: {}, items: [], receipts: [], lines: [], lastBought: {} };
+    const S = { D, TZ, state: 'loading', note: '', loadedAt: 0, onChange: null, lists: LISTS };
+    S.list = +core.store.get(LIST_KEY, 1); if (LISTS.indexOf(S.list) < 0) S.list = 1;
+    const iso = ms => new Date(ms).toISOString();
+    const device = () => (core.config && core.config.device) || 'pocket';
+    const changed = () => { if (S.onChange) S.onChange(); };
+    const today = () => TM.dayKey(Date.now(), TZ);
+    S.today = today;
+    /* цены пакетов общие на все списки (берутся из 'main'), счётчики пакетов у каждого списка свои */
+    const defSettings = n => { const m = D.setts.main; return { id: setId(n), bag_small_price: m ? m.bag_small_price : 25, bag_large_price: m ? m.bag_large_price : 39, bags_small: 0, bags_large: 0, created_at: iso(Date.now()), updated_at: core.now(), deleted_at: null }; };
+    Object.defineProperty(D, 'settings', { get() { return D.setts[setId(S.list)] || defSettings(S.list); } });
+    const stKey = (list, id) => list + '|' + id;
+    function stMap() { const m = {}; D.st.forEach(r => { m[stKey(r.list_no, r.item_id)] = r; }); return m; }
+    function view(list, map) {
+      map = map || stMap();
+      return D.cards.map(c => {
+        const s = map[stKey(list, c.id)];
+        const base = { status: 'off', qty: M.startQty(c), price_now: null, ord_at: c.ord_at || c.created_at, due_on: null, checked: false };
+        const o = Object.assign({}, c, s ? { status: s.status, qty: s.qty, price_now: s.price_now, ord_at: s.ord_at, due_on: s.due_on, checked: s.checked } : base);
+        o.list_no = list; return o;
+      });
+    }
+    function rebuild() { D.items = view(S.list); }
+    S.view = view;
+    function apply(d) {
+      D.cards = (d.cards || []).filter(r => !r.deleted_at); D.st = (d.st || []).filter(r => !r.deleted_at); D.receipts = (d.receipts || []).filter(r => !r.deleted_at); D.lines = (d.lines || []).filter(r => !r.deleted_at);
+      D.setts = d.setts || {}; D.lastBought = d.lastBought || {}; rebuild();
+    }
+    function lastBoughtOf(lines) { const m = {}; lines.forEach(l => { if (l.kind === 'goods') { const t = Date.parse(l.bought_at); if (!m[l.name] || t > m[l.name]) m[l.name] = t; } }); return m; }
+    function saveCache() {
+      const from = TM.shiftDay(today(), -CACHE_DAYS), lines = D.lines.filter(l => l.local_date >= from), ids = {}; lines.forEach(l => { ids[l.receipt_id] = 1; });
+      core.cache.set(CACHE, { cards: D.cards, st: D.st, setts: D.setts, lines, receipts: D.receipts.filter(r => ids[r.id]), lastBought: D.lastBought });
+    }
+    function legacyCache(d) { /* копия, сохранённая до трёх списков: все состояния уходят в список 1 */
+      const cards = (d.items || []).map(i => ({ id: i.id, name: i.name, price: i.price, unit: i.unit, days: i.days, ref_qty: i.ref_qty, created_at: i.created_at, ord_at: i.ord_at, deleted_at: null }));
+      const st = (d.items || []).map(i => ({ id: 'l1_' + i.id, list_no: 1, item_id: i.id, status: i.status, qty: i.qty, price_now: i.price_now, ord_at: i.ord_at, due_on: i.due_on, checked: i.checked, deleted_at: null }));
+      return { cards, st, setts: d.settings ? { main: d.settings } : {}, receipts: d.receipts, lines: d.lines, lastBought: d.lastBought };
+    }
+    S.load = async function () {
+      if (S.state !== 'ready') S.state = 'loading'; changed();
+      try { await S.flushPending(); await core.flush(); } catch (e) { /* очередь повторит */ }
+      try {
+        if (core.status().pending > 0) throw Object.assign(new Error('очередь'), { pendingQueue: true });
+        const nd = ['deleted_at=is.null'];
+        const [cards, st, receipts, lines, set] = await Promise.all([core.select('shop_items', { filters: nd }), core.select('shop_list_state', { filters: nd }), core.select('shop_receipts', { filters: nd }), core.select('shop_purchases', { filters: nd }), core.select('shop_settings', { filters: nd })]);
+        const setts = {}; set.forEach(r => { setts[r.id] = r; });
+        apply({ cards, st, receipts, lines, setts, lastBought: lastBoughtOf(lines) });
+        saveCache(); S.state = 'ready'; S.note = ''; S.loadedAt = Date.now();
+      } catch (e) {
+        if (e.auth) { S.state = 'error'; S.note = 'нужно войти'; S.authLost = true; changed(); return; }
+        const c = core.cache.get(CACHE);
+        if (c && (e.net || e.pendingQueue)) { apply(c.data.cards ? c.data : legacyCache(c.data)); S.state = 'ready'; S.note = e.pendingQueue ? 'Есть неотправленные изменения, показаны данные на этом телефоне.' : 'Нет связи. Показана копия от ' + new Date(c.ts).toLocaleString('ru-RU') + '.'; }
+        else { S.state = 'error'; S.note = e.net ? 'нет связи с базой и нет копии на телефоне' : (e.message || 'ошибка чтения'); }
+      }
+      if (S.state === 'ready') S.refreshDue();
+      changed();
+    };
+
+    /* ---------- запись одним действием (как в «Таймерах») ---------- */
+    function tx() {
+      const w = {}, j = [], before = [];
+      const arrOf = table => (table === 'shop_settings' ? null : D[TBL[table]]);
+      const T = {
+        /* строка карточки с состоянием (put 'shop_items') раскладывается: общая часть в shop_items, состояние текущего списка в shop_list_state */
+        put(table, row) {
+          if (table !== 'shop_items') return T.rawPut(table, row);
+          const cur = D.cards.find(c => c.id === row.id), now = iso(Date.now());
+          if (row.deleted_at) { const c = cur || row; T.rawPut('shop_items', Object.assign({ status: 'off', qty: 1, price_now: null, ord_at: c.ord_at || now, due_on: null, checked: false }, cardOnly(c), { id: row.id, created_at: c.created_at || now, deleted_at: row.deleted_at })); return row; }
+          const card = Object.assign({ status: 'off', qty: 1, price_now: null, ord_at: (cur && cur.ord_at) || row.ord_at || now, due_on: null, checked: false }, cardOnly(row), { id: row.id, created_at: (cur && cur.created_at) || row.created_at || now, deleted_at: null });
+          if (!cur || CARD_F.some(k => cur[k] !== card[k])) T.rawPut('shop_items', card);
+          const list = row.list_no || S.list;
+          T.rawPut('shop_list_state', Object.assign({ id: 'l' + list + '_' + row.id, list_no: list, item_id: row.id, created_at: now, deleted_at: null }, pick(row, STATE_F)));
+          return row;
+        },
+        rawPut(table, row) {
+          row = Object.assign({}, row, { updated_at: core.now() });
+          if (table === 'shop_settings') { before.push({ table, prev: D.setts[row.id] ? JSON.parse(JSON.stringify(D.setts[row.id])) : null, id: row.id }); D.setts[row.id] = row; }
+          else {
+            const arr = arrOf(table), i = arr.findIndex(r => r.id === row.id);
+            before.push({ table, prev: i >= 0 ? JSON.parse(JSON.stringify(arr[i])) : null, id: row.id });
+            if (row.deleted_at) { if (i >= 0) arr.splice(i, 1); } else if (i >= 0) arr[i] = row; else arr.push(row);
+          }
+          if (table === 'shop_items' || table === 'shop_list_state') rebuild();
+          const out = Object.assign({}, row); delete out.user_id; delete out.updated_by; (w[table] = w[table] || {})[row.id] = out; return row;
+        },
+        putMoney(row) { row = Object.assign({}, row, { updated_at: core.now() }); (w.money_entries = w.money_entries || {})[row.id] = row; before.push({ table: 'money_entries', prev: null, id: row.id, money: row }); return row; },
+        del(table, row) { return T.put(table, Object.assign({}, row, { deleted_at: core.now() })); },
+        log(op, kind, id, summary) { j.push({ op, module: MOD, entity_kind: kind, entity_id: id, summary }); },
+        commit() {
+          saveCache();
+          const writes = Object.keys(w).map(t => ({ table: t, rows: Object.keys(w[t]).map(k => w[t][k]) }));
+          try { core.commit({ writes, journal: j }); } catch (e) { S.note = 'Не сохранено: ' + (e.message || e); }
+          changed(); return T;
+        },
+        /* отмена: прежние версии возвращаются, созданное заново помечается удалённым (в т.ч. деньги) */
+        undo(summary) {
+          const U = tx(), seen = {};
+          before.slice().reverse().forEach(b => {
+            const k = b.table + '/' + b.id; if (seen[k]) return; seen[k] = 1;
+            const first = before.find(x => x.table === b.table && x.id === b.id);
+            if (b.table === 'money_entries') { U.putMoney(Object.assign({}, b.money, { deleted_at: core.now() })); return; }
+            if (b.table === 'shop_settings') { const cs = D.setts[b.id]; if (first.prev) U.rawPut('shop_settings', first.prev); else if (cs) U.rawPut('shop_settings', Object.assign({}, cs, { deleted_at: core.now() })); return; }
+            const cur = arrOf(b.table).find(r => r.id === b.id);
+            if (first.prev) U.rawPut(b.table, first.prev); else if (cur) U.rawPut(b.table, Object.assign({}, cur, { deleted_at: core.now() }));
+          });
+          U.log('change', 'undo', '', summary || 'Отмена действия'); U.commit();
+        }
+      };
+      return T;
+    }
+    S.tx = tx;
+    const pick = (o, ks) => { const r = {}; ks.forEach(k => { r[k] = o[k]; }); return r; };
+    const cardOnly = o => pick(o, CARD_F);
+
+    const newId = p => p + '_' + core.uuid().replace(/-/g, '').slice(0, 12);
+    const item = id => D.items.find(i => i.id === id) || null;
+    const itemRow = (o, base) => Object.assign({ id: o.id, name: '', price: 0, unit: 'шт', days: 1, ref_qty: 1, status: 'on', qty: 1, price_now: null, ord_at: iso(Date.now()), due_on: null, checked: false, created_at: iso(Date.now()), deleted_at: null }, base || {}, o);
+    const snap = it => ({ status: it.status, qty: it.qty, ord_at: it.ord_at, due_on: it.due_on, price_now: it.price_now, checked: it.checked });
+    const reactivate = (it, ordMs) => Object.assign({}, it, { status: 'on', qty: M.weightKind(it.unit) ? it.ref_qty : (it.qty || 1), price_now: null, checked: false, ord_at: iso(ordMs), due_on: null });
+    const toOff = it => Object.assign({}, it, { status: 'off', qty: M.startQty(it), price_now: null, ord_at: iso(Date.now()), due_on: null, checked: false });
+
+    /* купленное возвращается в список в календарный день due_on */
+    S.refreshDue = function () {
+      const t = today(), T = tx(); let n = 0;
+      LISTS.forEach(l => view(l).filter(it => it.status === 'bought' && it.due_on && it.due_on <= t).forEach(it => { T.put('shop_items', reactivate(it, TM.zonedTs(it.due_on, '00:00', TZ))); n++; }));
+      if (n) T.commit(); return n > 0;
+    };
+
+    S.setList = function (n) { if (LISTS.indexOf(n) < 0) return; S.list = n; core.store.set(LIST_KEY, n); rebuild(); changed(); };
+    S.nextList = function () { S.setList(S.list % LISTS.length + 1); return S.list; };
+
+    /* ---------- карточки ---------- */
+    S.addItem = function (f) {
+      const r = M.readFields(f); if (r.error) return r;
+      const T = tx(), id = newId('si'), row = itemRow({ id }, r); row.qty = M.startQty(row); T.put('shop_items', row);
+      T.log('create', 'item', id, 'Покупка добавлена в список: ' + r.name); T.commit(); return { ok: true, id, tx: T, name: r.name };
+    };
+    S.editItem = function (id, f) {
+      const r = M.readFields(f), it = item(id); if (r.error) return r; if (!it) return { error: 'Карточка не найдена.' };
+      const unitChanged = it.unit !== r.unit, priceChanged = +it.price !== r.price, n = Object.assign({}, it, r);
+      if (unitChanged || priceChanged) n.price_now = null;
+      if (unitChanged && n.status === 'on') n.qty = M.startQty(n);
+      const T = tx(); T.put('shop_items', n); T.log('change', 'item', id, 'Покупка изменена: ' + r.name); T.commit(); return { ok: true };
+    };
+    S.deleteItem = function (id) { const it = item(id); if (!it) return; const T = tx(); T.del('shop_items', it); T.log('delete', 'item', id, 'Покупка удалена: ' + it.name); T.commit(); };
+    S.setChecked = function (id, v) { const it = item(id); if (!it || it.status !== 'on') return; const T = tx(); T.put('shop_items', Object.assign({}, it, { checked: !!v })); T.commit(); };
+
+    /* Правка веса и цены в активной карточке: в памяти сразу, в базу — после паузы или при уходе из поля */
+    let pend = {}, pendT = null;
+    S.setLive = function (id, patch) {
+      const it = item(id); if (!it) return; let r = D.st.find(x => x.list_no === S.list && x.item_id === id);
+      if (!r) { r = Object.assign({ id: 'l' + S.list + '_' + id, list_no: S.list, item_id: id, created_at: iso(Date.now()), deleted_at: null }, pick(it, STATE_F)); D.st.push(r); }
+      Object.assign(r, patch); rebuild(); pend[id + '|' + S.list] = true; clearTimeout(pendT); pendT = setTimeout(() => S.flushPending(), 700);
+    };
+    S.flushPending = async function () {
+      clearTimeout(pendT); const ids = Object.keys(pend); pend = {}; if (!ids.length) return;
+      const T = tx(); ids.forEach(k => { const [id, l] = k.split('|'), it = view(+l).find(x => x.id === id); if (it) T.put('shop_items', it); }); T.commit();
+    };
+
+    /* Свайпы: вправо = плюс (или вернуть в список), влево = минус (или перестать ждать) */
+    S.swipeRight = function (id) {
+      const it = item(id); if (!it) return {};
+      const T = tx();
+      if (it.status === 'off') T.put('shop_items', Object.assign({}, it, { status: 'on', qty: M.startQty(it), price_now: null, ord_at: iso(Date.now()), due_on: null, checked: false }));
+      else if (it.status === 'bought') { T.put('shop_items', reactivate(it, Date.now())); T.commit(); return { msg: 'Вернул в список раньше срока.' }; }
+      else { const step = M.stepFor(it.unit); if (it.qty + step > M.MAX_QTY) return { msg: 'Больше ' + M.MAX_QTY + ' не добавляю.' }; T.put('shop_items', Object.assign({}, it, { qty: M.round3(+it.qty + step) })); }
+      T.commit(); return {};
+    };
+    S.swipeLeft = function (id) {
+      const it = item(id); if (!it) return {};
+      const T = tx();
+      if (it.status === 'bought') { T.put('shop_items', toOff(it)); T.commit(); return { msg: 'Перестал ждать: ' + it.name + '.', tx: T }; }
+      if (it.status !== 'on') return {};
+      const step = M.stepFor(it.unit);
+      if (it.qty - step > 1e-9) T.put('shop_items', Object.assign({}, it, { qty: M.round3(+it.qty - step) })); else T.put('shop_items', toOff(it));
+      T.commit(); return {};
+    };
+    /* Поиск: поднять карточку наверх, включив, если она не в списке */
+    S.pickFound = function (id) {
+      const it = item(id); if (!it) return null; const was = it.status, T = tx();
+      if (was === 'off') T.put('shop_items', Object.assign({}, it, { status: 'on', qty: M.startQty(it), price_now: null, ord_at: iso(Date.now()), due_on: null, checked: false }));
+      else if (was === 'bought') T.put('shop_items', reactivate(it, Date.now()));
+      else T.put('shop_items', Object.assign({}, it, { ord_at: iso(Date.now()), checked: false }));
+      T.commit(); return { was, name: it.name, tx: T };
+    };
+
+    /* ---------- пакеты ---------- */
+    S.bag = function (key, clear) { // key 's' | 'l'
+      const f = key === 's' ? 'bags_small' : 'bags_large', set = D.settings; if (!clear && set[f] >= 99) return; const T = tx();
+      T.put('shop_settings', Object.assign({}, set, { [f]: clear ? 0 : set[f] + 1 })); T.commit();
+    };
+    S.setBagPrices = function (small, large) {
+      const a = M.parsePrice(small), b = M.parsePrice(large); if (!isFinite(a) || !isFinite(b) || a < 0 || b < 0) return { error: 'Цены пакетов должны быть числами.' };
+      const T = tx(); LISTS.forEach(l => { if (l === 1 || D.setts[setId(l)]) T.put('shop_settings', Object.assign({}, D.setts[setId(l)] || defSettings(l), { bag_small_price: a, bag_large_price: b })); }); T.log('change', 'settings', 'main', `Цены пакетов: М ${a}, Б ${b}`); T.commit(); return { ok: true };
+    };
+
+    /* ---------- покупка ---------- */
+    function money(line, extra) {
+      return Object.assign({ id: line.id, subject_module: 'shop', subject_kind: 'purchase', subject_id: line.id, direction: 'out', kind: 'fact', amount: line.amount, currency: 'KZT', fx_rate: null, occurred_on: line.local_date, tz: TZ, category: '', comment: line.name,
+        meta: { receipt: line.receipt_id, kind: line.kind }, source_device: device(), created_at: line.created_at, deleted_at: null }, extra || {});
+    }
+    S.buy = function (id) {
+      const it = item(id); if (!it || it.status !== 'on') return null;
+      const now = Date.now(), day = TM.dayKey(now, TZ), price = M.effPrice(it), q = +it.qty, supply = M.supplyDaysFor(it, q), T = tx();
+      let rid = M.receiptFor(D, now, day);
+      if (!rid) { rid = newId('rc'); T.put('shop_receipts', { id: rid, started_at: iso(now), local_date: day, created_at: iso(now), deleted_at: null }); }
+      const mk = (kind, item_id, name, unit, pr, qty, amount, extra) => Object.assign({ id: core.uuid(), receipt_id: rid, kind, item_id, name, unit, price: pr, qty, amount, days: 1, ref_qty: 1, supply_days: 1, bought_at: iso(now), local_date: day, thing_id: null, created_at: iso(now), deleted_at: null }, extra || {});
+      const g = mk('goods', it.id, it.name, it.unit, price, q, M.round2(price * q), { days: it.days, ref_qty: +it.ref_qty, supply_days: supply });
+      T.put('shop_purchases', g); T.putMoney(money(g));
+      const set = D.settings, bagsText = [];
+      [['s', 'bags_small', 'bag_small_price', 'Пакет М', 'bag_s'], ['l', 'bags_large', 'bag_large_price', 'Пакет Б', 'bag_l']].forEach(b => {
+        const n = set[b[1]]; if (!n) return; const pr = +set[b[2]], line = mk('bag', b[4], b[3], 'шт', pr, n, M.round2(pr * n)); T.put('shop_purchases', line); T.putMoney(money(line)); bagsText.push(b[3].slice(-1) + n);
+      });
+      if (bagsText.length) T.put('shop_settings', Object.assign({}, set, { bags_small: 0, bags_large: 0 }));
+      const due = TM.shiftDay(day, supply);
+      T.put('shop_items', Object.assign({}, it, { status: 'bought', checked: false, due_on: due }));
+      D.lastBought[it.name] = now;
+      T.log('create', 'purchase', g.id, `Куплено: ${it.name}, ${M.fmtQ(q, it.unit)}, ${M.money(g.amount)}${bagsText.length ? '; пакеты ' + bagsText.join(' ') : ''}`); T.commit();
+      return { tx: T, name: it.name, text: `${it.name}, ${M.fmtQ(q, it.unit)}`, due };
+    };
+    S.deleteLine = function (lineId) {
+      const l = D.lines.find(x => x.id === lineId); if (!l) return false; const T = tx();
+      T.del('shop_purchases', l); T.putMoney(money(l, { deleted_at: core.now() }));
+      if (!D.lines.some(x => x.receipt_id === l.receipt_id)) { const r = D.receipts.find(x => x.id === l.receipt_id); if (r) T.del('shop_receipts', r); }
+      T.log('delete', 'purchase', lineId, `Строка чека удалена: ${l.name}, ${M.money(+l.amount)} (${l.local_date})`); T.commit(); return true;
+    };
+    /* перенос строки чека в «Вещицы»: одна транзакция в базе, нужна связь; повтор безопасен */
+    S.moveToThing = async function (lineId) {
+      const l = D.lines.find(x => x.id === lineId); if (!l || l.kind !== 'goods') return { ok: false, msg: 'Переносятся только товары.' };
+      try { await core.flush(); } catch (e) { /* ниже проверим очередь */ }
+      if (core.status().pending > 0) return { ok: false, msg: 'Сначала дождитесь отправки изменений (вверху «Ожидает отправки»).' };
+      try {
+        const r = await core.request('/rest/v1/rpc/shop_move_to_thing', { method: 'POST', body: { p_line: lineId } });
+        l.thing_id = r.data.thing_id; saveCache(); changed();
+        return { ok: true, created: !!r.data.created, thingId: r.data.thing_id };
+      } catch (e) { return { ok: false, msg: e.net ? 'Нет связи. Перенос возможен только при подключении.' : (/BAG_NOT/.test(e.message) ? 'Пакеты не переносятся.' : e.message) }; }
+    };
+
+    /* ---------- перенос из старого приложения (резервная копия kartochki-vremeni/backup/v1, раздел shop) ---------- */
+    const rowStamp = (at, now) => ({ created_at: at, updated_at: now, deleted_at: null });
+    S.importLegacy = async function (obj) {
+      /* копия «Карточек времени»: shops = три списка ({items, bags}), purchases = общие чеки; в более старой копии один список shop = {items, purchases, bags} */
+      const lists = obj && Array.isArray(obj.shops) && obj.shops.length ? obj.shops : (obj && obj.shop && Array.isArray(obj.shop.items) ? [obj.shop] : null);
+      const purchases = obj && Array.isArray(obj.purchases) ? obj.purchases : (obj && obj.shop && Array.isArray(obj.shop.purchases) ? obj.shop.purchases : null);
+      if (!lists || !lists.every(l => l && Array.isArray(l.items)) || !purchases) return { ok: false, msg: 'В копии нет раздела покупок (нужна кнопка «Резервная копия» старых Карточек времени).' };
+      const sh = { purchases, bags: lists[0].bags };
+      const at = iso(Date.now()), now = core.now(), uid = s => TM.detUuid(s);
+      const items = [], states = [], idMap = {}, seen = {}, setts = [];
+      lists.slice(0, 3).forEach((lst, li) => {
+        const list = li + 1;
+        lst.items.forEach(o => {
+          const id = 'si_kv' + uid('item' + o.id).slice(0, 10); idMap[o.id] = id;
+          const st = ['on', 'off', 'bought'].includes(o.status) ? o.status : 'off', due = st === 'bought' && o.dueKey ? o.dueKey : null;
+          const f = { name: String(o.name || 'Без названия').slice(0, 60), price: M.round2(+o.price || 0), unit: String(o.unit || 'шт'), days: Math.max(1, Math.floor(+o.days) || 1), ref_qty: +o.refQty > 0 ? M.round3(+o.refQty) : 1 };
+          if (!seen[id]) { seen[id] = 1; items.push(Object.assign({ id, status: 'off', qty: 1, price_now: null, ord_at: iso(+o.ord || Date.now()), due_on: null, checked: false }, f, rowStamp(at, now))); }
+          states.push(Object.assign({ id: 'l' + list + '_' + id, list_no: list, item_id: id, status: st === 'bought' && !due ? 'off' : st, qty: +o.qty > 0 ? M.round3(+o.qty) : 1, price_now: o.priceNow != null ? M.round2(+o.priceNow) : null, ord_at: iso(+o.ord || Date.now()), due_on: due, checked: !!o.checked }, rowStamp(at, now)));
+        });
+        const b = lst.bags || {}, cur = D.setts[setId(list)] || defSettings(list);
+        const row = Object.assign({}, cur, { bags_small: Math.max(0, +b.s || 0), bags_large: Math.max(0, +b.l || 0), updated_at: now, deleted_at: null }); delete row.user_id; delete row.updated_by; setts.push(row);
+      });
+      /* чеки: подряд идущие покупки одного дня, не дальше 5 минут друг от друга */
+      const ps = sh.purchases.filter(p => p && p.at).slice().sort((a, b) => a.at - b.at), receipts = [], lines = [], money = []; let cur = null;
+      ps.forEach(p => {
+        const day = TM.dayKey(p.at, TZ);
+        if (!cur || cur.date !== day || p.at - cur.last > M.RECEIPT_GAP_MS) { cur = { id: 'rc_kv' + uid('receipt' + p.id).slice(0, 10), date: day, last: p.at }; receipts.push({ id: cur.id, started_at: iso(p.at), local_date: day, created_at: at, updated_at: now, deleted_at: null }); }
+        cur.last = p.at;
+        const base = { receipt_id: cur.id, bought_at: iso(p.at), local_date: day, created_at: iso(p.at), updated_at: now, deleted_at: null, thing_id: null };
+        const g = Object.assign({ id: uid('line' + p.id), kind: 'goods', item_id: idMap[p.itemId] || null, name: String(p.name || '').slice(0, 60), unit: String(p.unit || 'шт'), price: M.round2(+p.price || 0), qty: +p.qty > 0 ? M.round3(+p.qty) : 1,
+          amount: M.round2(+p.amount || 0), days: Math.max(1, Math.floor(+p.days) || 1), ref_qty: +p.refQty > 0 ? M.round3(+p.refQty) : 1, supply_days: Math.max(1, Math.floor(+p.supplyDays) || 1) }, base);
+        lines.push(g);
+        if (p.bags) [['s', 'bag_s', 'Пакет М', 25], ['l', 'bag_l', 'Пакет Б', 39]].forEach(b => {
+          const n = +p.bags[b[0]] || 0; if (!n) return; const tot = +p.bags.amount || 0, price = b[0] === 's' ? 25 : 39;
+          lines.push(Object.assign({ id: uid('bag' + b[0] + p.id), kind: 'bag', item_id: b[1], name: b[2], unit: 'шт', price, qty: n, amount: M.round2(n * price), days: 1, ref_qty: 1, supply_days: 1 }, base, { created_at: iso(p.at) }));
+        });
+      });
+      lines.forEach(l => money.push({ id: l.id, subject_module: 'shop', subject_kind: 'purchase', subject_id: l.id, direction: 'out', kind: 'fact', amount: l.amount, currency: 'KZT', fx_rate: null, occurred_on: l.local_date, tz: TZ, category: '', comment: l.name,
+        meta: { receipt: l.receipt_id, kind: l.kind, legacy: 'kv' }, source_device: 'import', created_at: l.created_at, updated_at: now, deleted_at: null }));
+      const writes = [['shop_items', items], ['shop_receipts', receipts], ['shop_purchases', lines], ['money_entries', money], ['shop_list_state', states], ['shop_settings', setts]].filter(w => w[1].length).map(w => ({ table: w[0], rows: w[1] }));
+      const summary = `Импорт покупок из «Карточек времени»: списков ${lists.length}, карточек ${items.length}, чеков ${receipts.length}, строк ${lines.length}`;
+      core.commit({ writes, journal: [{ op: 'create', module: MOD, entity_kind: 'import', entity_id: 'kv', summary }] });
+      await S.load(); return { ok: true, text: summary + '.' };
+    };
+
+    /* Выгрузка чеков «kartochki-vremeni/purchases/v1» (кнопки выгрузки в старых и новых Покупках). Идентификаторы те же, что у переноса из резервной копии,
+       поэтому одна и та же покупка не задвоится при любом порядке переносов. Уже имеющиеся строки и карточки не трогаем. Новые карточки (по одной на товар) создаются
+       «не в списке», а если товар куплен недавно, то «куплено» с датой возврата из выгрузки. */
+    S.importPurchases = async function (data) {
+      if (!data || data.schema !== 'kartochki-vremeni/purchases/v1' || !Array.isArray(data.receipts)) return { ok: false, msg: 'Это не выгрузка чеков (нужен формат purchases/v1).' };
+      const at = iso(Date.now()), now = core.now(), uid = x => TM.detUuid(x), today = TM.dayKey(Date.now(), TZ);
+      const haveItem = new Set(D.cards.map(i => i.id)), haveLine = new Set(D.lines.map(l => l.id)), haveRc = new Set(D.receipts.map(r => r.id));
+      const price = { s: +(data.bagPrices && data.bagPrices.small) || 25, l: +(data.bagPrices && data.bagPrices.large) || 39 };
+      const newItems = {}, receipts = [], lines = [], money = [], dayOf = ts => String(ts).slice(0, 10); let skipped = 0, bad = 0;
+      data.receipts.forEach(r => {
+        const goods = (r.items || []).filter(p => p && p.purchasedAt && isFinite(Date.parse(p.purchasedAt)));
+        bad += (r.items || []).length - goods.length;
+        if (!goods.length && !(r.bags && (r.bags.small || r.bags.large))) return;
+        const first = goods[0], rid = 'rc_kv' + uid('receipt' + (first ? first.purchaseId : r.id)).slice(0, 10), startMs = Date.parse(r.start || (first && first.purchasedAt)), day = dayOf(r.start || first.purchasedAt);
+        if (!haveRc.has(rid)) { receipts.push({ id: rid, started_at: iso(startMs), local_date: day, created_at: at, updated_at: now, deleted_at: null }); haveRc.add(rid); }
+        const mk = (id, o) => Object.assign({ id, receipt_id: rid, thing_id: null, deleted_at: null, updated_at: now }, o);
+        goods.forEach(p => {
+          const id = uid('line' + p.purchaseId); if (haveLine.has(id)) { skipped++; return; } haveLine.add(id);
+          const ms = Date.parse(p.purchasedAt), itemId = p.itemId ? 'si_kv' + uid('item' + p.itemId).slice(0, 10) : null;
+          lines.push(mk(id, { kind: 'goods', item_id: itemId, name: String(p.name || '').slice(0, 60) || 'Без названия', unit: String(p.unit || 'шт'), price: M.round2(+p.unitPrice || 0), qty: +p.quantity > 0 ? M.round3(+p.quantity) : 1,
+            amount: M.round2(+p.amount || 0), days: Math.max(1, Math.floor(+p.referenceDays) || 1), ref_qty: +p.referenceQuantity > 0 ? M.round3(+p.referenceQuantity) : 1, supply_days: Math.max(1, Math.floor(+p.supplyDays) || 1),
+            bought_at: iso(ms), local_date: dayOf(p.purchasedAt), created_at: iso(ms) }));
+          if (itemId && !haveItem.has(itemId)) { const cur = newItems[itemId]; if (!cur || ms >= cur.ms) newItems[itemId] = { ms, p, itemId }; }
+        });
+        const endMs = Date.parse(r.end) || startMs;
+        [['small', 's', 'bag_s', 'Пакет М'], ['large', 'l', 'bag_l', 'Пакет Б']].forEach(b => {
+          const n = +(r.bags && r.bags[b[0]]) || 0; if (!n) return; const id = uid('bag' + b[1] + (first ? first.purchaseId : r.id)); if (haveLine.has(id)) { skipped++; return; } haveLine.add(id);
+          lines.push(mk(id, { kind: 'bag', item_id: b[2], name: b[3], unit: 'шт', price: price[b[1]], qty: n, amount: M.round2(n * price[b[1]]), days: 1, ref_qty: 1, supply_days: 1, bought_at: iso(endMs), local_date: day, created_at: iso(endMs) }));
+        });
+      });
+      const items = Object.keys(newItems).map(k => {
+        const { ms, p, itemId } = newItems[k], due = p.nextDue && p.nextDue > today ? p.nextDue : null, ref = +p.referenceQuantity > 0 ? M.round3(+p.referenceQuantity) : 1, unit = String(p.unit || 'шт');
+        return { id: itemId, name: String(p.name || 'Без названия').slice(0, 60), price: M.round2(+p.unitPrice || 0), unit, days: Math.max(1, Math.floor(+p.referenceDays) || 1), ref_qty: ref, status: due ? 'bought' : 'off',
+          qty: M.weightKind(unit) ? ref : 1, price_now: null, ord_at: iso(ms), due_on: due, checked: false, created_at: at, updated_at: now, deleted_at: null };
+      });
+      const newStates = items.map(i => ({ id: 'l1_' + i.id, list_no: 1, item_id: i.id, status: i.status, qty: i.qty, price_now: null, ord_at: i.ord_at, due_on: i.due_on, checked: false, created_at: at, updated_at: now, deleted_at: null }));
+      items.forEach(i => { i.status = 'off'; i.qty = 1; i.due_on = null; });
+      lines.forEach(l => money.push({ id: l.id, subject_module: 'shop', subject_kind: 'purchase', subject_id: l.id, direction: 'out', kind: 'fact', amount: l.amount, currency: 'KZT', fx_rate: null, occurred_on: l.local_date, tz: TZ, category: '', comment: l.name,
+        meta: { receipt: l.receipt_id, kind: l.kind, legacy: 'kv' }, source_device: 'import', created_at: l.created_at, updated_at: now, deleted_at: null }));
+      const writes = [['shop_items', items], ['shop_list_state', newStates], ['shop_receipts', receipts], ['shop_purchases', lines], ['money_entries', money]].filter(w => w[1].length).map(w => ({ table: w[0], rows: w[1] }));
+      const summary = `Импорт выгрузки чеков: чеков ${receipts.length}, строк ${lines.length}` + (skipped ? ` (уже были: ${skipped})` : '') + `, новых карточек ${items.length}`;
+      if (writes.length) core.commit({ writes, journal: [{ op: 'create', module: MOD, entity_kind: 'import', entity_id: 'kv-purchases', summary }] });
+      await S.load(); return { ok: true, text: summary + (bad ? `, с ошибкой ${bad}` : '') + '.', lines: lines.length, skipped };
+    };
+
+    return S;
+  }
+  global.LifeShopStore = { create };
+})(window);
+
+</script>
+<script>
+/* ---- modules/overview-model.js ---- */
+/* «Обзор»: чистые расчёты для сводных карточек (без экрана и сети). window.LifeOverviewModel.
+   Берёт уже загруженные данные других модулей и считает плитки, итоги сфер, сводку покупок. */
+(function (global) {
+  'use strict';
+  const pad = n => String(n).padStart(2, '0');
+  const clock = sec => { sec = Math.max(0, Math.floor(sec)); return Math.floor(sec / 3600) + ':' + pad(Math.floor(sec % 3600 / 60)) + ':' + pad(sec % 60); };
+  const spc = n => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  const hmin = min => { min = Math.round(min); if (min <= 0) return '0м'; const h = Math.floor(min / 60), m = min % 60; return h ? h + 'ч ' + pad(m) + 'м' : m + 'м'; };
+  const hours = sec => { const m = Math.round(sec / 60); return Math.floor(m / 60) + ' ч ' + (m % 60) + ' м'; };
+  const r1 = x => Math.round(x * 10) / 10;
+  const dec = x => String(r1(x)).replace('.', ',');
+  const plural = (n, a, b, c) => { const k = Math.abs(n) % 100, d = k % 10; return k > 10 && k < 20 ? c : d === 1 ? a : d > 1 && d < 5 ? b : c; };
+
+  /* Время за день: записи таймеров (сессии и поправки) + идущие сейчас. Запусков: записи с началом и идущие. */
+  function timersToday(D, today, now) {
+    let sec = 0, runs = 0; const by = {};
+    D.entries.forEach(e => {
+      if (e.local_date !== today) return;
+      const s = +e.duration_sec || 0, c = (e.meta || {}).card; sec += s; if (e.started_at) runs++;
+      if (c) { const o = by[c] = by[c] || { sec: 0, n: 0 }; o.sec += s; if (e.started_at) o.n++; }
+    });
+    D.runs.forEach(r => { const s = Math.max(0, (now - Date.parse(r.started_at)) / 1000); sec += s; runs++; const o = by[r.card_id] = by[r.card_id] || { sec: 0, n: 0 }; o.sec += s; o.n++; });
+    return { sec, runs, by };
+  }
+
+  /* Деньги по трекам за n последних дней (включая сегодня): kind 'in' или 'out'; значения в тыс. ₸ */
+  function moneyPeriod(T, TM, today, n, kind) {
+    const from = TM.shiftDay(today, -(n - 1)); let total = 0; const parts = [];
+    T.D.tracks.filter(t => t.kind === kind && t.status !== 'off').forEach(t => {
+      const by = T.byDay(t.id); let s = 0;
+      Object.keys(by).forEach(d => { if (d >= from && d <= today) s += TM.sumOf(by[d]); });
+      if (s) { total += s; parts.push({ name: t.name, sum: s }); }
+    });
+    parts.sort((a, b) => b.sum - a.sum); return { total: r1(total), parts };
+  }
+
+  /* Сколько из последних n дней содержат хотя бы одну отметку состояния */
+  function moodDays(marks, TM, today, n) {
+    const days = new Set(marks.filter(m => m.value != null).map(m => m.local_date)); let c = 0;
+    for (let i = 0; i < n; i++) if (days.has(TM.shiftDay(today, -i))) c++;
+    return c;
+  }
+
+  /* Сферы: итоги по каждой сфере и дерево «группа → дела» (до depth уровней, не больше lim дел на уровень) */
+  function spheres(SM, S, now, opt) {
+    opt = opt || {}; const c = SM.buildCtx(S, now), freeOnly = !!opt.freeOnly, lim = opt.lim || 4, depth = opt.depth || 2;
+    const sum = list => list.reduce((a, i) => { const t = c.calc(i.id); a.sec += t.sec; a.planMin += t.planMin; a.planMoney += t.planMoney; a.money += t.money; return a; }, { sec: 0, planMin: 0, planMoney: 0, money: 0 });
+    const keep = i => !i.done && (!freeOnly || c.calc(i.id).planMoney === 0);
+    function node(i, d) {
+      const t = c.calc(i.id), st = c.status(i), kids = (c.kids[i.id] || []).filter(keep);
+      return { id: i.id, title: i.title, type: i.type, imp: i.imp, status: st, sec: t.sec, planMin: t.planMin, planMoney: t.planMoney, money: t.money,
+        kids: d < depth ? kids.slice(0, lim).map(k => node(k, d + 1)) : [], more: d < depth ? Math.max(0, kids.length - lim) : kids.length };
+    }
+    return S.spheres.map(sp => {
+      const groups = S.groups.filter(g => g.sphereId === sp.id).map(g => ({ id: g.id, name: g.name, roots: (c.groupRoots[g.id] || []).filter(keep) }));
+      const loose = (c.roots[sp.id] || []).filter(keep), all = groups.reduce((a, g) => a.concat(g.roots), loose.slice());
+      const tot = sum(all);
+      return { id: sp.id, name: sp.name, color: sp.color, tot, count: all.length,
+        groups: groups.map(g => { const s = sum(g.roots); return { id: g.id, name: g.name, sec: s.sec, planMoney: s.planMoney, roots: g.roots.slice(0, lim).map(i => node(i, 1)), more: Math.max(0, g.roots.length - lim), count: g.roots.length }; }),
+        loose: loose.slice(0, lim).map(i => node(i, 1)), looseMore: Math.max(0, loose.length - lim) };
+    });
+  }
+  function sphereTotals(list) { return list.reduce((a, s) => { a.sec += s.tot.sec; a.planMoney += s.tot.planMoney; return a; }, { sec: 0, planMoney: 0 }); }
+
+  /* Покупки: что в списке (status on), сколько отмечено в корзине и на какую сумму */
+  function shop(items, M) {
+    const on = items.filter(i => i.status === 'on'), sumOf = i => (M.effPrice ? M.effPrice(i) : (+i.price_now || +i.price || 0)) * (+i.qty || 1);
+    const cart = on.filter(i => i.checked), total = on.reduce((a, i) => a + sumOf(i), 0);
+    return { on: on.sort((a, b) => (a.checked ? 1 : 0) - (b.checked ? 1 : 0) || String(a.ord_at).localeCompare(String(b.ord_at))), cart: cart.length, total, sumOf };
+  }
+
+  global.LifeOverviewModel = { pad, clock, spc, hmin, hours, r1, dec, plural, timersToday, moneyPeriod, moodDays, spheres, sphereTotals, shop };
+})(window);
+
+</script>
+<script>
+/* ---- modules/overview-css.js ---- */
+/* «Обзор»: стили. Цвета и шрифты берутся из общей основы (shell/ui-css.js). window.LifeOverviewCss */
+window.LifeOverviewCss = `
+.ov{display:flex;gap:18px;align-items:flex-start}
+.ov-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:var(--ui-gap)}
+.ov-side{flex:none;width:300px;display:flex;flex-direction:column;gap:var(--ui-gap)}
+.ov-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.ov-search{position:relative;flex:1 1 260px;min-width:180px}
+.ov-search .ui-in{width:100%;background:var(--ui-soft)}
+.ov-res{position:absolute;left:0;right:0;top:100%;margin-top:4px;background:var(--ui-card);border:1px solid var(--ui-line);border-radius:var(--ui-r-s);box-shadow:0 8px 24px rgba(31,42,36,.14);z-index:30;max-height:340px;overflow:auto}
+.ov-res button{display:flex;gap:8px;width:100%;text-align:left;font:inherit;border:0;background:transparent;padding:8px 12px;cursor:pointer;color:var(--ui-text)}
+.ov-res button:hover{background:var(--ui-soft)}.ov-res small{color:var(--ui-mut);flex:none;width:68px}.ov-res span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ov-pill{display:inline-flex;align-items:center;gap:8px;padding:6px 10px 6px 12px;border-radius:999px;background:var(--ui-main-soft);color:var(--ui-main);font-size:13px;font-weight:600}
+.ov-pill i{width:8px;height:8px;border-radius:50%;background:var(--ui-main)}
+.ov-pill button{width:26px;height:26px;border-radius:8px;border:2px solid var(--ui-main);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+.ov-pill button:after{content:"";width:9px;height:9px;background:var(--ui-main);border-radius:2px}
+.ov-qr{position:relative}
+.ov-pop{position:absolute;right:0;top:100%;margin-top:6px;width:340px;max-width:90vw;background:var(--ui-card);border:1px solid var(--ui-line);border-radius:var(--ui-r);box-shadow:0 8px 28px rgba(31,42,36,.16);padding:12px;z-index:40;display:flex;flex-direction:column;gap:8px}
+.ov-pop textarea{min-height:90px;resize:vertical}
+.ov-tiles{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:var(--ui-gap)}
+.ov-tile{background:var(--ui-card);border:1px solid var(--ui-line);border-radius:var(--ui-r);padding:12px 16px;box-shadow:var(--ui-shadow);min-width:0}
+.ov-tile .t{font-size:12px;color:var(--ui-mut)}.ov-tile .v{font-size:24px;font-weight:700;margin:2px 0;white-space:nowrap}.ov-tile .s{font-size:11px;color:var(--ui-mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ov-tile .v.in{color:var(--ui-in)}.ov-tile .v.out{color:var(--ui-out)}
+.ov-ch{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}.ov-ch h2{margin:0;font-size:16px;font-weight:650}.ov-ch small{font-size:12px;color:var(--ui-mut)}.ov-ch .sp{flex:1}
+.ov-sph{display:flex;gap:12px;overflow-x:auto;align-items:flex-start;padding-bottom:6px}
+.ov-sc{flex:0 0 232px;border-radius:12px;overflow:hidden;border:1px solid var(--ui-line);background:var(--ui-soft)}
+.ov-sc.open{flex-basis:236px}
+.ov-sh{padding:10px 12px;display:flex;flex-direction:column;gap:3px}
+.ov-sh .r1{display:flex;align-items:center;gap:6px}.ov-sh b{font-size:15px;flex:1}
+.ov-sh .r2{display:flex;justify-content:space-between;font-size:12px}
+.ov-sh button{font:inherit;font-size:11px;padding:1px 9px;border-radius:999px;border:0;background:rgba(255,255,255,.75);cursor:pointer}
+.ov-sb{padding:8px;display:flex;flex-direction:column;gap:7px}
+.ov-g{background:var(--ui-card);border:1px solid var(--ui-line);border-radius:10px;padding:7px 9px;font-size:12.5px}
+.ov-g .gh{display:flex;justify-content:space-between;gap:6px;font-weight:650;margin-bottom:3px}.ov-g .gh span{font-weight:400;color:var(--ui-mut);font-size:11px;white-space:nowrap}
+.ov-g.flat{display:flex;justify-content:space-between;font-weight:600;cursor:pointer}.ov-g.flat span{font-weight:400;color:var(--ui-mut);font-size:11px}
+.ov-i{display:flex;gap:6px;align-items:flex-start;padding:2px 0}
+.ov-i .d{flex:none;width:8px;height:8px;border-radius:50%;margin-top:5px;background:var(--ui-main)}
+.ov-i .d.gray{background:transparent;border:1.5px solid var(--ui-mut)}.ov-i .d.red{background:var(--ui-bad)}.ov-i .d.blocked{background:#c9a227}.ov-i .d.proj{border-radius:2px}
+.ov-i .n{flex:1;min-width:0;word-break:break-word}.ov-i .m{flex:none;font-size:11px;color:var(--ui-mut);white-space:nowrap}
+.ov-i .imp{color:var(--ui-bad);font-size:10px;font-weight:600;margin-left:4px}
+.ov-k{padding-left:12px;border-left:1px solid var(--ui-line);margin-left:3px}
+.ov-more{font-size:11px;color:var(--ui-mut);padding:1px 0 0 14px}
+.ov-two{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:var(--ui-gap)}
+.ov-tw{overflow-x:auto}
+.ov-tb{border-collapse:separate;border-spacing:2px;font-size:12px;width:100%}
+.ov-tb th{font-weight:400;color:var(--ui-mut);font-size:11px;text-align:center;padding:0 0 3px;min-width:28px}
+.ov-tb th.we{color:var(--ui-bad)}.ov-tb th.td{background:var(--ui-main);color:#fff;border-radius:6px}
+.ov-tb td{text-align:center;border-radius:6px;background:var(--ui-soft);height:26px;padding:0 2px}
+.ov-tb td.nm{text-align:left;background:transparent;padding:0 8px 0 0;white-space:nowrap;font-weight:600;position:sticky;left:0;z-index:1}
+.ov-tb td.nm small{color:var(--ui-mut);font-weight:400;margin-left:4px}
+.ov-tb td.nm i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.ov-tb tr.gh td{background:var(--ui-soft);text-align:left;font-weight:650;font-size:12px;height:24px;padding:0 8px}
+.ov-tb td.sg{background:transparent;font-weight:650;color:var(--ui-mut);min-width:44px}
+.ov-cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;font-size:11px}
+.ov-cal .w{text-align:center;color:var(--ui-mut)}
+.ov-cal .c{background:var(--ui-soft);border-radius:8px;min-height:36px;padding:3px 5px;cursor:pointer}
+.ov-cal .c.e{background:transparent;cursor:default}.ov-cal .c.f{background:var(--ui-card);border:1px solid var(--ui-line)}
+.ov-cal .c.t{outline:2px solid var(--ui-main)}.ov-cal .c .dots{display:flex;gap:2px;margin-top:2px;flex-wrap:wrap}.ov-cal .c .dots i{width:6px;height:6px;border-radius:50%}
+.ov-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.ov-chips .ui-chip{cursor:pointer;font:inherit;font-size:12px}.ov-chips .ui-chip.on{background:var(--ui-main-soft);border-color:var(--ui-main)}
+.ov-ent{border-top:1px solid var(--ui-line);padding:8px 0;font-size:12.5px}.ov-ent b{display:block;color:var(--ui-main);font-size:11px;margin-bottom:2px}
+.ov-ent p{margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ov-plan{display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);gap:16px}
+.ov-act{border-left:6px solid;border-radius:8px;padding:6px 10px;font-size:12px;margin-bottom:8px}.ov-act b{display:block;font-size:13px}
+.ov-bars{display:flex;gap:5px;align-items:flex-end;height:130px}
+.ov-bars .b{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:3px;font-size:10px;color:var(--ui-mut)}
+.ov-bars .b i{display:block;width:100%;border-radius:5px 5px 0 0;background:#a8d1bf;min-height:2px}.ov-bars .b.now i{background:var(--ui-main)}
+.ov-ml{display:flex;gap:5px;font-size:10px;color:var(--ui-mut);text-align:center;margin-top:3px}.ov-ml div{flex:1}.ov-ml b{display:block;color:var(--ui-text);font-weight:600}
+.ov-side .ui-card{padding:14px 16px}
+.ov-act-run{background:var(--ui-main-soft);border-radius:12px;padding:10px 12px;margin-bottom:8px}
+.ov-act-run .a{display:flex;justify-content:space-between;align-items:baseline;font-weight:650}.ov-act-run .a span{font-size:20px}.ov-act-run small{color:var(--ui-mut);display:block}
+.ov-act-run button{margin-top:6px}
+.ov-ln{display:flex;justify-content:space-between;gap:8px;padding:5px 0;font-size:13px;border-top:1px solid var(--ui-line)}.ov-ln:first-of-type{border-top:0}.ov-ln span{color:var(--ui-mut);white-space:nowrap}
+.ov-ln.neg span{color:var(--ui-bad)}.ov-ln.pos span{color:var(--ui-ok)}
+.ov-ln small{display:block;color:var(--ui-mut);font-size:11px}
+.ov-sub{font-size:12px;color:var(--ui-mut);margin:4px 0}
+.ov-err{color:var(--ui-bad);font-size:12px}
+.ov-empty{color:var(--ui-mut);font-size:13px;padding:8px 0}
+@media(max-width:1280px){.ov{flex-direction:column}.ov-side{width:100%;flex-direction:row;flex-wrap:wrap}.ov-side>*{flex:1 1 280px}}
+@media(max-width:980px){.ov-tiles{grid-template-columns:repeat(2,1fr)}.ov-two,.ov-plan{grid-template-columns:1fr}}`;
+
+</script>
+<script>
+/* ---- modules/overview.js ---- */
+/* «Обзор» (компьютер): сводная страница. Данные берёт из тех же хранилищ, что и отдельные модули (сферы, таймеры, треки, дневник,
+   моделирование, эмоции, покупки), сама ничего в них не меняет, кроме двух действий: остановить таймер и быстрая запись в дневник.
+   Расчёты — overview-model.js, стили — overview-css.js. Точка входа: LifeModules.overview.mount(элемент, {core, onAuthLost, go}) → {unmount, reload}. */
+(function (global) {
+  'use strict';
+  const O = global.LifeOverviewModel, TM = global.LifeTimersModel, TK = global.LifeTracksModel, DM = global.LifeDiaryModel, PM = global.LifePlanModel, SM = global.LifeSpheresModel;
+  global.LifeModules = global.LifeModules || {};
+  const UI_KEY = 'lifeerp-overview-ui';
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const WD = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+
+  function mount(el, ctxIn) {
+    ctxIn = ctxIn || {};
+    const core = ctxIn.core || global.LifeCore, TZ = core.TZ, go = ctxIn.go || (() => {});
+    if (!document.getElementById('ov-css')) { const s = document.createElement('style'); s.id = 'ov-css'; s.textContent = global.LifeOverviewCss; document.head.appendChild(s); }
+    const T = global.LifeTimersStore.create(core), E = global.LifeEmoStore.create(core), K = global.LifeTracksStore.create(core), Y = global.LifeDiaryStore.create(core), P = global.LifePlanStore.create(core), SH = global.LifeShopStore.create(core);
+    const stores = [T, E, K, Y, P, SH];
+    const u0 = core.store.get(UI_KEY, null) || {}, today0 = TM.dayKey(Date.now(), TZ);
+    const ui = { n: u0.n === 28 ? 28 : 14, kind: ['all', 'money', 'tracks'].includes(u0.kind) ? u0.kind : 'all', free: !!u0.free, col: u0.col && typeof u0.col === 'object' ? u0.col : {}, diary: u0.diary || null, year: +u0.year >= 2000 ? +u0.year : +today0.slice(0, 4) };
+    const saveUi = () => core.store.set(UI_KEY, ui);
+    const SP = { raw: null, state: 'loading', note: '' };
+    let ym = today0.slice(0, 7), alive = true, quick = { open: false, text: '', diary: '', msg: '' }, q = '';
+    el.innerHTML = '<div class="ov"><div class="ov-main"><div class="ov-head"></div><div class="ov-body"></div></div><aside class="ov-side"></aside></div>';
+    const head = el.querySelector('.ov-head'), body = el.querySelector('.ov-body'), side = el.querySelector('.ov-side');
+    const phoneOn = () => !!(ctxIn.phone && ctxIn.phone());
+
+    /* ---------- сферы: те же таблицы, что у модуля «Сферы и дела» ---------- */
+    async function loadSpheres() {
+      try {
+        const nd = ['deleted_at=is.null'], sub = ['subject_module=eq.spheres', 'deleted_at=is.null'];
+        const [spheres, groups, items, times, moneys, links, things] = await Promise.all([core.select('spheres', { filters: nd }), core.select('sphere_groups', { filters: nd }), core.select('sphere_items', { filters: nd }),
+          core.select('time_entries', { filters: sub }), core.select('money_entries', { filters: sub }), core.select('entity_links', { filters: ['from_module=eq.spheres', 'deleted_at=is.null'] }), core.select('things_view')]);
+        SP.raw = { spheres, groups, items, times, moneys, links, things }; SP.state = 'ready'; SP.note = '';
+      } catch (e) {
+        if (e.auth) { if (ctxIn.onAuthLost) ctxIn.onAuthLost(); return; }
+        const c = core.cache.get('spheres');
+        if (c && c.data) { SP.raw = c.data; SP.state = 'ready'; SP.note = 'Сферы: нет связи, показана копия на устройстве.'; } else { SP.state = 'error'; SP.note = 'Сферы: ' + (e.net ? 'нет связи с базой' : (e.message || 'ошибка чтения')); }
+      }
+      sched();
+    }
+    const spModel = () => (SP.raw ? SM.buildModel(SP.raw) : null);
+
+    /* ---------- верхняя строка: поиск, идущий таймер, быстрая запись ---------- */
+    function searchHits(text) {
+      const s = text.trim().toLowerCase(); if (s.length < 2) return [];
+      const out = [], has = v => String(v || '').toLowerCase().includes(s);
+      if (SP.raw) (SP.raw.items || []).forEach(i => { if (has(i.title) || has(i.note)) out.push({ k: 'Сферы', t: i.title, tab: 'spheres' }); });
+      K.D.tracks.forEach(t => { if (has(t.name)) out.push({ k: 'Треки', t: t.name, tab: 'tracks' }); });
+      Y.D.entries.forEach(e => { if (has(e.body)) { const d = Y.diary(e.diary_id); out.push({ k: 'Дневник', t: (d ? d.name + ' · ' : '') + e.day + ' · ' + e.body.replace(/\s+/g, ' ').slice(0, 70), tab: 'diary' }); } });
+      SH.D.cards.forEach(c => { if (has(c.name)) out.push({ k: 'Покупки', t: c.name, tab: 'phone' }); });
+      return out.slice(0, 10);
+    }
+    function renderHead() {
+      const run = T.D.runs[0];
+      head.innerHTML = `<div class="ov-search"><input class="ui-in" data-f="q" placeholder="Найти дело, трек, запись дневника…" value="${esc(q)}" autocomplete="off"><div class="ov-res" hidden></div></div>
+        <span data-run>${run ? runPill(run) : ''}</span>
+        <div class="ov-qr"><button class="ui-btn main" type="button" data-act="quick">+ Быстрая запись</button>${quick.open ? quickPop() : ''}</div>`;
+      showHits();
+    }
+    function runPill(r) { return `<span class="ov-pill"><i></i>${esc(cardName(r.card_id))}<span data-tick="run:${esc(r.id)}">${O.clock((Date.now() - Date.parse(r.started_at)) / 1000)}</span><button type="button" data-act="stop" data-id="${esc(r.id)}" title="Остановить таймер и записать время" aria-label="Остановить таймер"></button></span>`; }
+    const cardName = id => { const c = T.D.cards.find(x => x.id === id); return c ? c.name : 'Таймер'; };
+    function quickPop() {
+      const ds = Y.D.diaries, sel = quick.diary || (ds[0] && ds[0].id) || '';
+      return `<div class="ov-pop"><select class="ui-in" data-f="qd">${ds.map(d => `<option value="${esc(d.id)}" ${d.id === sel ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</select>
+        <textarea class="ui-in" data-f="qt" placeholder="Что записать?">${esc(quick.text)}</textarea><div class="ov-err">${esc(quick.msg)}</div>
+        <div style="display:flex;gap:8px;justify-content:flex-end"><button class="ui-btn" type="button" data-act="quick">Отмена</button><button class="ui-btn main" type="button" data-act="qsave">Записать</button></div></div>`;
+    }
+    function showHits() {
+      const box = head.querySelector('.ov-res'); if (!box) return; const hits = searchHits(q);
+      box.hidden = !hits.length; box.innerHTML = hits.map((h, i) => `<button type="button" data-act="hit" data-i="${i}"><small>${esc(h.k)}</small><span>${esc(h.t)}</span></button>`).join(''); box._hits = hits;
+    }
+
+    /* ---------- карточки ---------- */
+    function tiles(now, today) {
+      const tt = O.timersToday(T.D, today, now), inc = K.state === 'ready' ? O.moneyPeriod(K, TK, today, 14, 'in') : null, out = K.state === 'ready' ? O.moneyPeriod(K, TK, today, 14, 'out') : null;
+      const sp = SP.raw ? O.spheres(SM, spModel(), now, {}) : null, st = sp ? O.sphereTotals(sp) : null, md = E.state === 'ready' ? O.moodDays(E.D.marks, TM, today, 10) : null;
+      const sub = p => p && p.parts.length ? p.parts.slice(0, 2).map(x => esc(x.name)).join(', ') : 'нет записей';
+      const t = (title, v, s, cls, tick) => `<div class="ov-tile"><div class="t">${title}</div><div class="v ${cls || ''}" ${tick ? `data-tick="${tick}"` : ''}>${v}</div><div class="s">${s}</div></div>`;
+      return `<div class="ov-tiles">${t('Сегодня', O.clock(tt.sec), tt.runs + ' ' + O.plural(tt.runs, 'запуск', 'запуска', 'запусков') + ' таймеров', '', 'today')}
+        ${t('Доходы · 14 дн.', inc ? O.dec(inc.total) + ' тыс. ₸' : '…', inc ? sub(inc) : '', 'in')}${t('Расходы · 14 дн.', out ? O.dec(out.total) + ' тыс. ₸' : '…', out ? sub(out) : '', 'out')}
+        ${t('Объём в сферах', st ? O.hours(st.sec) : '…', st ? O.spc(st.planMoney) + ' ₸ в планах' : '')}${t('Состояние', md == null ? '…' : md + ' из 10', 'дней с отметками')}</div>`;
+    }
+    function itemRow(n, d) {
+      const k = n.status.k, cls = k === 'gray' ? 'gray' : k === 'red' ? 'red' : k === 'blocked' ? 'blocked' : '';
+      const meta = k === 'gray' ? 'спит ' + n.status.days + ' дн' : (n.sec ? O.hmin(n.sec / 60) : '') + (n.planMoney ? (n.sec ? ' · ' : '') + O.spc(n.planMoney) : '');
+      return `<div class="ov-i"><span class="d ${cls} ${n.type === 'project' ? 'proj' : ''}"></span><span class="n">${esc(n.title)}${n.imp ? `<span class="imp">${n.imp === 2 ? 'особо' : 'важно'}</span>` : ''}</span><span class="m">${esc(meta)}</span></div>` +
+        (n.kids.length || n.more ? `<div class="ov-k">${n.kids.map(x => itemRow(x, d + 1)).join('')}${n.more ? `<div class="ov-more">ещё ${n.more} ${O.plural(n.more, 'задача', 'задачи', 'задач')}</div>` : ''}</div>` : '');
+    }
+    function spheresCard(now) {
+      let h = `<section class="ui-card"><div class="ov-ch"><h2>Сферы жизни</h2><small>проекты и задачи · спящие помечены кольцом</small><span class="sp"></span>
+        <button class="ui-btn sm ${ui.free ? 'on' : ''}" data-act="free">Только бесплатные</button><button class="ui-btn sm" data-act="allsp">Раскрыть все</button><button class="ui-btn sm" data-act="addsp">+ Сфера</button></div>`;
+      if (!SP.raw) return h + `<div class="ov-empty">${SP.state === 'error' ? esc(SP.note) : 'Загрузка…'}</div></section>`;
+      const list = O.spheres(SM, spModel(), now, { freeOnly: ui.free });
+      h += `${SP.note ? `<div class="ov-err">${esc(SP.note)}</div>` : ''}<div class="ov-sph">` + list.map((s, i) => {
+        const open = ui.col[s.id] !== 1 && (ui.col[s.id] === 0 || i === 0 || ui.col[s.id] === undefined && i < 2);
+        const bg = `color-mix(in srgb,${s.color} 38%,#fff)`, txt = '#1f2a24';
+        let b = '';
+        if (open) {
+          b = s.groups.filter(g => g.roots.length || g.count).map(g => `<div class="ov-g"><div class="gh"><b>${esc(g.name)}</b><span>${g.sec ? O.hmin(g.sec / 60) : ''}${g.planMoney ? (g.sec ? ' · ' : '') + O.spc(g.planMoney) : ''}</span></div>${g.roots.map(r => itemRow(r, 1)).join('')}${g.more ? `<div class="ov-more">ещё ${g.more}</div>` : ''}</div>`).join('');
+          if (s.loose.length) b += `<div class="ov-g">${s.loose.map(r => itemRow(r, 1)).join('')}${s.looseMore ? `<div class="ov-more">ещё ${s.looseMore}</div>` : ''}</div>`;
+          if (!b) b = '<div class="ov-empty">Пока пусто</div>';
+        }
+        return `<div class="ov-sc ${open ? 'open' : ''}"><div class="ov-sh" style="background:${bg};color:${txt}"><div class="r1"><b>${esc(s.name)}</b><button data-act="sp" data-id="${esc(s.id)}" data-open="${open ? 1 : 0}">${open ? 'Свернуть' : 'Развернуть'}</button></div>
+          <div class="r2"><span>${O.hmin(s.tot.sec / 60)} / ${O.hmin(s.tot.planMin)}</span><span>${O.spc(s.tot.planMoney)} ₸</span></div></div>${open ? `<div class="ov-sb">${b}</div>` : ''}</div>`;
+      }).join('') + '</div></section>';
+      return h;
+    }
+    function tracksCard(today) {
+      let h = `<section class="ui-card"><div class="ov-ch"><h2>Треки</h2><small>${K.state === 'ready' ? 'слоты: занято ' + K.D.tracks.filter(t => t.status === 'new' && t.kind === 'habit').length + ' из ' + K.cfg.cap : ''}</small><span class="sp"></span>
+        <button class="ui-btn sm ${ui.kind === 'money' ? 'on' : ''}" data-act="kind" data-k="money">Только деньги</button><button class="ui-btn sm ${ui.kind === 'tracks' ? 'on' : ''}" data-act="kind" data-k="tracks">Только треки</button>
+        <button class="ui-btn sm ${ui.n === 14 ? 'on' : ''}" data-act="n" data-n="14">14 дн.</button><button class="ui-btn sm ${ui.n === 28 ? 'on' : ''}" data-act="n" data-n="28">28 дн.</button></div>`;
+      if (K.state !== 'ready') return h + `<div class="ov-empty">${K.state === 'error' ? esc(K.note) : 'Загрузка…'}</div></section>`;
+      const days = []; for (let i = ui.n - 1; i >= 0; i--) days.push(TK.shiftDay(today, -i));
+      const rows = K.D.tracks.filter(t => (t.status === 'new' || t.status === 'cur') && (ui.kind === 'all' || (ui.kind === 'money') === (t.kind !== 'habit'))).sort((a, b) => TK.groupOf(a) - TK.groupOf(b) || (a.sort_order || 0) - (b.sort_order || 0));
+      if (!rows.length) return h + '<div class="ov-empty">Нет активных треков</div></section>';
+      const colorOf = t => (t.kind === 'in' ? 'var(--ui-in)' : t.kind === 'out' ? 'var(--ui-out)' : t.status === 'new' ? '#6a9fd4' : 'var(--ui-main)');
+      h += `<div class="ov-tw"><table class="ov-tb"><tr><th></th>${days.map(d => `<th class="${d === today ? 'td' : [0, 6].includes(new Date(d + 'T12:00:00Z').getUTCDay()) ? 'we' : ''}">${d.slice(8)}<br>${TK.weekday(d)}</th>`).join('')}<th></th></tr>`;
+      let lg = -1; const names = ['Состояние и привычки', 'Доходы', 'Расходы'];
+      rows.forEach(t => {
+        const g = TK.groupOf(t); if (g !== lg) { lg = g; h += `<tr class="gh"><td colspan="${days.length + 2}">${names[g]}</td></tr>`; }
+        const by = K.byDay(t.id), sums = days.map(d => (by[d] ? TK.sumOf(by[d]) : null)), mx = Math.max(0, ...sums.filter(x => x != null)), col = colorOf(t), sm = TK.summarize(t.summary_mode, days.map((d, j) => ({ day: d, sum: sums[j] })));
+        const thr = t.kind === 'habit' && t.threshold_mode && t.threshold_mode !== 'none' ? t : null;
+        h += `<tr><td class="nm"><i style="background:${col}"></i>${esc(t.name)}${t.kind === 'habit' && t.unit ? `<small>${esc(t.unit)}</small>` : ''}</td>` + sums.map(s => {
+          if (s == null) return '<td></td>'; let bg = '';
+          if (thr) bg = `color-mix(in srgb,${TK.okThreshold(thr.threshold_mode, thr.threshold_value, s) ? 'var(--ui-ok)' : 'var(--ui-bad)'} 35%,#fff)`; else if (s > 0) bg = `color-mix(in srgb,${col} ${Math.round(18 + s / (mx || 1) * 62)}%,#fff)`;
+          return `<td ${bg ? `style="background:${bg}"` : ''}>${TK.fmt(s)}</td>`;
+        }).join('') + `<td class="sg">${sm.text ? (sm.mode === 'sum' ? '' : '<small>' + TK.SUMMARY_SIGN[sm.mode] + '</small>') + sm.text : ''}</td></tr>`;
+      });
+      return h + '</table></div><div class="ov-sub">Деньги в тысячах ₸. Редактировать клетки — во вкладке «Треки».</div></section>';
+    }
+    function diaryCard(today) {
+      const ds = Y.D.diaries; let h = `<section class="ui-card"><div class="ov-ch"><h2>Дневник</h2><small>${esc(DM.MONTHS[+ym.slice(5) - 1].toLowerCase())} ${ym.slice(0, 4)}</small><span class="sp"></span><button class="ui-btn sm" data-act="ym" data-n="-1" aria-label="Предыдущий месяц">‹</button><button class="ui-btn sm" data-act="ym" data-n="1" aria-label="Следующий месяц">›</button></div>`;
+      if (Y.state !== 'ready') return h + `<div class="ov-empty">${Y.state === 'error' ? esc(Y.note) : 'Загрузка…'}</div></section>`;
+      h += `<div class="ov-chips">${ds.map(d => `<button type="button" class="ui-chip ${selDiary() === d.id ? 'on' : ''}" data-act="dsel" data-id="${esc(d.id)}"><i style="background:${esc(d.color)}"></i>${esc(d.name)}</button>`).join('')}</div>`;
+      const y = +ym.slice(0, 4), m = +ym.slice(5) - 1, g = DM.monthGrid(y, m), by = {};
+      Y.D.entries.forEach(e => { if (e.day.startsWith(g.prefix)) { const d = Y.diary(e.diary_id); if (d) (by[e.day] = by[e.day] || new Set()).add(d.color); } });
+      h += '<div class="ov-cal">' + DM.DOW.map(x => `<div class="w">${x}</div>`).join('') + '<div class="c e" style="grid-column:span ' + g.lead + ';' + (g.lead ? '' : 'display:none') + '"></div>';
+      for (let i = 1; i <= g.days; i++) { const k = g.prefix + O.pad(i), cs = by[k] ? Array.from(by[k]) : []; h += `<div class="c ${cs.length ? 'f' : ''} ${k === today ? 't' : ''}">${i}<div class="dots">${cs.map(c => `<i style="background:${esc(c)}"></i>`).join('')}</div></div>`; }
+      h += '</div>';
+      const cur = Y.diary(selDiary()), last = Y.D.entries.filter(e => e.diary_id === selDiary()).sort(DM.byTsDesc).slice(0, 3);
+      h += `<div class="ov-ch" style="margin:14px 0 0"><h2 style="font-size:14px">${cur ? esc(cur.name) : 'Дневник'} · последние записи</h2><span class="sp"></span><button class="ui-btn sm" data-act="go" data-tab="diary">Все записи</button></div>`;
+      h += last.length ? last.map(e => `<div class="ov-ent"><b>${esc(e.day.slice(8) + '.' + e.day.slice(5, 7) + ' ' + DM.hm(Date.parse(e.ts), TZ))}</b><p>${esc(e.body)}</p></div>`).join('') : '<div class="ov-empty">Записей пока нет</div>';
+      return h + '</section>';
+    }
+    const selDiary = () => { const ds = Y.D.diaries; if (ui.diary && ds.some(d => d.id === ui.diary)) return ui.diary; const e = Y.D.entries.slice().sort(DM.byTsDesc)[0]; return (e && e.diary_id) || (ds[0] && ds[0].id) || null; };
+    function planCard(today) {
+      const cy = +today.slice(0, 4); let h = `<section class="ui-card"><div class="ov-ch"><h2>Моделирование финансов и времени</h2><small>не факт, а картина «как может быть»</small><span class="sp"></span><span class="ui-mut" style="font-size:12px">Год</span>
+        <select class="ui-in" style="padding:4px 8px" data-f="year">${[cy - 1, cy, cy + 1].map(y => `<option ${y === ui.year ? 'selected' : ''}>${y}</option>`).join('')}</select><button class="ui-btn sm" data-act="go" data-tab="plan">Править</button></div>`;
+      if (P.state !== 'ready') return h + `<div class="ov-empty">${P.state === 'error' ? esc(P.note) : 'Загрузка…'}</div></section>`;
+      const acts = P.D.acts, itemsBy = P.itemsBy(), slots = P.slotsOf(ui.year), tot = PM.totals(ui.year, acts, itemsBy, slots), used = {};
+      slots.forEach(s => { used[s.activity_id] = (used[s.activity_id] || 0) + 1; });
+      const al = acts.filter(a => used[a.id]);
+      const mx = Math.max(1, ...tot.months.map(x => x.cost)), nowM = ui.year === cy ? +today.slice(5, 7) - 1 : -1;
+      h += `<div class="ov-plan"><div>${al.length ? al.slice(0, 8).map(a => { const c = PM.isColor(a.color) ? a.color : '#8aa7b8'; return `<div class="ov-act" style="border-color:${c};background:color-mix(in srgb,${c} 18%,#fff)"><b>${esc(a.name)}</b>${PM.fmt(PM.actCost(itemsBy[a.id] || []))} тыс. ₸ · ${PM.fmt(+a.hours || 0)} ч${used[a.id] > 1 ? ' · ×' + used[a.id] : ''}</div>`; }).join('') : '<div class="ov-empty">В плане этого года пока нет активностей</div>'}
+        <div style="font-weight:650;margin-top:6px">Итого за год: ${PM.fmt(tot.cost)} тыс. ₸ · ${PM.fmt(tot.hours)} ч</div><div class="ov-sub">в среднем за неделю ${PM.fmt(tot.perWeekCost)} тыс. ₸ · ${PM.fmt(tot.perWeekHours)} ч</div></div>
+        <div><div class="ov-bars">${tot.months.map((x, i) => `<div class="b ${i === nowM ? 'now' : ''}" title="${PM.MONTHS[i]}: ${PM.fmt(x.cost)} тыс. ₸, ${PM.fmt(x.hours)} ч">${x.cost ? PM.fmt(x.cost) : '–'}<i style="height:${Math.round(x.cost / mx * 100)}%"></i></div>`).join('')}</div>
+        <div class="ov-ml">${tot.months.map((x, i) => `<div><b>${PM.MONTHS[i]}</b>${PM.fmt(x.hours)} ч</div>`).join('')}</div><div class="ov-sub">Тыс. ₸ над столбцом, часы под месяцем. Текущий месяц выделен.</div></div></div></section>`;
+      return h;
+    }
+
+    /* ---------- правая колонка ---------- */
+    function sideCards(now, today) {
+      const tt = O.timersToday(T.D, today, now), run = T.D.runs[0];
+      let h = `<section class="ui-card"><div class="ov-ch" style="margin-bottom:6px"><h2>Таймеры</h2><span class="sp"></span><small>${tt.runs} ${O.plural(tt.runs, 'запуск', 'запуска', 'запусков')} · <span data-tick="today2">${O.clock(tt.sec)}</span></small></div>`;
+      if (T.state !== 'ready') h += `<div class="ov-empty">${T.state === 'error' ? esc(T.note) : 'Загрузка…'}</div>`;
+      else {
+        if (run) { const o = tt.by[run.card_id] || { sec: 0, n: 0 }; h += `<div class="ov-act-run"><div class="a"><b>${esc(cardName(run.card_id))}</b><span data-tick="run:${esc(run.id)}">${O.clock((now - Date.parse(run.started_at)) / 1000)}</span></div><small>${o.n} ${O.plural(o.n, 'запуск', 'запуска', 'запусков')} · ${O.clock(o.sec)}${run.note ? ' · ' + esc(run.note) : ''}</small></div>`; }
+        const cards = T.D.cards.slice().sort((a, b) => ((tt.by[b.id] || {}).sec || 0) - ((tt.by[a.id] || {}).sec || 0)).filter(c => !run || c.id !== run.card_id);
+        h += cards.slice(0, 7).map(c => `<div class="ov-ln"><b style="font-weight:500">${esc(c.name)}</b><span>${O.clock((tt.by[c.id] || {}).sec || 0)}</span></div>`).join('') || (run ? '' : '<div class="ov-empty">Нет таймеров</div>');
+      }
+      h += '</section>';
+      const marks = E.D.marks.filter(m => m.local_date === today && m.value != null).sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts)), sumM = marks.reduce((a, m) => a + m.value, 0);
+      h += `<section class="ui-card"><div class="ov-ch" style="margin-bottom:6px"><h2>Эмоции</h2><span class="sp"></span><small>сегодня ${marks.length ? (sumM > 0 ? '+' : sumM < 0 ? '−' : '') + Math.abs(sumM) : '—'}</small></div>`;
+      if (E.state !== 'ready') h += `<div class="ov-empty">${E.state === 'error' ? esc(E.note) : 'Загрузка…'}</div>`;
+      else {
+        const cnt = {}; marks.forEach(m => (m.tag_ids || []).forEach(id => { cnt[id] = (cnt[id] || 0) + 1; }));
+        h += `<div class="ov-chips">${Object.keys(cnt).slice(0, 6).map(id => `<span class="ui-chip">${esc(global.LifeEmoModel.tagName(E.D, id))}${cnt[id] > 1 ? ' ×' + cnt[id] : ''}</span>`).join('')}<button class="ui-chip" type="button" data-act="phone">+ метка</button></div>`;
+        h += marks.slice(0, 3).map(m => `<div class="ov-ln ${m.value < 0 ? 'neg' : 'pos'}"><div>${esc(global.LifeEmoModel.markTags(E.D, m).join(', '))}<small>${esc(DM.hm(Date.parse(m.ts), TZ))}${m.note ? ' · ' + esc(m.note) : ''}</small></div><span>${global.LifeEmoModel.fmtVal(m.value)}</span></div>`).join('') || '<div class="ov-empty">Сегодня отметок пока нет</div>';
+      }
+      h += '</section>';
+      const sh = SH.state === 'ready' ? O.shop(SH.D.items, global.LifeShopModel) : null;
+      h += `<section class="ui-card"><div class="ov-ch" style="margin-bottom:6px"><h2>Покупки</h2><span class="sp"></span><small>${sh ? O.spc(sh.total) + ' ₸' : ''}</small></div>`;
+      if (!sh) h += `<div class="ov-empty">${SH.state === 'error' ? esc(SH.note) : 'Загрузка…'}</div>`;
+      else h += `<div class="ov-sub">к покупке · ${sh.on.length} ${O.plural(sh.on.length, 'позиция', 'позиции', 'позиций')} · в корзине ${sh.cart}</div>` + sh.on.slice(0, 5).map(i => `<div class="ov-ln"><b style="font-weight:500">${esc(i.name)}${+i.qty !== 1 ? ' × ' + esc(global.LifeShopModel.fmtQ ? global.LifeShopModel.fmtQ(i.qty, i.unit) : i.qty) : ''}</b><span>${O.spc(sh.sumOf(i))}</span></div>`).join('') + `<button class="ui-btn" style="width:100%;margin-top:8px" data-act="phone">Все покупки</button>`;
+      return h + '</section>';
+    }
+
+    /* ---------- отрисовка ---------- */
+    function render() {
+      if (!alive) return; const now = Date.now(), today = TM.dayKey(now, TZ);
+      body.innerHTML = tiles(now, today) + spheresCard(now) + `<div class="ov-two">${tracksCard(today)}${diaryCard(today)}</div>` + planCard(today);
+      side.innerHTML = sideCards(now, today);
+      const run = T.D.runs[0], slot = head.querySelector('[data-run]'); if (slot) slot.innerHTML = run ? runPill(run) : '';
+    }
+    let rt = 0; const sched = () => { clearTimeout(rt); rt = setTimeout(render, 0); };
+    stores.forEach(s => { s.onChange = () => { if (alive) sched(); }; });
+    const tick = setInterval(() => {
+      const now = Date.now(), tt = O.timersToday(T.D, TM.dayKey(now, TZ), now);
+      el.querySelectorAll('[data-tick]').forEach(n => { const k = n.dataset.tick; if (k === 'today' || k === 'today2') n.textContent = O.clock(tt.sec); else if (k.startsWith('run:')) { const r = T.D.runs.find(x => x.id === k.slice(4)); if (r) n.textContent = O.clock((now - Date.parse(r.started_at)) / 1000); } });
+    }, 1000);
+    const authPoll = setInterval(() => { if (stores.some(s => s.authLost) && ctxIn.onAuthLost) { stores.forEach(s => { s.authLost = false; }); ctxIn.onAuthLost(); } }, 800);
+
+    /* ---------- действия ---------- */
+    head.addEventListener('input', e => {
+      const f = e.target.dataset && e.target.dataset.f;
+      if (f === 'q') { q = e.target.value; showHits(); } else if (f === 'qt') quick.text = e.target.value; else if (f === 'qd') quick.diary = e.target.value;
+    });
+    function onClick(e) {
+      const t = e.target.closest('[data-act]'); if (!t) return; const a = t.dataset.act;
+      if (a === 'go') return go(t.dataset.tab);
+      if (a === 'phone') { if (ctxIn.phone) ctxIn.phone(true); return; }
+      if (a === 'hit') { const h = head.querySelector('.ov-res')._hits[+t.dataset.i]; if (h.tab === 'phone') { if (ctxIn.phone) ctxIn.phone(true); } else go(h.tab); return; }
+      if (a === 'stop') { T.stop(t.dataset.id); return; }
+      if (a === 'quick') { quick.open = !quick.open; quick.msg = ''; renderHead(); return; }
+      if (a === 'qsave') { const ds = Y.D.diaries, id = quick.diary || (ds[0] && ds[0].id), r = Y.addEntry(id, Y.today(), quick.text); if (!r.ok) { quick.msg = r.msg; renderHead(); return; } quick = { open: false, text: '', diary: '', msg: '' }; renderHead(); return; }
+      if (a === 'free') { ui.free = !ui.free; saveUi(); }
+      else if (a === 'allsp') { const sp = spModel(); if (sp) { const anyClosed = sp.spheres.some(s => ui.col[s.id] === 1); sp.spheres.forEach(s => { ui.col[s.id] = anyClosed ? 0 : 1; }); saveUi(); } }
+      else if (a === 'addsp') return go('spheres');
+      else if (a === 'sp') { ui.col[t.dataset.id] = t.dataset.open === '1' ? 1 : 0; saveUi(); }
+      else if (a === 'kind') { ui.kind = ui.kind === t.dataset.k ? 'all' : t.dataset.k; saveUi(); }
+      else if (a === 'n') { ui.n = +t.dataset.n; saveUi(); }
+      else if (a === 'ym') { let y = +ym.slice(0, 4), m = +ym.slice(5) + +t.dataset.n; if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; } ym = y + '-' + O.pad(m); }
+      else if (a === 'dsel') { ui.diary = t.dataset.id; saveUi(); }
+      else return;
+      render();
+    }
+    el.addEventListener('click', onClick);
+    el.addEventListener('change', e => { if (e.target.dataset && e.target.dataset.f === 'year') { ui.year = +e.target.value; saveUi(); render(); } });
+    const docClick = e => { const r = head.querySelector('.ov-res'); if (r && !r.hidden && !head.querySelector('.ov-search').contains(e.target)) r.hidden = true; };
+    document.addEventListener('click', docClick);
+
+    renderHead(); render();
+    const loadAll = () => { stores.forEach(s => s.load()); loadSpheres(); };
+    loadAll();
+    return { reload: loadAll, unmount() { alive = false; clearInterval(tick); clearInterval(authPoll); clearTimeout(rt); document.removeEventListener('click', docClick); stores.forEach(s => { s.onChange = null; }); el.removeEventListener('click', onClick); el.innerHTML = ''; } };
+  }
+  global.LifeModules.overview = { mount };
+})(window);
+
 </script>
 <script>
 /* ---- modules/data-model.js ---- */
@@ -3958,6 +5252,7 @@ window.LifeStateCss = `
   global.LifeDataModel = { APP, FORMAT, ORDER, CHUNK, sortTables, keyOf, chunks, clean, stamp, buildFile, parseFile, totalRows, plan, planText };
 })(window);
 
+
 </script>
 <script>
 /* ---- modules/data-css.js ---- */
@@ -3973,6 +5268,7 @@ window.LifeDataCss = `
 .dt-stale{background:#fff4e5;border:1px solid #f0c27a;border-radius:6px;padding:6px 10px;font-size:13px;margin-bottom:10px}
 @media (max-width:560px){.dt-app{padding:8px}}
 `;
+
 
 </script>
 <script>
@@ -4027,6 +5323,7 @@ window.LifeDataCss = `
   }
   global.LifeDataStore = { create };
 })(window);
+
 
 </script>
 <script>
@@ -4118,71 +5415,153 @@ window.LifeDataCss = `
   global.LifeModules.data = { mount };
 })(window);
 
+
+</script>
+<script>
+/* ---- shell/ui-css.js ---- */
+/* Общая основа интерфейса: цвета, шрифты, карточки, кнопки, чипы + стили оболочки (боковая панель, верхняя строка).
+   Подключается оболочкой один раз: window.LifeUiCss. Модули берут значения через var(--ui-…), а не свои цвета.
+   Меняете цвет или шрифт здесь — меняется везде. */
+window.LifeUiCss = `
+:root{
+  --ui-bg:#f1efea;            /* фон страницы */
+  --ui-card:#ffffff;          /* карточки */
+  --ui-soft:#f7f5f0;          /* вложенные блоки, ячейки */
+  --ui-line:#e6e2d9;          /* границы */
+  --ui-text:#1f2a24;          /* основной текст */
+  --ui-mut:#7c837e;           /* второстепенный текст */
+  --ui-main:#1f5c45;          /* главный цвет: кнопки, выбранное */
+  --ui-main-soft:#e3efe9;
+  --ui-in:#2f7d7a;            /* доходы */
+  --ui-out:#b7791f;           /* расходы */
+  --ui-bad:#b3261e;           /* внимание */
+  --ui-ok:#2e7d4f;
+  --ui-r:14px;                /* скругление карточек */
+  --ui-r-s:9px;
+  --ui-gap:14px;
+  --ui-shadow:0 1px 2px rgba(31,42,36,.05);
+  --ui-font:"Onest","Manrope","Inter",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+}
+html,body{margin:0;background:var(--ui-bg);color:var(--ui-text);font:14px/1.4 var(--ui-font)}
+*{box-sizing:border-box}
+.ui-card{background:var(--ui-card);border:1px solid var(--ui-line);border-radius:var(--ui-r);box-shadow:var(--ui-shadow);padding:16px 18px}
+.ui-card>h2,.ui-h{margin:0 0 10px;font-size:16px;font-weight:650;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.ui-h small{font-size:12px;font-weight:400;color:var(--ui-mut)}
+.ui-btn{font:inherit;font-size:13px;padding:6px 12px;border:1px solid var(--ui-line);background:var(--ui-card);color:var(--ui-text);border-radius:var(--ui-r-s);cursor:pointer;white-space:nowrap}
+.ui-btn:hover{background:var(--ui-soft)}
+.ui-btn.main{background:var(--ui-main);border-color:var(--ui-main);color:#fff}
+.ui-btn.main:hover{filter:brightness(1.08)}
+.ui-btn.on{background:var(--ui-main);border-color:var(--ui-main);color:#fff}
+.ui-btn.sm{padding:3px 9px;font-size:12px}
+.ui-chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 10px;border:1px solid var(--ui-line);border-radius:999px;background:var(--ui-card);color:var(--ui-text)}
+.ui-chip i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.ui-mut{color:var(--ui-mut)}
+.ui-in{font:inherit;padding:7px 11px;border:1px solid var(--ui-line);border-radius:var(--ui-r-s);background:var(--ui-card);color:var(--ui-text);min-width:0}
+.ui-in:focus,.ui-btn:focus-visible{outline:2px solid color-mix(in srgb,var(--ui-main) 45%,transparent);outline-offset:1px}
+
+/* ---- оболочка ---- */
+.sh-layout{display:flex;min-height:100vh}
+.sh-rail{flex:none;width:84px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;align-items:center;gap:4px;padding:14px 6px;background:var(--ui-card);border-right:1px solid var(--ui-line);z-index:1000}
+.sh-rail[hidden]{display:none}
+.sh-logo{width:38px;height:38px;border-radius:12px;background:var(--ui-main);color:#fff;font-weight:700;font-size:16px;display:flex;align-items:center;justify-content:center;margin-bottom:12px}
+.sh-nav{display:flex;flex-direction:column;gap:2px;width:100%}
+.sh-tab,.sh-ri{display:flex;flex-direction:column;align-items:center;gap:3px;width:100%;padding:9px 2px 7px;border:0;background:transparent;color:var(--ui-mut);border-radius:12px;font:inherit;font-size:11px;cursor:pointer}
+.sh-tab svg,.sh-ri svg{width:22px;height:22px;display:block}
+.sh-tab:hover,.sh-ri:hover{background:var(--ui-soft);color:var(--ui-text)}
+.sh-tab.on{background:var(--ui-main-soft);color:var(--ui-main);font-weight:650}
+.sh-fill{flex:1}
+.sh-menu{position:absolute;left:78px;bottom:10px;min-width:230px;background:var(--ui-card);border:1px solid var(--ui-line);border-radius:var(--ui-r);box-shadow:0 8px 28px rgba(31,42,36,.16);padding:8px;display:flex;flex-direction:column;gap:2px;font-size:13px;z-index:1100}
+.sh-menu[hidden]{display:none}
+.sh-menu button{font:inherit;text-align:left;border:0;background:transparent;padding:8px 10px;border-radius:8px;cursor:pointer;color:var(--ui-text)}
+.sh-menu button:hover{background:var(--ui-soft)}
+.sh-menu .sh-who{padding:6px 10px;color:var(--ui-mut);font-size:12px;word-break:break-all}
+.sh-menu .sh-view{padding:6px 10px;font-size:12px;color:var(--ui-mut)}
+.sh-menu select{font:inherit;padding:3px;border:1px solid var(--ui-line);border-radius:6px;max-width:100%}
+.sh-menu hr{border:0;border-top:1px solid var(--ui-line);margin:4px 0;width:100%}
+.sh-col{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
+.sh-top{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:16px 24px 0}
+.sh-top[hidden]{display:none}
+.sh-top h1{margin:0;font-size:24px;font-weight:700;letter-spacing:-.01em}
+.sh-top small{display:block;color:var(--ui-mut);font-size:12px}
+.sh-sync{font-size:12px;color:var(--ui-mut)}.sh-sync.warn{color:var(--ui-bad)}
+.sh-phone{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;padding:0;border-radius:10px}
+.sh-phone svg{width:18px;height:18px}
+.sh-phone.on{background:var(--ui-main);border-color:var(--ui-main);color:#fff}
+.sh-banner{background:#fff4d6;border-bottom:1px solid #e6d29a;padding:6px 24px;font-size:13px;color:#5b4a10;margin-top:10px}
+.sh-body{display:flex;align-items:flex-start;flex:1}
+.sh-main{flex:1 1 auto;min-width:0;padding:14px 24px 28px}
+.sh-main iframe{display:block;width:100%;height:calc(100vh - 110px);border:0;background:#fff;border-radius:var(--ui-r)}
+.sh-dock{flex:none;width:min(420px,50vw);position:sticky;top:0;align-self:flex-start;height:100vh;border-left:1px solid var(--ui-line);background:var(--ui-card)}
+.sh-dock[hidden]{display:none}
+.sh-dock iframe{display:block;width:100%;height:100%;border:0;background:var(--ui-card)}
+@media(max-width:760px){
+  .sh-layout{flex-direction:column}
+  .sh-rail{position:sticky;top:0;width:100%;height:auto;flex-direction:row;padding:6px;overflow-x:auto;border-right:0;border-bottom:1px solid var(--ui-line)}
+  .sh-logo{display:none}.sh-nav{flex-direction:row}.sh-tab,.sh-ri{width:64px;flex:none}
+  .sh-menu{left:auto;right:6px;top:60px;bottom:auto}
+  .sh-main,.sh-top{padding-left:12px;padding-right:12px}
+}`;
+
 </script>
 <script>
 /* ---- shell/shell.js ---- */
-/* Оболочка (компьютер): верхняя панель, вкладки модулей, переключатель «чьи данные», индикатор очереди записи.
+/* Оболочка (компьютер): боковая панель модулей, верхняя строка, меню «Настройки», переключатель «чьи данные», индикатор очереди записи.
+   Стили — shell/ui-css.js (LifeUiCss).
    Старая система подключается как есть, в окне внутри страницы (файл life-system.html рядом).
    LifeShell.start(элемент) */
 (function (global) {
   'use strict';
   const TAB_KEY = 'lifeerp-shell-tab', DOCK_KEY = 'lifeerp-shell-dock';
+  const svg = d => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>';
+  const ICON = {
+    home: svg('<path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/><path d="M10 19v-5h4v5"/>'),
+    grid: svg('<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>'),
+    box: svg('<path d="M4 8l8-4 8 4v8l-8 4-8-4z"/><path d="M4 8l8 4 8-4"/><path d="M12 12v8"/>'),
+    bars: svg('<path d="M6 20V11"/><path d="M12 20V5"/><path d="M18 20v-6"/>'),
+    coin: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v9"/><path d="M14.5 9.5c-.6-.8-1.5-1.2-2.5-1.2-1.4 0-2.5.7-2.5 1.8 0 2.3 5 1.2 5 3.6 0 1.1-1.1 1.8-2.5 1.8-1 0-2-.4-2.6-1.200"/>'),
+    book: svg('<path d="M5 4.5h11a3 3 0 013 3V20H8a3 3 0 01-3-3z"/><path d="M5 17a3 3 0 013-3h11"/>'),
+    heart: svg('<path d="M12 20s-7.5-4.500-7.5-10A4.3 4.3 0 0112 7.5 4.3 4.3 0 0119.500 10c0 5.5-7.5 10-7.5 10z"/>'),
+    settings: svg('<circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.500V21M3 12h2.5M18.500 12H21M5.600 5.600l1.8 1.8M16.600 16.600l1.8 1.8M5.600 18.400l1.8-1.8M16.600 7.400l1.8-1.8"/>')
+  };
+  const PHONE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>';
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-
-  const CSS = `
-body{margin:0;background:#f2f2f2}
-.sh-top{position:sticky;top:0;z-index:1000;display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:6px 14px;background:#fff;border-bottom:1px solid #dcdcdc;font:13px system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#404040;min-height:32px}
-.sh-top[hidden]{display:none}
-.sh-top b{font-size:15px}.sh-fill{flex:1}
-.sh-tabs{display:flex;gap:4px;flex-wrap:wrap}
-.sh-tab{border:1px solid transparent;background:transparent;border-radius:6px;padding:5px 10px;font:inherit;color:inherit;cursor:pointer}
-.sh-tab:hover{background:#efefef}.sh-tab.on{background:#404040;color:#fff}
-.sh-view select{font:inherit;padding:3px;border:1px solid #c9c9c9;border-radius:5px}
-.sh-sync{font-size:12px;opacity:.75}.sh-sync.warn{color:#b3261e;opacity:1}
-.sh-out{font:inherit;padding:4px 10px;border:1px solid #c9c9c9;background:#fff;border-radius:6px;cursor:pointer}
-.sh-banner{background:#fff4d6;border-bottom:1px solid #e6d29a;padding:6px 14px;font:13px system-ui,sans-serif;color:#5b4a10}
-.sh-main iframe{display:block;width:100%;height:calc(100vh - 46px);border:0;background:#fff}
-.sh-body{display:flex;align-items:flex-start}
-.sh-main{flex:1 1 auto;min-width:0}
-.sh-dock{flex:none;width:min(420px,50vw);box-sizing:border-box;position:sticky;top:var(--sh-top,46px);height:calc(100vh - var(--sh-top,46px));border-left:1px solid #dcdcdc;background:#fff}
-.sh-dock[hidden]{display:none}
-.sh-dock iframe{display:block;width:100%;height:100%;border:0;background:#fff}
-.sh-phone{display:inline-flex;align-items:center;padding:5px 8px}
-.sh-phone svg{width:16px;height:16px;display:block}`;
 
   function start(el) {
     const core = global.LifeCore.init({ device: 'desktop' });
-    if (!document.getElementById('sh-css')) { const s = document.createElement('style'); s.id = 'sh-css'; s.textContent = CSS; document.head.appendChild(s); }
-    el.innerHTML = `<header class="sh-top" hidden><b>LifeERP</b><nav class="sh-tabs"></nav><span class="sh-fill"></span>
-      <label class="sh-view" hidden>Данные: <select></select></label><span class="sh-sync"></span><span class="sh-who"></span><button class="sh-out" type="button">Выйти</button></header>
-      <div class="sh-banner" hidden></div><div class="sh-body"><main class="sh-main"></main><aside class="sh-dock" hidden aria-label="Телефонная версия: Таймеры, Покупки, Эмоции"></aside></div>`;
-    const $ = s => el.querySelector(s), top = $('.sh-top'), main = $('.sh-main'), banner = $('.sh-banner'), sel = $('.sh-view select'), dock = $('.sh-dock');
+    if (!document.getElementById('sh-css')) { const s = document.createElement('style'); s.id = 'sh-css'; s.textContent = global.LifeUiCss; document.head.appendChild(s); }
+    el.innerHTML = `<div class="sh-layout"><aside class="sh-rail" hidden><div class="sh-logo">L</div><nav class="sh-nav sh-tabs" aria-label="Модули"></nav><span class="sh-fill"></span>
+      <button type="button" class="sh-ri" data-settings aria-haspopup="true" aria-expanded="false">${ICON.settings}<span>Настройки</span></button>
+      <div class="sh-menu" hidden><div class="sh-who"></div><label class="sh-view" hidden>Данные: <select></select></label><hr>
+        <button type="button" data-tab="data">Данные: выгрузка и восстановление</button><button type="button" data-tab="legacy">Старая система (состояние, дневник)</button><hr><button type="button" class="sh-out">Выйти</button></div></aside>
+      <div class="sh-col"><header class="sh-top" hidden><div><h1></h1><small></small></div><span class="sh-fill"></span><span class="sh-sync"></span>
+        <button type="button" class="ui-btn sh-phone" data-phone aria-pressed="false" title="Телефонная версия: Таймеры, Покупки, Эмоции (правая колонка)" aria-label="Телефонная версия">${PHONE_SVG}</button></header>
+      <div class="sh-banner" hidden></div><div class="sh-body"><main class="sh-main"></main></div></div><aside class="sh-dock" hidden aria-label="Телефонная версия: Таймеры, Покупки, Эмоции"></aside></div>`;
+    const $ = s => el.querySelector(s), top = $('.sh-top'), rail = $('.sh-rail'), menu = $('.sh-menu'), main = $('.sh-main'), banner = $('.sh-banner'), sel = $('.sh-view select'), dock = $('.sh-dock');
 
     const modules = [
-      { id: 'things', title: 'Вещицы', mount: (box, ctx) => global.LifeModules.things.mount(box, ctx) },
-      { id: 'spheres', title: 'Сферы и дела', mount: (box, ctx) => global.LifeModules.spheres.mount(box, ctx) },
-      { id: 'state', title: 'Состояние', mount: (box, ctx) => global.LifeModules.state.mount(box, ctx) },
-      { id: 'tracks', title: 'Треки', mount: (box, ctx) => global.LifeModules.tracks.mount(box, ctx) },
-      { id: 'plan', title: 'Моделирование', mount: (box, ctx) => global.LifeModules.plan.mount(box, ctx) },
-      { id: 'diary', title: 'Дневник', mount: (box, ctx) => global.LifeModules.diary.mount(box, ctx) },
-      { id: 'data', title: 'Данные', mount: (box, ctx) => global.LifeModules.data.mount(box, ctx) },
-      { id: 'legacy', title: 'Состояние, дневник (старая система)', own: true, mount(box) {
+      { id: 'overview', title: 'Обзор', rail: 'Обзор', icon: 'home', mount: (box, ctx) => global.LifeModules.overview.mount(box, ctx) },
+      { id: 'spheres', title: 'Сферы и дела', rail: 'Сферы', icon: 'grid', mount: (box, ctx) => global.LifeModules.spheres.mount(box, ctx) },
+      { id: 'things', title: 'Вещицы', rail: 'Вещи', icon: 'box', mount: (box, ctx) => global.LifeModules.things.mount(box, ctx) },
+      { id: 'tracks', title: 'Треки', rail: 'Треки', icon: 'bars', mount: (box, ctx) => global.LifeModules.tracks.mount(box, ctx) },
+      { id: 'plan', title: 'Моделирование финансов и времени', rail: 'Деньги', icon: 'coin', mount: (box, ctx) => global.LifeModules.plan.mount(box, ctx) },
+      { id: 'diary', title: 'Дневник', rail: 'Дневник', icon: 'book', mount: (box, ctx) => global.LifeModules.diary.mount(box, ctx) },
+      { id: 'state', title: 'Состояние', rail: 'Состояние', icon: 'heart', mount: (box, ctx) => global.LifeModules.state.mount(box, ctx) },
+      { id: 'data', title: 'Данные', menu: true, mount: (box, ctx) => global.LifeModules.data.mount(box, ctx) },
+      { id: 'legacy', title: 'Старая система: состояние, дневник', menu: true, own: true, mount(box) {
         const f = document.createElement('iframe'); f.src = 'life-system.html'; f.title = 'Старая система'; box.appendChild(f);
         return { unmount() { f.remove(); } };
       } }
     ];
-    let tab = (core.store.get(TAB_KEY, 'things') || 'things'), mod = null, profiles = [];
-    if (!modules.some(m => m.id === tab)) tab = 'things';
+    let tab = (core.store.get(TAB_KEY, 'overview') || 'overview'), mod = null, profiles = [];
+    if (!modules.some(m => m.id === tab)) tab = 'overview';
 
     /* Правый док «Телефон»: та же страница pocket.html в узкой колонке (?embed=1). Она берёт у оболочки общий core:
        один вход, одна очередь записи. Включён/выключен запоминается; выключенный док выгружается целиком. */
     let dockOn = !!core.store.get(DOCK_KEY, false);
-    const PHONE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>';
     function dockMounted() { return !!dock.querySelector('iframe'); }
     function unloadDock() { dock.innerHTML = ''; dock.hidden = true; }
     function applyDock(force) {
-      document.documentElement.style.setProperty('--sh-top', (top.hidden ? 0 : top.offsetHeight) + 'px');
-      if (!core.session() || !dockOn) { unloadDock(); return; }
+            if (!core.session() || !dockOn) { unloadDock(); return; }
       if (force) dock.innerHTML = '';
       if (!dockMounted()) { const f = document.createElement('iframe'); f.src = 'pocket.html?embed=1'; f.title = 'Телефонная версия'; dock.appendChild(f); }
       dock.hidden = false;
@@ -4198,23 +5577,29 @@ body{margin:0;background:#f2f2f2}
     }
     function show() {
       unmountModule();
-      if (!core.session()) { top.hidden = true; banner.hidden = true; unloadDock(); global.LifeLogin.mount(main, { onDone: show }); return; }
+      if (!core.session()) { top.hidden = true; rail.hidden = true; banner.hidden = true; unloadDock(); global.LifeLogin.mount(main, { onDone: show }); return; }
       core.reloadSession();
-      top.hidden = false; $('.sh-who').textContent = core.email();
+      top.hidden = false; rail.hidden = false; $('.sh-who').textContent = core.email();
       renderTabs(); updateBanner(); applyDock();
       const m = modules.find(x => x.id === tab);
-      mod = m.mount(main, { core, onAuthLost: show });
+      mod = m.mount(main, { core, onAuthLost: show, go, phone: setPhone });
       loadProfiles();
     }
     function renderTabs() {
-      const phone = `<button type="button" class="sh-tab sh-phone ${dockOn ? 'on' : ''}" data-phone aria-pressed="${dockOn}" title="Телефонная версия: Таймеры, Покупки, Эмоции (правая колонка)" aria-label="Телефонная версия">${PHONE_SVG}</button>`;
-      $('.sh-tabs').innerHTML = modules.map(m => `<button type="button" class="sh-tab ${m.id === tab ? 'on' : ''}" data-tab="${esc(m.id)}">${esc(m.title)}</button>` + (m.id === 'spheres' ? phone : '')).join('');
+      $('.sh-tabs').innerHTML = modules.filter(m => !m.menu).map(m => `<button type="button" class="sh-tab ${m.id === tab ? 'on' : ''}" data-tab="${esc(m.id)}">${ICON[m.icon]}<span>${esc(m.rail)}</span></button>`).join('');
+      const ph = $('[data-phone]'); ph.classList.toggle('on', dockOn); ph.setAttribute('aria-pressed', String(dockOn));
+      const m = modules.find(x => x.id === tab);
+      top.querySelector('h1').textContent = m.title;
+      top.querySelector('small').textContent = new Intl.DateTimeFormat('ru-RU', { timeZone: core.TZ, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date());
     }
-    $('.sh-tabs').addEventListener('click', e => {
-      if (e.target.closest('[data-phone]')) { dockOn = !dockOn; core.store.set(DOCK_KEY, dockOn); renderTabs(); applyDock(); return; }
-      const b = e.target.closest('[data-tab]'); if (!b || b.dataset.tab === tab) return;
-      tab = b.dataset.tab; core.store.set(TAB_KEY, tab); show();
-    });
+    function setPhone(on) { if (on === undefined) return dockOn; if (!!on === dockOn) return dockOn; dockOn = !!on; core.store.set(DOCK_KEY, dockOn); renderTabs(); applyDock(); return dockOn; }
+    function go(id) { if (!modules.some(m => m.id === id) || id === tab) return; tab = id; core.store.set(TAB_KEY, tab); closeMenu(); show(); }
+    function closeMenu() { menu.hidden = true; $('[data-settings]').setAttribute('aria-expanded', 'false'); }
+    $('[data-settings]').addEventListener('click', e => { e.stopPropagation(); menu.hidden = !menu.hidden; $('[data-settings]').setAttribute('aria-expanded', String(!menu.hidden)); });
+    document.addEventListener('click', e => { if (!menu.hidden && !menu.contains(e.target)) closeMenu(); });
+    menu.addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) go(b.dataset.tab); });
+    top.addEventListener('click', e => { if (e.target.closest('[data-phone]')) { dockOn = !dockOn; core.store.set(DOCK_KEY, dockOn); renderTabs(); applyDock(); } });
+    $('.sh-tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) go(b.dataset.tab); });
 
     /* Переключатель «чьи данные»: виден только мастеру, когда в системе больше одного пользователя. */
     async function loadProfiles() {
@@ -4257,6 +5642,7 @@ body{margin:0;background:#f2f2f2}
 
   global.LifeShell = { start };
 })(window);
+
 
 </script>
 <script>LifeShell.start(document.getElementById('app'));</script>
