@@ -5034,6 +5034,10 @@ window.LifeOverviewCss = `
     'overview.tracksKind': { type: 'enum', def: 'all', opts: [['all', 'Все'], ['money', 'Только деньги'], ['tracks', 'Только треки']], label: 'Треки: что показывать' },
     'overview.tracksSort': { type: 'enum', def: 'manual', opts: [['manual', 'Как во вкладке «Треки»'], ['name', 'По названию'], ['recent', 'Недавние сверху']], label: 'Треки: порядок строк' }
   };
+  /* Свои настройки оформления у каждой страницы (модуля): ключи modules.<модуль>.<параметр>.
+     Нет строки (null) = «как в общих настройках»; значение хранится, даже если равно общему. */
+  const PAGE_PARAMS = ['mode', 'accent', 'income', 'expense', 'danger', 'bg', 'card', 'text', 'font', 'fontScale', 'radius', 'density', 'shadows'];
+  MODULES.forEach(m => PAGE_PARAMS.forEach(p => { CATALOG['modules.' + m.id + '.' + p] = Object.assign({}, CATALOG['theme.' + p], { ovr: true, base: 'theme.' + p, def: null }); }));
   const KEYS = Object.keys(CATALOG);
   const idOf = key => key;                       /* id строки совпадает с ключом '<scope>.<key>' */
   const split = key => { const i = key.indexOf('.'); return { scope: key.slice(0, i), key: key.slice(i + 1) }; };
@@ -5041,6 +5045,7 @@ window.LifeOverviewCss = `
   const clone = v => (v && typeof v === 'object' ? JSON.parse(JSON.stringify(v)) : v);
   function norm(key, v) {
     const c = CATALOG[key]; if (!c) return undefined;
+    if (c.ovr) return v === null || v === undefined ? null : norm(c.base, v);
     switch (c.type) {
       case 'bool': return typeof v === 'boolean' ? v : c.def;
       case 'color': return v === '' && c.emptyOk ? '' : (isColor(v) ? v.toLowerCase() : c.def);
@@ -5064,6 +5069,15 @@ window.LifeOverviewCss = `
     (rows || []).forEach(r => { if (r.deleted_at || !CATALOG[r.id]) return; o[r.id] = norm(r.id, r.value); });
     return o;
   }
+
+  /* Настройки оформления для страницы: общие, поверх них — свои значения этой страницы */
+  function effective(S, modId) {
+    const e = Object.assign({}, S);
+    PAGE_PARAMS.forEach(p => { const v = S['modules.' + modId + '.' + p]; if (v !== null && v !== undefined) e['theme.' + p] = v; });
+    return e;
+  }
+  const pageKey = (modId, p) => 'modules.' + modId + '.' + p;
+  const pageOwn = (S, modId) => PAGE_PARAMS.filter(p => S[pageKey(modId, p)] != null);
 
   /* Модули в порядке пользователя; скрытые убраны; хотя бы один остаётся. Возвращает [{id,title,rail,icon}] */
   function visibleModules(S) {
@@ -5109,7 +5123,7 @@ window.LifeOverviewCss = `
     { id: 'b_night', name: 'Ночь', data: { 'theme.mode': 'dark', 'theme.accent': '#5fbf93', 'theme.income': '#4cc0b8', 'theme.expense': '#e0a94a', 'theme.bg': '', 'theme.card': '', 'theme.text': '' } }
   ];
 
-  global.LifeSettingsModel = { CATALOG, KEYS, MODULES, OV_BLOCKS, OV_SIDE, OV_TILES, FONTS, BUILTIN_THEMES, DENS, idOf, split, norm, pack, defaults, resolve, visibleModules, startModule, themeCss, onColor, isColor, presetKeys, presetData, presetClean };
+  global.LifeSettingsModel = { PAGE_PARAMS, effective, pageKey, pageOwn, CATALOG, KEYS, MODULES, OV_BLOCKS, OV_SIDE, OV_TILES, FONTS, BUILTIN_THEMES, DENS, idOf, split, norm, pack, defaults, resolve, visibleModules, startModule, themeCss, onColor, isColor, presetKeys, presetData, presetClean };
 })(window);
 
 </script>
@@ -5184,7 +5198,7 @@ window.LifeOverviewCss = `
       T.put('app_settings', { id: key, scope: sp.scope, key: sp.key, value, created_at: old ? old.created_at : iso(Date.now()), deleted_at: null });
     }
     const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-    const logName = k => (M.CATALOG[k] ? M.CATALOG[k].label : k);
+    const logName = k => { const c = M.CATALOG[k]; if (!c) return k; if (!c.ovr) return c.label; const m = M.MODULES.find(x => k.startsWith('modules.' + x.id + '.')); return 'страница «' + (m ? m.rail : '?') + '»: ' + c.label; };
 
     /* Записать одну настройку. Значение, равное умолчанию, не хранится (строка удаляется). */
     S.set = function (key, value) { return S.setMany({ [key]: value }); };
@@ -5327,12 +5341,18 @@ window.LifeSettingsCss = `
         ${boolRow('profile.showLetter')}<div class="se-row"><label for="st-name">Имя</label><div class="v"><input id="st-name" class="ui-in" data-f="name" maxlength="60" placeholder="Как вас называть" value="${esc(nm)}"><button type="button" class="ui-btn main" data-a="savename">Сохранить имя</button></div></div>
         <div class="se-msg ${ok ? 'se-ok' : ''}" role="status">${esc(msg || ok)}</div></section>`;
     }
+    /* Страницы со своим оформлением (задаётся кнопкой-палитрой в верхней строке страницы) */
+    function pagesBlock() {
+      const list = M.MODULES.filter(m => M.pageOwn(S.all(), m.id).length);
+      return `<div class="se-sub">Страницы со своим оформлением</div>` + (list.length ? list.map(m => `<div class="se-li"><span class="n">${esc(m.title)}<small>${M.pageOwn(S.all(), m.id).length} изм.</small></span><button type="button" class="ui-btn sm" data-resetsec="modules.${m.id}.">Сбросить</button></div>`).join('') : '<div class="ui-mut" style="font-size:12px">Нет. Откройте любую страницу и нажмите кнопку-палитру справа вверху: цвета, шрифт и масштаб можно задать только для неё.</div>');
+    }
     function secTheme() {
       const f = M.FONTS[V('theme.font')] || M.FONTS.onest;
       return `<section class="ui-card se-sec"><h2>Оформление</h2><div class="ui-mut">Изменения видны сразу. Свои фон, карточки и текст действуют в светлой теме.</div>
         ${row('theme.mode', chips('theme.mode', C('theme.mode').opts))}${colorRow('theme.accent')}${colorRow('theme.income')}${colorRow('theme.expense')}${colorRow('theme.danger')}${colorRow('theme.bg')}${colorRow('theme.card')}${colorRow('theme.text')}
         ${selRow('theme.font')}<div class="se-row"><div class="l">Образец</div><div class="v"><div class="se-sample" style="font-family:${esc(f.stack)}">Съешь ещё этих мягких французских булок — 0123456789 ₸</div></div></div>
         ${rangeRow('theme.fontScale')}${rangeRow('theme.radius')}${row('theme.density', chips('theme.density', C('theme.density').opts))}${boolRow('theme.shadows')}${boolRow('theme.railLabels')}
+        ${pagesBlock()}
         ${resetBtn('theme.', 'Сбросить оформление')}<div class="ui-mut" style="font-size:12px;margin-top:8px">Тема, цвета и шрифты действуют на оболочку и экран «Обзор»; остальные экраны подключатся по мере переноса на новый стиль.</div></section>`;
     }
     function secModules() {
@@ -5426,6 +5446,116 @@ window.LifeSettingsCss = `
     return { reload() { S.load(); }, unmount() { alive = false; off(); el.innerHTML = ''; } };
   }
   global.LifeModules.settings = { mount };
+})(window);
+
+</script>
+<script>
+/* ---- shell/pagestyle-css.js ---- */
+/* Панель «Оформление страницы» (справа, не закрывает работу): стили. window.LifePageStyleCss */
+window.LifePageStyleCss = `
+.pg{position:fixed;top:0;right:0;bottom:0;width:min(330px,100vw);z-index:1500;background:var(--ui-card);color:var(--ui-text);border-left:1px solid var(--ui-line);box-shadow:-8px 0 28px rgba(0,0,0,.18);display:flex;flex-direction:column;font:13px/1.4 var(--ui-font)}
+.pg[hidden]{display:none}
+.pg-h{display:flex;align-items:flex-start;gap:8px;padding:14px 14px 8px}.pg-h b{flex:1;font-size:15px}.pg-h small{display:block;font-weight:400;color:var(--ui-mut);font-size:11px;margin-top:2px}
+.pg-b{flex:1;overflow:auto;padding:4px 14px 10px}
+.pg-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--ui-line)}.pg-row:first-child{border-top:0}
+.pg-row>label{flex:0 0 118px;font-weight:550}.pg-row.own>label:before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ui-main);margin-right:6px}
+.pg-ctl{flex:1;display:flex;align-items:center;gap:8px;min-width:0;flex-wrap:wrap}
+.pg-row:not(.own) .pg-ctl{opacity:.62}
+.pg-row input[type=color]{width:42px;height:28px;padding:0;border:1px solid var(--ui-line);border-radius:8px;background:var(--ui-card);cursor:pointer}
+.pg-row input[type=range]{flex:1;min-width:90px;accent-color:var(--ui-main)}.pg-row select{max-width:100%}
+.pg-row input[type=checkbox]{accent-color:var(--ui-main);width:16px;height:16px}
+.pg-chips{display:flex;gap:5px;flex-wrap:wrap}.pg-chips button{font:inherit;font-size:12px;padding:3px 9px;border:1px solid var(--ui-line);border-radius:999px;background:var(--ui-card);color:var(--ui-text);cursor:pointer}
+.pg-chips button.on{background:var(--ui-main-soft);border-color:var(--ui-main)}
+.pg-undo{flex:none;width:26px;height:26px;padding:0;border:1px solid var(--ui-line);border-radius:8px;background:var(--ui-card);color:var(--ui-text);cursor:pointer}.pg-undo[hidden]{display:none}
+.pg-f{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 14px;border-top:1px solid var(--ui-line)}.pg-f .sp{flex:1}
+.pg-x{border:0;background:transparent;color:var(--ui-text);font-size:18px;cursor:pointer;padding:0 4px;line-height:1}
+.sh-pgb{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;padding:0;border-radius:10px}.sh-pgb svg{width:18px;height:18px}.sh-pgb.on{background:var(--ui-main);border-color:var(--ui-main);color:var(--ui-on-main)}.sh-pgb[hidden]{display:none}
+@media(max-width:760px){.pg{top:auto;left:0;width:100%;height:60vh;border-left:0;border-top:1px solid var(--ui-line);box-shadow:0 -8px 28px rgba(0,0,0,.18)}}`;
+
+</script>
+<script>
+/* ---- shell/pagestyle.js ---- */
+/* Панель «Оформление страницы»: цвета, шрифт, масштаб и т. д. только для открытой страницы (модуля), не уходя с неё.
+   Данные — settings-store (ключи modules.<модуль>.<параметр>), каталог и расчёт — settings-model.
+   LifePageStyle.create({store, host, openGlobal}) → {toggle(модуль), open(модуль), close(), refresh(модуль|null), isOpen()}. */
+(function (global) {
+  'use strict';
+  const M = global.LifeSettingsModel;
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const ROWS = [['mode', 'Тема'], ['accent', 'Главный цвет'], ['bg', 'Фон страницы'], ['card', 'Фон карточек'], ['text', 'Цвет текста'], ['income', 'Цвет доходов'], ['expense', 'Цвет расходов'], ['danger', 'Цвет «внимание»'],
+    ['font', 'Шрифт'], ['fontScale', 'Масштаб'], ['radius', 'Скругление'], ['density', 'Плотность'], ['shadows', 'Тени']];
+  const VAR = { accent: '--ui-main', bg: '--ui-bg', card: '--ui-card', text: '--ui-text', income: '--ui-in', expense: '--ui-out', danger: '--ui-bad' };
+  const toHex = c => { const m = /rgba?\((\d+)[ ,]+(\d+)[ ,]+(\d+)/.exec(c || ''); return m ? '#' + [1, 2, 3].map(i => (+m[i]).toString(16).padStart(2, '0')).join('') : (/^#[0-9a-f]{6}$/i.test(c) ? c.toLowerCase() : '#000000'); };
+  /* Реальный цвет сейчас на странице (для полей «фон/карточки/текст», у которых в общих настройках нет значения) */
+  const shown = v => { const t = document.createElement('span'); t.style.cssText = 'position:absolute;visibility:hidden;color:var(' + v + ');background:var(' + v + ')'; document.body.appendChild(t); const c = getComputedStyle(t).color; t.remove(); return toHex(c); };
+
+  function create(o) {
+    const S = o.store, host = o.host; let mod = null, built = false, off = null; const refs = {};
+    if (!document.getElementById('pg-css')) { const s = document.createElement('style'); s.id = 'pg-css'; s.textContent = global.LifePageStyleCss; document.head.appendChild(s); }
+    const box = document.createElement('aside'); box.className = 'pg'; box.hidden = true; box.setAttribute('aria-label', 'Оформление страницы'); host.appendChild(box);
+    const K = p => M.pageKey(mod.id, p), own = p => S.get(K(p)) != null, val = p => own(p) ? S.get(K(p)) : S.get('theme.' + p);
+    let tm = {}; const later = (k, fn, ms) => { clearTimeout(tm[k]); tm[k] = setTimeout(fn, ms); };
+
+    function ctl(p) {
+      const c = M.CATALOG['theme.' + p], v = val(p);
+      if (c.type === 'color') return `<input type="color" data-p="${p}" value="${esc(v || shown(VAR[p]))}" aria-label="${esc(c.label)}">`;
+      if (p === 'font') return `<select class="ui-in" data-p="font">${c.opts.map(x => `<option value="${esc(x[0])}" ${v === x[0] ? 'selected' : ''}>${esc(x[1])}</option>`).join('')}</select>`;
+      if (c.type === 'enum') return `<span class="pg-chips">${c.opts.map(x => `<button type="button" data-p="${p}" data-v="${esc(x[0])}" class="${v === x[0] ? 'on' : ''}">${esc(x[1])}</button>`).join('')}</span>`;
+      if (c.type === 'int') return `<input type="range" data-p="${p}" min="${c.min}" max="${c.max}" step="${c.step}" value="${v}"><b data-out="${p}">${v}${c.unit}</b>`;
+      if (c.type === 'bool') return `<input type="checkbox" data-p="${p}" ${v ? 'checked' : ''}>`;
+      return '';
+    }
+    function build() {
+      box.innerHTML = `<div class="pg-h"><b>Оформление страницы<small>«${esc(mod.title)}»: только для этой страницы. Что не меняли, берётся из общих настроек.</small></b><button type="button" class="pg-x" data-x aria-label="Закрыть панель">×</button></div>
+        <div class="pg-b">${ROWS.map(r => `<div class="pg-row" data-row="${r[0]}"><label>${esc(r[1])}</label><span class="pg-ctl">${ctl(r[0])}</span><button type="button" class="pg-undo" data-undo="${r[0]}" title="Как в общих настройках" aria-label="Сбросить: ${esc(r[1])}" hidden>↺</button></div>`).join('')}</div>
+        <div class="pg-f"><button type="button" class="ui-btn sm" data-resetpage>Сбросить для страницы</button><span class="sp"></span><button type="button" class="ui-btn sm" data-global>Общие настройки…</button></div>`;
+      built = true; sync();
+    }
+    /* Обновить состояние полей, не пересоздавая их (чтобы открытый выбор цвета не закрывался) */
+    function sync() {
+      if (!mod || !built) return;
+      ROWS.forEach(r => {
+        const p = r[0], row = box.querySelector(`[data-row="${p}"]`); if (!row) return; const has = own(p), v = val(p), c = M.CATALOG['theme.' + p];
+        row.classList.toggle('own', has); row.querySelector('[data-undo]').hidden = !has;
+        row.querySelectorAll('[data-p]').forEach(i => {
+          if (i === document.activeElement) return;
+          if (i.type === 'color') i.value = v || shown(VAR[p]); else if (i.type === 'checkbox') i.checked = !!v; else if (i.type === 'range') { i.value = v; const out = row.querySelector('[data-out]'); if (out) out.textContent = v + c.unit; }
+          else if (i.tagName === 'SELECT') i.value = v; else if (i.dataset.v !== undefined) i.classList.toggle('on', i.dataset.v === String(v));
+        });
+      });
+    }
+    box.addEventListener('input', e => {
+      const t = e.target, p = t.dataset && t.dataset.p; if (!p || !mod) return;
+      if (t.type === 'range') { const out = box.querySelector(`[data-out="${p}"]`); if (out) out.textContent = t.value + M.CATALOG['theme.' + p].unit; later(p, () => S.set(K(p), +t.value), 250); }
+      else if (t.type === 'color') later(p, () => S.set(K(p), t.value), 300);
+    });
+    box.addEventListener('change', e => {
+      const t = e.target, p = t.dataset && t.dataset.p; if (!p || !mod) return; clearTimeout(tm[p]);
+      if (t.type === 'color' || t.tagName === 'SELECT') S.set(K(p), t.value); else if (t.type === 'checkbox') S.set(K(p), t.checked); else if (t.type === 'range') S.set(K(p), +t.value);
+    });
+    box.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b || !mod) return;
+      if (b.dataset.x !== undefined) return close();
+      if (b.dataset.undo) return void S.set(K(b.dataset.undo), null);
+      if (b.dataset.resetpage !== undefined) return void S.reset('modules.' + mod.id + '.');
+      if (b.dataset.global !== undefined) { close(); if (o.openGlobal) o.openGlobal(); return; }
+      if (b.dataset.p && b.dataset.v !== undefined) S.set(K(b.dataset.p), b.dataset.v);
+    });
+    const onKey = e => { if (e.key === 'Escape' && !box.hidden) close(); };
+    document.addEventListener('keydown', onKey);
+
+    function open(m) { mod = m; build(); box.hidden = false; if (!off) off = S.subscribe(sync); }
+    function close() { box.hidden = true; if (off) { off(); off = null; } }
+    return {
+      isOpen: () => !box.hidden,
+      open, close,
+      toggle(m) { if (!box.hidden && mod && mod.id === m.id) close(); else open(m); },
+      /* Смена страницы: панель остаётся открытой и показывает настройки новой; для служебных экранов закрывается */
+      refresh(m) { if (box.hidden) return; if (!m) return close(); mod = m; build(); },
+      destroy() { document.removeEventListener('keydown', onKey); if (off) off(); box.remove(); }
+    };
+  }
+  global.LifePageStyle = { create };
 })(window);
 
 </script>
@@ -6049,6 +6179,7 @@ html,body{margin:0;background:var(--ui-bg);color:var(--ui-text);font:14px/1.4 va
     heart: svg('<path d="M12 20s-7.5-4.500-7.5-10A4.3 4.3 0 0112 7.5 4.3 4.3 0 0119.500 10c0 5.5-7.5 10-7.5 10z"/>'),
     settings: svg('<circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.500V21M3 12h2.5M18.500 12H21M5.600 5.600l1.8 1.8M16.600 16.600l1.8 1.8M5.600 18.400l1.8-1.8M16.600 7.400l1.8-1.8"/>')
   };
+  const PALETTE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.8-.9 1.5-1.9-.3-1 .4-2.1 1.5-2.1H17a4 4 0 0 0 4-4c0-5-4-10-9-10z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r=".9"/><circle cx="14.5" cy="7" r=".9"/></svg>';
   const PHONE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>';
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -6060,7 +6191,7 @@ html,body{margin:0;background:var(--ui-bg);color:var(--ui-text);font:14px/1.4 va
       <div class="sh-menu" hidden><div class="sh-who"></div><label class="sh-view" hidden>Данные: <select></select></label><hr>
         <button type="button" data-tab="settings">Настройки: профиль, оформление, модули</button><button type="button" data-tab="data">Данные: выгрузка и восстановление</button><button type="button" data-tab="legacy">Старая система (состояние, дневник)</button><hr><button type="button" class="sh-out">Выйти</button></div></aside>
       <div class="sh-col"><header class="sh-top" hidden><div><h1></h1><small></small></div><span class="sh-fill"></span><span class="sh-sync"></span>
-        <button type="button" class="ui-btn sh-phone" data-phone aria-pressed="false" title="Телефонная версия: Таймеры, Покупки, Эмоции (правая колонка)" aria-label="Телефонная версия">${PHONE_SVG}</button></header>
+        <button type="button" class="ui-btn sh-pgb" data-pagestyle aria-pressed="false" title="Оформление этой страницы: цвета, шрифт, масштаб" aria-label="Оформление этой страницы" hidden>${PALETTE_SVG}</button><button type="button" class="ui-btn sh-phone" data-phone aria-pressed="false" title="Телефонная версия: Таймеры, Покупки, Эмоции (правая колонка)" aria-label="Телефонная версия">${PHONE_SVG}</button></header>
       <div class="sh-banner" hidden></div><div class="sh-body"><main class="sh-main"></main></div></div><aside class="sh-dock" hidden aria-label="Телефонная версия: Таймеры, Покупки, Эмоции"></aside></div>`;
     const $ = s => el.querySelector(s), top = $('.sh-top'), rail = $('.sh-rail'), menu = $('.sh-menu'), main = $('.sh-main'), banner = $('.sh-banner'), sel = $('.sh-view select'), dock = $('.sh-dock');
 
@@ -6070,7 +6201,7 @@ html,body{margin:0;background:var(--ui-bg);color:var(--ui-text);font:14px/1.4 va
     if (!themeEl) { themeEl = document.createElement('style'); themeEl.id = 'sh-theme'; document.head.appendChild(themeEl); }
     themeEl.textContent = core.store.get(THEME_KEY, '') || '';
     function applyTheme() {
-      const css = SM.themeCss(ST.all()); themeEl.textContent = css; core.store.set(THEME_KEY, css);
+      const css = SM.themeCss(SM.effective(ST.all(), tab)); themeEl.textContent = css; core.store.set(THEME_KEY, css);
       rail.classList.toggle('nolabels', !ST.get('theme.railLabels'));
     }
     /* Профиль: имя хранится в базе (profiles.display_name, правит только сам пользователь) и копией в настройках, картинка — в настройках (profile.avatar). */
@@ -6095,6 +6226,11 @@ html,body{margin:0;background:var(--ui-bg);color:var(--ui-text);font:14px/1.4 va
       if (old && /^data:image\//.test(old)) { ST.set('profile.avatar', old); core.store.set(imgKey(), ''); }
     }
     el.addEventListener('click', e => { if (e.target.closest('[data-profile]')) go('settings'); });
+    /* Оформление текущей страницы (панель справа): доступно у основных модулей */
+    const pageMod = () => SM.MODULES.find(m => m.id === tab) || null;
+    const PS = global.LifePageStyle.create({ store: ST, host: el, openGlobal: () => go('settings') });
+    top.addEventListener('click', e => { if (e.target.closest('[data-pagestyle]')) { const m = pageMod(); if (m) { PS.toggle(m); syncPg(); } } });
+    function syncPg() { const b = $('[data-pagestyle]'); b.hidden = !pageMod(); b.classList.toggle('on', PS.isOpen()); b.setAttribute('aria-pressed', String(PS.isOpen())); }
     let moved = false;
     async function loadSettings() {
       await ST.load(); if (ST.state !== 'ready') return; migrateAvatar(); afterSettings(true);
@@ -6156,7 +6292,7 @@ html,body{margin:0;background:var(--ui-bg);color:var(--ui-text);font:14px/1.4 va
       core.reloadSession();
       if (loadedFor !== core.me()) { loadedFor = core.me(); moved = false; dockApplied = false; ST.fromCache(); applyTheme(); const kept = core.store.get(TAB_KEY, ''); if (kept && isShown(kept)) { tab = kept; moved = true; } else tab = SM.startModule(ST.all()); loadSettings(); }
       top.hidden = false; rail.hidden = false; paintLogo(); $('.sh-who').textContent = core.email();
-      renderTabs(); updateBanner(); applyDock();
+      renderTabs(); updateBanner(); applyDock(); applyTheme(); PS.refresh(pageMod()); syncPg();
       const m = modules.find(x => x.id === tab);
       mod = m.mount(main, { core, onAuthLost: show, go, phone: setPhone, settings: ST, profile: { name: myName, saveName } });
       loadProfiles();
