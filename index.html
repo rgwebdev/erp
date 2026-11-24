@@ -4872,6 +4872,8 @@ window.LifeOverviewCss = `
 .ov{display:flex;gap:18px;align-items:flex-start}
 .ov-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:var(--ui-gap)}
 .ov-side{flex:none;width:300px;display:flex;flex-direction:column;gap:var(--ui-gap)}
+.ov-body{display:flex;flex-direction:column;gap:var(--ui-gap)}
+.ov-head[hidden]{display:none}
 .ov-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .ov-search{position:relative;flex:1 1 260px;min-width:180px}
 .ov-search .ui-in{width:100%;background:var(--ui-soft)}
@@ -4885,7 +4887,7 @@ window.LifeOverviewCss = `
 .ov-qr{position:relative}
 .ov-pop{position:absolute;right:0;top:100%;margin-top:6px;width:340px;max-width:90vw;background:var(--ui-card);border:1px solid var(--ui-line);border-radius:var(--ui-r);box-shadow:0 8px 28px rgba(31,42,36,.16);padding:12px;z-index:40;display:flex;flex-direction:column;gap:8px}
 .ov-pop textarea{min-height:90px;resize:vertical}
-.ov-tiles{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:var(--ui-gap)}
+.ov-tiles{display:grid;grid-template-columns:repeat(var(--cols,5),minmax(0,1fr));gap:var(--ui-gap)}
 .ov-tile{background:var(--ui-card);border:1px solid var(--ui-line);border-radius:var(--ui-r);padding:12px 16px;box-shadow:var(--ui-shadow);min-width:0}
 .ov-tile .t{font-size:12px;color:var(--ui-mut)}.ov-tile .v{font-size:24px;font-weight:700;margin:2px 0;white-space:nowrap}.ov-tile .s{font-size:11px;color:var(--ui-mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ov-tile .v.in{color:var(--ui-in)}.ov-tile .v.out{color:var(--ui-out)}
@@ -4896,7 +4898,7 @@ window.LifeOverviewCss = `
 .ov-sh{padding:10px 12px;display:flex;flex-direction:column;gap:3px}
 .ov-sh .r1{display:flex;align-items:center;gap:6px}.ov-sh b{font-size:15px;flex:1}
 .ov-sh .r2{display:flex;justify-content:space-between;font-size:12px}
-.ov-sh button{font:inherit;font-size:11px;padding:1px 9px;border-radius:999px;border:0;background:rgba(255,255,255,.75);cursor:pointer}
+.ov-sh button{font:inherit;font-size:11px;padding:1px 9px;border-radius:999px;border:0;background:rgba(255,255,255,.75);color:#1f2a24;cursor:pointer}
 .ov-sb{padding:8px;display:flex;flex-direction:column;gap:7px}
 .ov-g{background:var(--ui-card);border:1px solid var(--ui-line);border-radius:10px;padding:7px 9px;font-size:12.5px}
 .ov-g .gh{display:flex;justify-content:space-between;gap:6px;font-weight:650;margin-bottom:3px}.ov-g .gh span{font-weight:400;color:var(--ui-mut);font-size:11px;white-space:nowrap}
@@ -4970,7 +4972,9 @@ window.LifeOverviewCss = `
   ];
   const OV_BLOCKS = [['tiles', 'Плитки сверху'], ['spheres', 'Сферы жизни'], ['tracks', 'Треки'], ['diary', 'Дневник'], ['plan', 'Моделирование']];
   const OV_SIDE = [['timers', 'Таймеры'], ['emo', 'Эмоции'], ['shop', 'Покупки']];
-  const OV_TILES = [['today', 'Сегодня'], ['income', 'Доходы'], ['expense', 'Расходы'], ['volume', 'Объём в сферах'], ['mood', 'Состояние']];
+  /* Виджеты быстрого просмотра (плитки сверху «Обзора»). Новый виджет = строка здесь + функция в overview.js (WIDGETS) */
+  const OV_TILES = [['today', 'Сегодня', 'время таймеров за день'], ['income', 'Доходы', 'за 14 дней'], ['expense', 'Расходы', 'за 14 дней'], ['volume', 'Объём в сферах', 'часы и суммы в планах'], ['mood', 'Состояние', 'дней с отметками из 10'],
+    ['balance', 'Баланс', 'доходы минус расходы за 14 дней'], ['shop', 'Список покупок', 'сумма и число позиций'], ['diary', 'Дневник', 'записей за 7 дней'], ['sleeping', 'Спящие дела', 'дел без движения в сферах']];
 
   const FONTS = {
     onest: { name: 'Onest', stack: '"Onest","Manrope","Inter",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif' },
@@ -4988,6 +4992,7 @@ window.LifeOverviewCss = `
   const CATALOG = {
     'profile.name': { type: 'text', def: '', max: 60, label: 'Имя' },
     'profile.avatar': { type: 'image', def: '', label: 'Картинка' },
+    'profile.showLetter': { type: 'bool', def: false, label: 'Отображать символ имени поверх картинки' },
 
     'theme.mode': { type: 'enum', def: 'light', opts: [['light', 'Светлая'], ['dark', 'Тёмная'], ['auto', 'Как в системе']], label: 'Тема' },
     'theme.accent': { type: 'color', def: '#1f5c45', label: 'Главный цвет', hint: 'Кнопки, выбранные пункты, значок' },
@@ -5010,10 +5015,11 @@ window.LifeOverviewCss = `
     'layout.dockOpen': { type: 'bool', def: false, label: 'Правая колонка «Телефон» открыта при входе' },
 
     'overview.blocks': { type: 'list', def: idsOf(OV_BLOCKS), of: idsOf(OV_BLOCKS), label: 'Порядок блоков' },
-    'overview.hidden': { type: 'subset', def: [], of: idsOf(OV_BLOCKS), label: 'Скрытые блоки' },
+    'overview.hidden': { type: 'subset', def: [], of: idsOf(OV_BLOCKS).concat('search'), label: 'Скрытые блоки' },
     'overview.side': { type: 'list', def: idsOf(OV_SIDE), of: idsOf(OV_SIDE), label: 'Порядок правой колонки' },
     'overview.sideHidden': { type: 'subset', def: [], of: idsOf(OV_SIDE), label: 'Скрытые блоки правой колонки' },
-    'overview.tilesHidden': { type: 'subset', def: [], of: idsOf(OV_TILES), label: 'Скрытые плитки' },
+    'overview.tiles': { type: 'list', def: idsOf(OV_TILES), of: idsOf(OV_TILES), label: 'Порядок виджетов' },
+    'overview.tilesHidden': { type: 'subset', def: ['balance', 'shop', 'diary', 'sleeping'], of: idsOf(OV_TILES), label: 'Скрытые виджеты' },
     'overview.spheresSort': { type: 'enum', def: 'manual', opts: [['manual', 'Как в «Сферах»'], ['name', 'По названию'], ['activity', 'По времени (больше сверху)'], ['plan', 'По сумме в планах']], label: 'Порядок сфер' },
     'overview.spheresOpen': { type: 'int', def: 2, min: 0, max: 8, step: 1, unit: '', label: 'Сколько сфер раскрыто' },
     'overview.itemLimit': { type: 'int', def: 4, min: 2, max: 12, step: 1, unit: '', label: 'Дел на уровне, не больше' },
@@ -5262,7 +5268,7 @@ window.LifeSettingsCss = `
   const M = global.LifeSettingsModel;
   global.LifeModules = global.LifeModules || {};
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const SECS = [['profile', 'Профиль'], ['theme', 'Оформление'], ['modules', 'Модули'], ['overview', 'Обзор'], ['presets', 'Наборы и сброс']];
+  const SECS = [['profile', 'Профиль'], ['theme', 'Оформление'], ['modules', 'Модули'], ['widgets', 'Виджеты'], ['overview', 'Обзор'], ['presets', 'Наборы и сброс']];
   const SEC_KEY = 'lifeerp-settings-sec';
   const START = { bg: '#f1efea', card: '#ffffff', text: '#1f2a24' };
 
@@ -5312,7 +5318,7 @@ window.LifeSettingsCss = `
       return `<section class="ui-card st-sec"><h2>Профиль</h2><div class="ui-mut">Имя видно в боковой панели и тем, у кого есть доступ к вашим данным. Картинка заполняет квадратик слева вверху.</div>
         <div class="st-pv"><span class="sh-av" data-av></span><div><button type="button" class="ui-btn sm" data-a="pick">Выбрать картинку</button> <button type="button" class="ui-btn sm" data-a="clear" ${img ? '' : 'disabled'}>Убрать</button><input type="file" accept="image/*" hidden>
         <div class="ui-mut" style="font-size:11px;margin-top:6px">Картинка уменьшается до 128×128 и хранится в вашей базе.</div></div></div>
-        <div class="st-row"><label for="st-name">Имя</label><div class="v"><input id="st-name" class="ui-in" data-f="name" maxlength="60" placeholder="Как вас называть" value="${esc(nm)}"><button type="button" class="ui-btn main" data-a="savename">Сохранить имя</button></div></div>
+        ${boolRow('profile.showLetter')}<div class="st-row"><label for="st-name">Имя</label><div class="v"><input id="st-name" class="ui-in" data-f="name" maxlength="60" placeholder="Как вас называть" value="${esc(nm)}"><button type="button" class="ui-btn main" data-a="savename">Сохранить имя</button></div></div>
         <div class="st-msg ${ok ? 'st-ok' : ''}" role="status">${esc(msg || ok)}</div></section>`;
     }
     function secTheme() {
@@ -5332,10 +5338,14 @@ window.LifeSettingsCss = `
       return `<section class="ui-card st-sec"><h2>Обзор</h2><div class="ui-mut">Какие блоки показывать, в каком порядке и как их сортировать.</div>
         <div class="st-sub">Основная часть</div>${orderList('overview.blocks', 'overview.hidden', M.OV_BLOCKS)}
         <div class="st-sub">Правая колонка</div>${orderList('overview.side', 'overview.sideHidden', M.OV_SIDE)}
-        <div class="st-sub">Плитки сверху</div><div class="st-chips">${M.OV_TILES.map(t => `<label class="ui-chip"><input type="checkbox" data-show="overview.tilesHidden" data-id="${t[0]}" ${V('overview.tilesHidden').includes(t[0]) ? '' : 'checked'}> ${esc(t[1])}</label>`).join('')}</div>
+        <div class="st-sub">Строка поиска</div><div class="st-row"><label>Показывать строку поиска и «Быструю запись»<small>всегда вверху страницы</small></label><div class="v"><input type="checkbox" data-show="overview.hidden" data-id="search" ${V('overview.hidden').includes('search') ? '' : 'checked'}></div></div>
         <div class="st-sub">Сферы жизни</div>${selRow('overview.spheresSort')}${rangeRow('overview.spheresOpen')}${rangeRow('overview.itemLimit')}${boolRow('overview.freeOnly')}
         <div class="st-sub">Треки</div>${row('overview.tracksDays', chips('overview.tracksDays', C('overview.tracksDays').opts))}${row('overview.tracksKind', chips('overview.tracksKind', C('overview.tracksKind').opts))}${selRow('overview.tracksSort')}
         ${resetBtn('overview.', 'Сбросить «Обзор»')}</section>`;
+    }
+    function secWidgets() {
+      return `<section class="ui-card st-sec"><h2>Виджеты быстрого просмотра</h2><div class="ui-mut">Маленькие карточки сверху «Обзора». Включайте нужные и расставляйте по порядку; когда включено больше пяти, они ложатся в два ряда. Новые виджеты и настройки каждого будут добавляться сюда.</div>
+        ${orderList('overview.tiles', 'overview.tilesHidden', M.OV_TILES)}${resetBtn('overview.tile', 'Сбросить виджеты')}</section>`;
     }
     function secPresets() {
       const sw = d => `<span class="st-sw"><i style="background:${esc(d['theme.accent'] || '#1f5c45')}"></i><i style="background:${esc(d['theme.income'] || '#2f7d7a')}"></i><i style="background:${esc(d['theme.expense'] || '#b7791f')}"></i></span>`;
@@ -5346,11 +5356,12 @@ window.LifeSettingsCss = `
         <section class="ui-card st-sec"><h2>Наборы раскладки</h2><div class="ui-mut">Порядок и видимость модулей, стартовая вкладка.</div>${mine('layout')}<div class="st-foot"><input class="ui-in" data-f="pname" data-kind="layout" maxlength="60" placeholder="Название набора"><button type="button" class="ui-btn" data-savepreset="layout">Сохранить текущую раскладку</button></div></section>
         <section class="ui-card st-sec"><h2>Сброс</h2><div class="ui-mut">Вернуть все настройки (кроме имени и картинки) к значениям по умолчанию.</div><div class="st-foot"><button type="button" class="ui-btn" data-resetall>Сбросить всё</button></div><div class="st-msg ${ok ? 'st-ok' : ''}" role="status">${esc(msg || ok)}</div></section>`;
     }
-    const SECF = { profile: secProfile, theme: secTheme, modules: secModules, overview: secOverview, presets: secPresets };
+    const SECF = { profile: secProfile, theme: secTheme, modules: secModules, widgets: secWidgets, overview: secOverview, presets: secPresets };
 
     function paintAv() {
       const av = body.querySelector('[data-av]'); if (!av) return; const img = V('profile.avatar'), inp = body.querySelector('[data-f=name]'), nm = (inp ? inp.value : prof.name()) || core.email() || '?';
-      av.innerHTML = img ? '<img alt="">' : esc(nm.trim().charAt(0).toUpperCase() || '?'); if (img) av.firstChild.src = img;
+      const ch = esc(nm.trim().charAt(0).toUpperCase() || '?');
+      av.innerHTML = img ? '<img alt="">' + (V('profile.showLetter') ? '<span class="ltr">' + ch + '</span>' : '') : ch; if (img) av.firstChild.src = img;
     }
     function render() {
       if (!alive) return; const y = global.scrollY;
@@ -5423,7 +5434,6 @@ window.LifeSettingsCss = `
   global.LifeModules = global.LifeModules || {};
   const UI_KEY = 'lifeerp-overview-ui';
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const O_TILES = ['today', 'income', 'expense', 'volume', 'mood'];
   const WD = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 
   function mount(el, ctxIn) {
@@ -5492,15 +5502,31 @@ window.LifeSettingsCss = `
     }
 
     /* ---------- карточки ---------- */
+    /* Виджеты быстрого просмотра. Каждый — функция, возвращающая {t: заголовок, v: значение, s: подпись, cls?, tick?}.
+       Новый виджет: функция здесь + строка в OV_TILES (settings-model.js). Порядок и показ — «Настройки → Виджеты». */
     function tiles(now, today) {
-      const tt = O.timersToday(T.D, today, now), inc = K.state === 'ready' ? O.moneyPeriod(K, TK, today, 14, 'in') : null, out = K.state === 'ready' ? O.moneyPeriod(K, TK, today, 14, 'out') : null;
-      const sp = SP.raw ? O.spheres(SM, spModel(), now, {}) : null, st = sp ? O.sphereTotals(sp) : null, md = E.state === 'ready' ? O.moodDays(E.D.marks, TM, today, 10) : null;
+      const hid = cfg('tilesHidden'), order = cfg('tiles').filter(id => !hid.includes(id)); if (!order.length) return '';
+      const kOk = K.state === 'ready', inc = kOk ? O.moneyPeriod(K, TK, today, 14, 'in') : null, out = kOk ? O.moneyPeriod(K, TK, today, 14, 'out') : null;
       const sub = p => p && p.parts.length ? p.parts.slice(0, 2).map(x => esc(x.name)).join(', ') : 'нет записей';
-      const hid = cfg('tilesHidden'), t = (id, title, v, s, cls, tick) => hid.includes(id) ? '' : `<div class="ov-tile"><div class="t">${title}</div><div class="v ${cls || ''}" ${tick ? `data-tick="${tick}"` : ''}>${v}</div><div class="s">${s}</div></div>`;
-      const shown = O_TILES.filter(x => !hid.includes(x)).length; if (!shown) return '';
-      return `<div class="ov-tiles" style="grid-template-columns:repeat(${Math.min(5, shown)},minmax(0,1fr))">${t('today', 'Сегодня', O.clock(tt.sec), tt.runs + ' ' + O.plural(tt.runs, 'запуск', 'запуска', 'запусков') + ' таймеров', '', 'today')}
-        ${t('income', 'Доходы · 14 дн.', inc ? O.dec(inc.total) + ' тыс. ₸' : '…', inc ? sub(inc) : '', 'in')}${t('expense', 'Расходы · 14 дн.', out ? O.dec(out.total) + ' тыс. ₸' : '…', out ? sub(out) : '', 'out')}
-        ${t('volume', 'Объём в сферах', st ? O.hours(st.sec) : '…', st ? O.spc(st.planMoney) + ' ₸ в планах' : '')}${t('mood', 'Состояние', md == null ? '…' : md + ' из 10', 'дней с отметками')}</div>`;
+      const need = id => order.includes(id), tt = need('today') ? O.timersToday(T.D, today, now) : null;
+      const sp = need('volume') && SP.raw ? O.spheres(SM, spModel(), now, {}) : null, st = sp ? O.sphereTotals(sp) : null;
+      const md = need('mood') && E.state === 'ready' ? O.moodDays(E.D.marks, TM, today, 10) : null;
+      const sh = need('shop') && SH.state === 'ready' ? O.shop(SH.D.items, global.LifeShopModel) : null;
+      const from7 = TM.shiftDay(today, -6), dn = need('diary') && Y.state === 'ready' ? Y.D.entries.filter(e => e.day >= from7 && e.day <= today).length : null;
+      let sleepN = null; if (need('sleeping') && SP.raw) { const cnt = n => (n.status.k === 'gray' ? 1 : 0) + n.kids.reduce((a, x) => a + cnt(x), 0); sleepN = O.spheres(SM, spModel(), now, { lim: 999, depth: 2 }).reduce((a, x) => a + x.loose.reduce((b, n) => b + cnt(n), 0) + x.groups.reduce((b, g) => b + g.roots.reduce((c, n) => c + cnt(n), 0), 0), 0); }
+      const W = {
+        today: () => ({ t: 'Сегодня', v: O.clock(tt.sec), s: tt.runs + ' ' + O.plural(tt.runs, 'запуск', 'запуска', 'запусков') + ' таймеров', tick: 'today' }),
+        income: () => ({ t: 'Доходы · 14 дн.', v: inc ? O.dec(inc.total) + ' тыс. ₸' : '…', s: inc ? sub(inc) : '', cls: 'in' }),
+        expense: () => ({ t: 'Расходы · 14 дн.', v: out ? O.dec(out.total) + ' тыс. ₸' : '…', s: out ? sub(out) : '', cls: 'out' }),
+        volume: () => ({ t: 'Объём в сферах', v: st ? O.hours(st.sec) : '…', s: st ? O.spc(st.planMoney) + ' ₸ в планах' : '' }),
+        mood: () => ({ t: 'Состояние', v: md == null ? '…' : md + ' из 10', s: 'дней с отметками' }),
+        balance: () => { const b = inc && out ? O.r1(inc.total - out.total) : null; return { t: 'Баланс · 14 дн.', v: b == null ? '…' : (b > 0 ? '+' : b < 0 ? '−' : '') + O.dec(Math.abs(b)) + ' тыс. ₸', s: 'доходы минус расходы', cls: b == null ? '' : b >= 0 ? 'in' : 'out' }; },
+        shop: () => ({ t: 'Список покупок', v: sh ? O.spc(sh.total) + ' ₸' : '…', s: sh ? sh.on.length + ' ' + O.plural(sh.on.length, 'позиция', 'позиции', 'позиций') + ' · в корзине ' + sh.cart : '' }),
+        diary: () => ({ t: 'Дневник · 7 дн.', v: dn == null ? '…' : String(dn), s: dn == null ? '' : O.plural(dn, 'запись', 'записи', 'записей') }),
+        sleeping: () => ({ t: 'Спящие дела', v: sleepN == null ? '…' : String(sleepN), s: 'без движения в сферах' })
+      };
+      const cols = order.length > 5 ? Math.ceil(order.length / 2) : order.length;
+      return `<div class="ov-tiles" style="--cols:${cols}">` + order.map(id => { const w = W[id] && W[id](); return w ? `<div class="ov-tile"><div class="t">${w.t}</div><div class="v ${w.cls || ''}" ${w.tick ? `data-tick="${w.tick}"` : ''}>${w.v}</div><div class="s">${w.s}</div></div>` : ''; }).join('') + '</div>';
     }
     function itemRow(n, d) {
       const k = n.status.k, cls = k === 'gray' ? 'gray' : k === 'red' ? 'red' : k === 'blocked' ? 'blocked' : '';
@@ -5616,6 +5642,7 @@ window.LifeSettingsCss = `
     /* ---------- отрисовка ---------- */
     function render() {
       if (!alive) return; const now = Date.now(), today = TM.dayKey(now, TZ);
+      head.hidden = cfg('hidden').includes('search');
       const mk = { tiles: () => tiles(now, today), spheres: () => spheresCard(now), tracks: () => tracksCard(today), diary: () => diaryCard(today), plan: () => planCard(today) };
       const order = cfg('blocks').filter(id => !cfg('hidden').includes(id)); let html = '';
       for (let i = 0; i < order.length; i++) {
@@ -5950,7 +5977,8 @@ html,body{margin:0;background:var(--ui-bg);color:var(--ui-text);font:14px/1.4 va
 .sh-rail{flex:none;width:84px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;align-items:center;gap:4px;padding:14px 6px;background:var(--ui-card);border-right:1px solid var(--ui-line);z-index:1000}
 .sh-rail[hidden]{display:none}
 .sh-logo,.sh-av{width:40px;height:40px;border-radius:12px;background:var(--ui-main);color:var(--ui-on-main);font:700 17px var(--ui-font);display:flex;align-items:center;justify-content:center;margin-bottom:12px;border:0;padding:0;overflow:hidden;cursor:pointer;flex:none}
-.sh-logo img,.sh-av img{width:100%;height:100%;object-fit:cover;display:block}.sh-av{margin:0;width:64px;height:64px;border-radius:16px;font-size:26px;cursor:default}
+.sh-logo,.sh-av{position:relative}.sh-logo img,.sh-av img{width:100%;height:100%;object-fit:cover;display:block}
+.sh-logo .ltr,.sh-av .ltr{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.75),0 0 2px rgba(0,0,0,.6)}.sh-av{margin:0;width:64px;height:64px;border-radius:16px;font-size:26px;cursor:default}
 .sh-modal{position:fixed;inset:0;background:rgba(31,42,36,.4);display:flex;align-items:center;justify-content:center;z-index:2000;padding:16px}
 .sh-dlg{background:var(--ui-card);border-radius:var(--ui-r);padding:20px;width:min(380px,100%);box-shadow:0 12px 40px rgba(0,0,0,.25);display:flex;flex-direction:column;gap:12px}.sh-dlg h2{margin:0;font-size:18px}
 .sh-pv{display:flex;gap:14px;align-items:center}.sh-act{display:flex;gap:8px;justify-content:flex-end}
@@ -6043,7 +6071,8 @@ html,body{margin:0;background:var(--ui-bg);color:var(--ui-text);font:14px/1.4 va
     const myName = () => { const r = profiles.find(p => p.user_id === core.me()); return String((r && r.display_name) || ST.get('profile.name') || core.store.get(nameKey(), '') || core.email() || '').trim(); };
     function paintLogo() {
       const l = $('.sh-logo'), img = ST.get('profile.avatar') || core.store.get(imgKey(), ''), nm = myName();
-      l.innerHTML = img ? '<img alt="">' : esc((nm.charAt(0) || '?').toUpperCase()); if (img) l.firstChild.src = img;
+      const ch = esc((nm.charAt(0) || '?').toUpperCase());
+      l.innerHTML = img ? '<img alt="">' + (ST.get('profile.showLetter') ? '<span class="ltr">' + ch + '</span>' : '') : ch; if (img) l.firstChild.src = img;
       l.title = nm ? 'Профиль и настройки: ' + nm : 'Профиль и настройки';
     }
     async function saveName(name) {
