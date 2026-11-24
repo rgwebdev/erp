@@ -1938,6 +1938,324 @@
 
 </script>
 <script>
+/* ---- modules/settings-model.js ---- */
+/* «Настройки»: каталог настроек, значения по умолчанию, проверка значений, расчёт оформления (CSS). Без экрана и сети.
+   window.LifeSettingsModel. Новая настройка = одна строка в CATALOG (и, если нужно, её применение в оболочке/модуле); миграции базы не нужны.
+   Хранение: таблица app_settings, одна настройка = одна строка, id = '<scope>.<key>' (см. db/migrations/0011_settings.sql). */
+(function (global) {
+  'use strict';
+  const ID = /^#[0-9a-f]{6}$/i;
+  const isColor = v => typeof v === 'string' && ID.test(v);
+
+  /* Модули, которыми управляет раскладка (порядок, скрытие, стартовый). Служебные «Данные» и «Настройки» всегда доступны из меню. */
+  const MODULES = [
+    { id: 'overview', title: 'Обзор', rail: 'Обзор', icon: 'home', fixed: false },
+    { id: 'spheres', title: 'Сферы и дела', rail: 'Сферы', icon: 'grid' },
+    { id: 'things', title: 'Вещицы', rail: 'Вещи', icon: 'box' },
+    { id: 'tracks', title: 'Треки', rail: 'Треки', icon: 'bars' },
+    { id: 'plan', title: 'Моделирование финансов и времени', rail: 'Деньги', icon: 'coin' },
+    { id: 'diary', title: 'Дневник', rail: 'Дневник', icon: 'book' },
+    { id: 'state', title: 'Состояние', rail: 'Состояние', icon: 'heart' }
+  ];
+  const OV_BLOCKS = [['tiles', 'Плитки сверху'], ['spheres', 'Сферы жизни'], ['tracks', 'Треки'], ['diary', 'Дневник'], ['plan', 'Моделирование']];
+  const OV_SIDE = [['timers', 'Таймеры'], ['emo', 'Эмоции'], ['shop', 'Покупки']];
+  /* Виджеты быстрого просмотра (плитки сверху «Обзора»). Новый виджет = строка здесь + функция в overview.js (WIDGETS) */
+  const OV_TILES = [['today', 'Сегодня', 'время таймеров за день'], ['income', 'Доходы', 'за 14 дней'], ['expense', 'Расходы', 'за 14 дней'], ['volume', 'Объём в сферах', 'часы и суммы в планах'], ['mood', 'Состояние', 'дней с отметками из 10'],
+    ['balance', 'Баланс', 'доходы минус расходы за 14 дней'], ['shop', 'Список покупок', 'сумма и число позиций'], ['diary', 'Дневник', 'записей за 7 дней'], ['sleeping', 'Спящие дела', 'дел без движения в сферах']];
+
+  const FONTS = {
+    onest: { name: 'Onest', stack: '"Onest","Manrope","Inter",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif' },
+    inter: { name: 'Inter', stack: '"Inter",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif' },
+    manrope: { name: 'Manrope', stack: '"Manrope","Inter",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif' },
+    ptsans: { name: 'PT Sans', stack: '"PT Sans","Trebuchet MS",system-ui,"Segoe UI",Arial,sans-serif' },
+    system: { name: 'Системный', stack: 'system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif' },
+    serif: { name: 'С засечками', stack: 'Georgia,"Times New Roman",serif' },
+    mono: { name: 'Моноширинный', stack: 'ui-monospace,"SF Mono",Menlo,Consolas,monospace' }
+  };
+  const idsOf = list => list.map(x => (Array.isArray(x) ? x[0] : x.id));
+
+  /* Каталог. type: enum | color | int | bool | text | list (порядок из допустимых) | subset (подмножество допустимых) | image.
+     color с emptyOk: пустая строка = «по умолчанию режима». */
+  const CATALOG = {
+    'profile.name': { type: 'text', def: '', max: 60, label: 'Имя' },
+    'profile.avatar': { type: 'image', def: '', label: 'Картинка' },
+    'profile.showLetter': { type: 'bool', def: false, label: 'Отображать символ имени поверх картинки' },
+
+    'theme.mode': { type: 'enum', def: 'light', opts: [['light', 'Светлая'], ['dark', 'Тёмная'], ['auto', 'Как в системе']], label: 'Тема' },
+    'theme.accent': { type: 'color', def: '#1f5c45', label: 'Главный цвет', hint: 'Кнопки, выбранные пункты, значок' },
+    'theme.income': { type: 'color', def: '#2f7d7a', label: 'Цвет доходов' },
+    'theme.expense': { type: 'color', def: '#b7791f', label: 'Цвет расходов' },
+    'theme.danger': { type: 'color', def: '#b3261e', label: 'Цвет «внимание»' },
+    'theme.bg': { type: 'color', def: '', emptyOk: true, label: 'Фон страницы', hint: 'Пусто = по умолчанию (для светлой темы)' },
+    'theme.card': { type: 'color', def: '', emptyOk: true, label: 'Фон карточек', hint: 'Пусто = по умолчанию (для светлой темы)' },
+    'theme.text': { type: 'color', def: '', emptyOk: true, label: 'Цвет текста', hint: 'Пусто = по умолчанию (для светлой темы)' },
+    'theme.font': { type: 'enum', def: 'onest', opts: Object.keys(FONTS).map(k => [k, FONTS[k].name]), label: 'Шрифт' },
+    'theme.fontScale': { type: 'int', def: 100, min: 85, max: 130, step: 5, unit: '%', label: 'Масштаб содержимого' },
+    'theme.radius': { type: 'int', def: 14, min: 0, max: 24, step: 1, unit: ' px', label: 'Скругление карточек' },
+    'theme.density': { type: 'enum', def: 'normal', opts: [['compact', 'Плотно'], ['normal', 'Обычно'], ['roomy', 'Свободно']], label: 'Плотность' },
+    'theme.shadows': { type: 'bool', def: true, label: 'Тени у карточек' },
+    'theme.railLabels': { type: 'bool', def: true, label: 'Подписи под значками в боковой панели' },
+
+    'layout.order': { type: 'list', def: idsOf(MODULES), of: idsOf(MODULES), label: 'Порядок модулей' },
+    'layout.hidden': { type: 'subset', def: [], of: idsOf(MODULES), label: 'Скрытые модули' },
+    'layout.start': { type: 'enum', def: 'overview', opts: MODULES.map(m => [m.id, m.title]), label: 'Открывать при входе' },
+    'layout.dockOpen': { type: 'bool', def: false, label: 'Правая колонка «Телефон» открыта при входе' },
+
+    'overview.blocks': { type: 'list', def: idsOf(OV_BLOCKS), of: idsOf(OV_BLOCKS), label: 'Порядок блоков' },
+    'overview.hidden': { type: 'subset', def: [], of: idsOf(OV_BLOCKS).concat('search'), label: 'Скрытые блоки' },
+    'overview.side': { type: 'list', def: idsOf(OV_SIDE), of: idsOf(OV_SIDE), label: 'Порядок правой колонки' },
+    'overview.sideHidden': { type: 'subset', def: [], of: idsOf(OV_SIDE), label: 'Скрытые блоки правой колонки' },
+    'overview.tiles': { type: 'list', def: idsOf(OV_TILES), of: idsOf(OV_TILES), label: 'Порядок виджетов' },
+    'overview.tilesHidden': { type: 'subset', def: ['balance', 'shop', 'diary', 'sleeping'], of: idsOf(OV_TILES), label: 'Скрытые виджеты' },
+    'overview.spheresSort': { type: 'enum', def: 'manual', opts: [['manual', 'Как в «Сферах»'], ['name', 'По названию'], ['activity', 'По времени (больше сверху)'], ['plan', 'По сумме в планах']], label: 'Порядок сфер' },
+    'overview.spheresOpen': { type: 'int', def: 2, min: 0, max: 8, step: 1, unit: '', label: 'Сколько сфер раскрыто' },
+    'overview.itemLimit': { type: 'int', def: 4, min: 2, max: 12, step: 1, unit: '', label: 'Дел на уровне, не больше' },
+    'overview.freeOnly': { type: 'bool', def: false, label: 'Только бесплатные дела' },
+    'overview.tracksDays': { type: 'enum', def: '14', opts: [['14', '14 дней'], ['28', '28 дней']], label: 'Треки: период' },
+    'overview.tracksKind': { type: 'enum', def: 'all', opts: [['all', 'Все'], ['money', 'Только деньги'], ['tracks', 'Только треки']], label: 'Треки: что показывать' },
+    'overview.tracksSort': { type: 'enum', def: 'manual', opts: [['manual', 'Как во вкладке «Треки»'], ['name', 'По названию'], ['recent', 'Недавние сверху']], label: 'Треки: порядок строк' }
+  };
+  /* Свои настройки оформления у каждой страницы (модуля): ключи modules.<модуль>.<параметр>.
+     Нет строки (null) = «как в общих настройках»; значение хранится, даже если равно общему. */
+  const PAGE_PARAMS = ['mode', 'accent', 'income', 'expense', 'danger', 'bg', 'card', 'text', 'font', 'fontScale', 'radius', 'density', 'shadows'];
+  MODULES.forEach(m => PAGE_PARAMS.forEach(p => { CATALOG['modules.' + m.id + '.' + p] = Object.assign({}, CATALOG['theme.' + p], { ovr: true, base: 'theme.' + p, def: null }); }));
+  /* Параметры отдельных модулей (раздел «Настройки модуля» в панели страницы): modules.<модуль>.opt.<имя>.
+     nullable: нет строки = «как задано по умолчанию в самом модуле/теме». */
+  const MODULE_OPTS = {
+    state: {
+      colPos: { type: 'color', def: '#2d9f5a', label: 'Цвет приятных отметок' }, colNeg: { type: 'color', def: '#d33b3b', label: 'Цвет неприятных отметок' }, colZero: { type: 'color', def: '#8c8c8c', label: 'Цвет нулевых отметок' },
+      range: { type: 'enum', def: 'day', opts: [['day', 'День'], ['3d', 'Последние 3 дня'], ['week', 'Последняя неделя'], ['month', 'Месяц']], label: 'График при открытии' }
+    },
+    tracks: {
+      okColor: { type: 'color', def: null, nullable: true, label: 'Цвет «выполнено»' }, badColor: { type: 'color', def: null, nullable: true, label: 'Цвет «не выполнено»' },
+      incomeColor: { type: 'color', def: null, nullable: true, label: 'Цвет доходов в таблице' }, expenseColor: { type: 'color', def: null, nullable: true, label: 'Цвет расходов в таблице' },
+      cellFont: { type: 'int', def: null, nullable: true, min: 10, max: 20, step: 1, unit: ' px', label: 'Размер текста в клетках' }, colWidth: { type: 'int', def: null, nullable: true, min: 28, max: 80, step: 2, unit: ' px', label: 'Ширина клетки дня' }
+    }
+  };
+  Object.keys(MODULE_OPTS).forEach(m => Object.keys(MODULE_OPTS[m]).forEach(n => { CATALOG['modules.' + m + '.opt.' + n] = MODULE_OPTS[m][n]; }));
+  /* Своё оформление записей каждого дневника: modules.diary.d.<id дневника>.<параметр>; нет строки = как везде */
+  const DIARY_PARAMS = {
+    font: { type: 'enum', def: null, nullable: true, opts: Object.keys(FONTS).map(k => [k, FONTS[k].name]), label: 'Шрифт записей' },
+    size: { type: 'int', def: null, nullable: true, min: 12, max: 30, step: 1, unit: ' px', label: 'Размер текста' },
+    lh: { type: 'int', def: null, nullable: true, min: 110, max: 230, step: 5, unit: '%', label: 'Межстрочный интервал' },
+    ink: { type: 'enum', def: null, nullable: true, opts: [['diary', 'Цвет дневника'], ['normal', 'Обычный']], label: 'Цвет текста записей' }
+  };
+  const DIARY_RE = /^modules\.diary\.d\.([A-Za-z0-9_-]{1,48})\.(font|size|lh|ink)$/;
+  const diaryKey = (id, p) => 'modules.diary.d.' + id + '.' + p;
+  /* Описание настройки по ключу: каталог или семейство «по дневникам» */
+  const entry = key => CATALOG[key] || (DIARY_RE.test(key) ? Object.assign({ dyn: true }, DIARY_PARAMS[DIARY_RE.exec(key)[2]]) : null);
+  const KEYS = Object.keys(CATALOG);
+  const idOf = key => key;                       /* id строки совпадает с ключом '<scope>.<key>' */
+  const split = key => { const i = key.indexOf('.'); return { scope: key.slice(0, i), key: key.slice(i + 1) }; };
+
+  const clone = v => (v && typeof v === 'object' ? JSON.parse(JSON.stringify(v)) : v);
+  function norm(key, v) {
+    const c = entry(key); if (!c) return undefined;
+    if (c.ovr) return v === null || v === undefined ? null : norm(c.base, v);
+    if (c.nullable && (v === null || v === undefined)) return null;
+    switch (c.type) {
+      case 'bool': return typeof v === 'boolean' ? v : c.def;
+      case 'color': return v === '' && c.emptyOk ? '' : (isColor(v) ? v.toLowerCase() : c.def);
+      case 'int': { const n = Math.round(+v); return Number.isFinite(n) ? Math.min(c.max, Math.max(c.min, n)) : c.def; }
+      case 'enum': { const s = String(v); return c.opts.some(o => o[0] === s) ? s : c.def; }
+      case 'text': return typeof v === 'string' ? v.trim().slice(0, c.max || 200) : c.def;
+      case 'image': return v && typeof v === 'object' && typeof v.data === 'string' && /^data:image\/(jpeg|png|webp);base64,/.test(v.data) && v.data.length <= 200000 ? v.data : '';
+      case 'list': { const seen = [], arr = Array.isArray(v) ? v : []; arr.forEach(x => { if (c.of.includes(x) && !seen.includes(x)) seen.push(x); }); c.of.forEach(x => { if (!seen.includes(x)) seen.push(x); }); return seen; }
+      case 'subset': return Array.isArray(v) ? c.of.filter(x => v.includes(x)) : [];
+    }
+    return c.def;
+  }
+  /* Значение для записи в базу: аватар упаковывается в {data}, остальное как есть */
+  const pack = (key, v) => (entry(key).type === 'image' ? { data: norm(key, { data: v }) } : norm(key, v));
+  const unpackRaw = (key, raw) => (CATALOG[key].type === 'image' ? raw : raw);
+
+  const defaults = () => { const o = {}; KEYS.forEach(k => { o[k] = clone(CATALOG[k].def); }); return o; };
+  /* rows = строки app_settings (без удалённых) → полный объект настроек {ключ: значение} */
+  function resolve(rows) {
+    const o = defaults();
+    (rows || []).forEach(r => { if (r.deleted_at || !entry(r.id)) return; o[r.id] = norm(r.id, r.value); });
+    return o;
+  }
+
+  /* Настройки оформления для страницы: общие, поверх них — свои значения этой страницы */
+  function effective(S, modId) {
+    const e = Object.assign({}, S);
+    PAGE_PARAMS.forEach(p => { const v = S['modules.' + modId + '.' + p]; if (v !== null && v !== undefined) e['theme.' + p] = v; });
+    return e;
+  }
+  const pageKey = (modId, p) => 'modules.' + modId + '.' + p;
+  const pageOwn = (S, modId) => PAGE_PARAMS.filter(p => S[pageKey(modId, p)] != null);
+
+  /* Модули в порядке пользователя; скрытые убраны; хотя бы один остаётся. Возвращает [{id,title,rail,icon}] */
+  function visibleModules(S) {
+    const byId = {}; MODULES.forEach(m => { byId[m.id] = m; });
+    let list = S['layout.order'].map(id => byId[id]).filter(m => m && !S['layout.hidden'].includes(m.id));
+    if (!list.length) list = [byId.overview];
+    return list;
+  }
+  function startModule(S) { const v = visibleModules(S).map(m => m.id), s = S['layout.start']; return v.includes(s) ? s : v[0]; }
+
+  /* ---------- оформление ---------- */
+  const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const lum = h => { const [r, g, b] = hex(h).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const onColor = h => (lum(h) > 0.45 ? '#1a1f1c' : '#ffffff');
+  const DENS = { compact: { gap: 10, padv: 12, padh: 14 }, normal: { gap: 14, padv: 16, padh: 18 }, roomy: { gap: 20, padv: 22, padh: 24 } };
+  const DARK = '--ui-bg:#141917;--ui-card:#1d2420;--ui-soft:#262e29;--ui-line:#34403a;--ui-text:#e7ede9;--ui-mut:#93a099;--ui-shadow:none;';
+
+  function themeCss(S) {
+    const g = k => S[k], d = DENS[g('theme.density')] || DENS.normal, acc = g('theme.accent');
+    const light = [
+      g('theme.bg') && '--ui-bg:' + g('theme.bg'), g('theme.card') && '--ui-card:' + g('theme.card') + ';--ui-soft:color-mix(in srgb,' + g('theme.card') + ' 94%,#7a7a6a)', g('theme.text') && '--ui-text:' + g('theme.text')
+    ].filter(Boolean).join(';');
+    let css = ':root{--ui-main:' + acc + ';--ui-on-main:' + onColor(acc) + ';--ui-main-soft:color-mix(in srgb,' + acc + ' 14%,var(--ui-card));--ui-in:' + g('theme.income') + ';--ui-out:' + g('theme.expense') + ';--ui-bad:' + g('theme.danger') +
+      ';--ui-r:' + g('theme.radius') + 'px;--ui-r-s:' + Math.max(3, Math.round(g('theme.radius') * 0.65)) + 'px;--ui-gap:' + d.gap + 'px;--ui-padv:' + d.padv + 'px;--ui-padh:' + d.padh + 'px;--ui-font:' + (FONTS[g('theme.font')] || FONTS.onest).stack +
+      ';--ui-zoom:' + (g('theme.fontScale') / 100) + (g('theme.shadows') ? '' : ';--ui-shadow:none') + (light ? ';' + light : '') + '}';
+    const mode = g('theme.mode');
+    if (mode === 'dark') css += ':root{' + DARK + '}'; else if (mode === 'auto') css += '@media(prefers-color-scheme:dark){:root{' + DARK + '}}';
+    css += ':root{color-scheme:' + (mode === 'dark' ? 'dark' : mode === 'auto' ? 'light dark' : 'light') + '}';
+    return css;
+  }
+
+  /* Наборы (пресеты): какие ключи входят в набор данного вида */
+  const PRESET_SCOPES = { theme: 'theme.', layout: 'layout.' };
+  const presetKeys = kind => KEYS.filter(k => k.startsWith(PRESET_SCOPES[kind]));
+  function presetData(kind, S) { const o = {}; presetKeys(kind).forEach(k => { o[k] = clone(S[k]); }); return o; }
+  function presetClean(kind, data) { const o = {}; presetKeys(kind).forEach(k => { if (data && k in data) o[k] = norm(k, data[k]); }); return o; }
+
+  /* Готовые наборы оформления: показываются всегда, без записи в базу */
+  const BUILTIN_THEMES = [
+    { id: 'b_green', name: 'Лес (по умолчанию)', data: { 'theme.mode': 'light', 'theme.accent': '#1f5c45', 'theme.income': '#2f7d7a', 'theme.expense': '#b7791f', 'theme.bg': '', 'theme.card': '', 'theme.text': '' } },
+    { id: 'b_blue', name: 'Море', data: { 'theme.mode': 'light', 'theme.accent': '#2b5fa8', 'theme.income': '#1f8a70', 'theme.expense': '#c9722b', 'theme.bg': '#eef2f6', 'theme.card': '#ffffff', 'theme.text': '' } },
+    { id: 'b_plum', name: 'Слива', data: { 'theme.mode': 'light', 'theme.accent': '#7a3b8f', 'theme.income': '#2f7d7a', 'theme.expense': '#b7791f', 'theme.bg': '#f4eff6', 'theme.card': '#ffffff', 'theme.text': '' } },
+    { id: 'b_night', name: 'Ночь', data: { 'theme.mode': 'dark', 'theme.accent': '#5fbf93', 'theme.income': '#4cc0b8', 'theme.expense': '#e0a94a', 'theme.bg': '', 'theme.card': '', 'theme.text': '' } }
+  ];
+
+  global.LifeSettingsModel = { MODULE_OPTS, DIARY_PARAMS, diaryKey, entry, PAGE_PARAMS, effective, pageKey, pageOwn, CATALOG, KEYS, MODULES, OV_BLOCKS, OV_SIDE, OV_TILES, FONTS, BUILTIN_THEMES, DENS, idOf, split, norm, pack, defaults, resolve, visibleModules, startModule, themeCss, onColor, isColor, presetKeys, presetData, presetClean };
+})(window);
+
+</script>
+<script>
+/* ---- modules/settings-store.js ---- */
+/* «Настройки»: данные и действия (без экрана). LifeSettingsStore.create(core) → объект S.
+   Таблицы app_settings (одна настройка = строка) и app_presets (наборы оформления/раскладки), миграция 0011.
+   Нет строки = значение по умолчанию из каталога. Сброс = мягкое удаление строки. В журнал значения (и аватар) не пишутся. */
+(function (global) {
+  'use strict';
+  const M = global.LifeSettingsModel;
+  const MOD = 'settings';
+
+  function create(core) {
+    const D = { rows: [], presets: [] };
+    const S = { D, state: 'loading', note: '', loadedAt: 0, onChange: null, v: M.defaults() };
+    const iso = ms => new Date(ms).toISOString();
+    const subs = [];
+    const changed = () => { if (S.onChange) S.onChange(S.v); subs.slice().forEach(f => f(S.v)); };
+    /* Подписка на изменения настроек: возвращает функцию отписки */
+    S.subscribe = fn => { subs.push(fn); return () => { const i = subs.indexOf(fn); if (i >= 0) subs.splice(i, 1); }; };
+    const recalc = () => { S.v = M.resolve(D.rows); };
+    function apply(d) { D.rows = (d.rows || []).filter(r => !r.deleted_at); D.presets = (d.presets || []).filter(r => !r.deleted_at); recalc(); }
+
+    S.get = key => (key in S.v ? S.v[key] : null);
+    S.all = () => S.v;
+    S.isSet = key => D.rows.some(r => r.id === key);
+    /* Настройки всегда свои, даже когда мастер смотрит данные другого пользователя: чтение asUser, запись owner, копия на устройстве по своему id */
+    const ckey = () => 'lifeerp-settings-' + core.me();
+    const cacheGet = () => { const c = core.store.get(ckey(), null); return c && c.data ? c : null; };
+    const cacheSet = d => { core.store.set(ckey(), { ts: Date.now(), data: d }); };
+    S.clear = () => { D.rows = []; D.presets = []; S.state = 'loading'; S.note = ''; recalc(); };
+    S.fromCache = () => { S.clear(); const c = cacheGet(); if (c) { apply(c.data); return true; } return false; };
+
+    S.load = async function () {
+      if (S.state !== 'ready') S.state = 'loading'; changed();
+      try { await core.flush(); } catch (e) { /* очередь повторит */ }
+      try {
+        if (core.status().pending > 0) throw Object.assign(new Error('очередь'), { pendingQueue: true });
+        const f = { filters: ['deleted_at=is.null'], asUser: core.me() };
+        const [rows, presets] = await Promise.all([core.select('app_settings', f), core.select('app_presets', f)]);
+        apply({ rows, presets }); cacheSet({ rows: D.rows, presets: D.presets }); S.state = 'ready'; S.note = ''; S.loadedAt = Date.now();
+      } catch (e) {
+        if (e.auth) { S.state = 'error'; S.note = 'нужно войти'; S.authLost = true; changed(); return; }
+        const c = cacheGet();
+        if (c && (e.net || e.pendingQueue)) { apply(c.data); S.state = 'ready'; S.note = 'Показаны настройки, сохранённые на устройстве.'; }
+        else { S.state = 'error'; S.note = e.net ? 'нет связи с базой' : (e.message || 'ошибка чтения'); }
+      }
+      changed();
+    };
+
+    function tx() {
+      const w = {}, j = [];
+      return {
+        put(table, row) {
+          row = Object.assign({}, row, { updated_at: core.now() });
+          const arr = table === 'app_settings' ? D.rows : D.presets, i = arr.findIndex(r => r.id === row.id);
+          if (row.deleted_at) { if (i >= 0) arr.splice(i, 1); } else if (i >= 0) arr[i] = row; else arr.push(row);
+          const out = Object.assign({}, row); delete out.user_id; delete out.updated_by; (w[table] = w[table] || {})[row.id] = out;
+        },
+        log(op, kind, id, summary) { j.push({ op, module: MOD, entity_kind: kind, entity_id: id, summary }); },
+        commit() {
+          recalc(); cacheSet({ rows: D.rows, presets: D.presets });
+          const writes = ['app_settings', 'app_presets'].filter(t => w[t]).map(t => ({ table: t, rows: Object.keys(w[t]).map(k => w[t][k]) }));
+          try { if (writes.length) core.commit({ writes, journal: j, owner: core.me() }); } catch (e) { S.note = 'Не сохранено: ' + (e.message || e); }
+          changed();
+        }
+      };
+    }
+    function setRow(T, key, value) {
+      const old = D.rows.find(r => r.id === key), sp = M.split(key);
+      T.put('app_settings', { id: key, scope: sp.scope, key: sp.key, value, created_at: old ? old.created_at : iso(Date.now()), deleted_at: null });
+    }
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const logName = k => { const c = M.entry(k); if (!c) return k; if (c.dyn) return 'дневник: ' + c.label; if (!c.ovr) return c.label; const m = M.MODULES.find(x => k.startsWith('modules.' + x.id + '.')); return 'страница «' + (m ? m.rail : '?') + '»: ' + c.label; };
+
+    /* Записать одну настройку. Значение, равное умолчанию, не хранится (строка удаляется). */
+    S.set = function (key, value) { return S.setMany({ [key]: value }); };
+    S.setMany = function (obj, label) {
+      const T = tx(), done = [];
+      Object.keys(obj).forEach(k => {
+        const c = M.entry(k); if (!c) return;
+        const raw = c.type === 'image' ? (typeof obj[k] === 'string' ? obj[k] : '') : obj[k];
+        const v = M.norm(k, c.type === 'image' ? { data: raw } : raw), have = D.rows.find(r => r.id === k);
+        if (same(v, c.type === 'image' ? '' : c.def) || (c.type === 'image' && !v)) { if (have) { T.put('app_settings', Object.assign({}, have, { deleted_at: core.now() })); done.push(k); } return; }
+        const packed = M.pack(k, c.type === 'image' ? v : v);
+        if (have && same(have.value, packed)) return;
+        setRow(T, k, packed); done.push(k);
+      });
+      if (!done.length) return { ok: true, same: true };
+      T.log('change', 'setting', done[0], label || ('Настройки: ' + done.map(logName).slice(0, 6).join(', ') + (done.length > 6 ? ' и ещё ' + (done.length - 6) : '')));
+      T.commit(); return { ok: true, keys: done };
+    };
+    /* Сбросить к умолчанию: ключи или целый раздел ('theme.', 'layout.', 'overview.', 'profile.') */
+    S.reset = function (what) {
+      const pref = Array.isArray(what) ? null : String(what), keys = Array.isArray(what) ? what : D.rows.map(r => r.id).filter(k => k.startsWith(pref));
+      const T = tx(); let n = 0;
+      keys.forEach(k => { const have = D.rows.find(r => r.id === k); if (have) { T.put('app_settings', Object.assign({}, have, { deleted_at: core.now() })); n++; } });
+      if (!n) return { ok: true, same: true };
+      T.log('delete', 'setting', keys[0], 'Настройки сброшены к умолчанию: ' + n); T.commit(); return { ok: true, n };
+    };
+
+    /* ---- наборы ---- */
+    S.presets = kind => D.presets.filter(p => p.kind === kind).sort((a, b) => (a.sort - b.sort) || String(a.created_at).localeCompare(String(b.created_at)));
+    S.savePreset = function (kind, name) {
+      name = String(name || '').trim(); if (!M.presetKeys(kind).length) return { ok: false, msg: 'Неизвестный вид набора' };
+      if (!name) return { ok: false, msg: 'Введите название набора' }; if (name.length > 60) return { ok: false, msg: 'Название длиннее 60 знаков' };
+      const ex = S.presets(kind).find(p => p.name.toLowerCase() === name.toLowerCase()), T = tx(), data = M.presetData(kind, S.v);
+      if (ex) T.put('app_presets', Object.assign({}, ex, { data })); else T.put('app_presets', { id: 'p' + Date.now(), kind, name, data, sort: S.presets(kind).length, created_at: iso(Date.now()), deleted_at: null });
+      T.log(ex ? 'change' : 'create', 'preset', ex ? ex.id : 'new', 'Набор «' + name + '» ' + (ex ? 'обновлён' : 'сохранён')); T.commit(); return { ok: true, updated: !!ex };
+    };
+    S.deletePreset = function (id) {
+      const p = D.presets.find(x => x.id === id); if (!p) return { ok: false, msg: 'Набор не найден' };
+      const T = tx(); T.put('app_presets', Object.assign({}, p, { deleted_at: core.now() })); T.log('delete', 'preset', id, 'Набор «' + p.name + '» удалён'); T.commit(); return { ok: true };
+    };
+    /* Применить набор (свой или готовый): записывает его значения; ключи, которых в наборе нет, не трогает */
+    S.applyData = function (kind, data, label) { return S.setMany(M.presetClean(kind, data), label); };
+
+    return S;
+  }
+  global.LifeSettingsStore = { create };
+})(window);
+
+</script>
+<script>
 /* ---- modules/diary-model.js ---- */
 /* «Дневник»: чистые функции (без экрана и без сети): палитра, календарь, превью, форматы дат, разбор выгрузки старой системы.
    window.LifeDiaryModel. Никаких зависимостей от других модулей. */
@@ -2117,6 +2435,17 @@ window.LifeDiaryCss = `
       const d = { id: 'y' + Date.now(), name, color: M.validColor(color) ? color : M.PALETTE[0], created_at: iso(Date.now()), deleted_at: null };
       const T = tx(); T.put('diaries', d); T.log('create', 'diary', d.id, 'Дневник «' + name + '» создан'); T.commit(); return { ok: true, id: d.id };
     };
+    /* Переименовать дневник и/или сменить его цвет (записи не трогаются) */
+    S.updateDiary = function (id, patch) {
+      const d = diary(id); if (!d) return { ok: false, msg: 'Дневник не найден' }; patch = patch || {}; const over = {};
+      if (patch.name !== undefined) {
+        const name = String(patch.name || '').trim(); if (!name) return { ok: false, msg: 'Название не может быть пустым' }; if (name.length > 80) return { ok: false, msg: 'Название длиннее 80 знаков' };
+        if (D.diaries.some(x => x.id !== id && x.name.toLowerCase() === name.toLowerCase())) return { ok: false, msg: 'Дневник с таким названием уже есть' }; over.name = name;
+      }
+      if (patch.color !== undefined) { if (!M.validColor(patch.color)) return { ok: false, msg: 'Неверный цвет' }; over.color = String(patch.color).toLowerCase(); }
+      if (!Object.keys(over).length || (over.name === d.name && (over.color === undefined || over.color === d.color))) return { ok: true, same: true };
+      const T = tx(); T.put('diaries', diaryRow(d, over)); T.log('change', 'diary', id, 'Дневник «' + (over.name || d.name) + '»: ' + [over.name !== undefined && over.name !== d.name ? 'название' : '', over.color !== undefined && over.color !== d.color ? 'цвет' : ''].filter(Boolean).join(', ') + ' изменён'); T.commit(); return { ok: true };
+    };
     S.addEntry = function (diaryId, day, text) {
       const dr = diary(diaryId), body = String(text || '').trim();
       if (!dr) return { ok: false, msg: 'Сначала выберите или создайте дневник' };
@@ -2161,6 +2490,78 @@ window.LifeDiaryCss = `
 
 </script>
 <script>
+/* ---- modules/diary-panel.js ---- */
+/* «Дневник»: настройки в боковой палитре страницы (кнопка-палитра): у каждого дневника своё название, цвет, шрифт, размер,
+   интервал и цвет текста записей. Цвет и название — в таблице diaries (diary-store.updateDiary), остальное — app_settings
+   (ключи modules.diary.d.<id>.<параметр>, каталог в settings-model.js). window.LifeDiaryPanel */
+(function (global) {
+  'use strict';
+  const SM = global.LifeSettingsModel, DM = global.LifeDiaryModel;
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const LIGHTS = [64, 50, 38, 26];                       /* светлые цвета нужны для тёмной темы */
+  const SWATCHES = LIGHTS.reduce((a, l) => a.concat(Array.from({ length: 12 }, (_, i) => DM.hsl(i * 30, 66, l))), []).concat(['#9e9e9e', '#e0e0e0']);
+
+  /* Стиль текста записей дневника: {fontFamily, fontSize, lineHeight, color} для inline-применения */
+  function textStyle(SS, id, diaryColor) {
+    const g = p => SS.get(SM.diaryKey(id, p)), f = g('font'), sz = g('size'), lh = g('lh'), ink = g('ink');
+    return { fontFamily: f && SM.FONTS[f] ? SM.FONTS[f].stack : '', fontSize: sz ? sz + 'px' : '', lineHeight: lh ? String(lh / 100) : '', color: ink === 'normal' ? 'var(--ui-text)' : diaryColor };
+  }
+
+  /* o: {S: хранилище дневника, SS: хранилище настроек, current(): id выбранного в форме дневника, color(d): цвет дневника} → panel(box, ctx) */
+  function create(o) {
+    return function panel(box, ctx) {
+      const S = o.S, SS = o.SS, handles = []; let timers = {}, shownIds = '';
+      const sorted = () => S.D.diaries.slice().sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
+      const sample = (d) => { const st = textStyle(SS, d.id, o.color(d)); return Object.keys(st).map(k => k.replace(/[A-Z]/g, m => '-' + m.toLowerCase()) + ':' + st[k]).filter(x => !/:$/.test(x)).join(';'); };
+      function build() {
+        handles.splice(0).forEach(h => h.destroy());
+        const ds = sorted(); shownIds = ds.map(d => d.id).join(',');
+        if (!ds.length) { box.innerHTML = '<div class="ui-mut" style="font-size:12px">Дневников пока нет. Создайте первый кнопкой «+ Запись».</div>'; return; }
+        const openId = o.current() || ds[0].id;
+        box.innerHTML = ds.map(d => `<details class="pg-dy" data-d="${esc(d.id)}" ${d.id === openId ? 'open' : ''}><summary><i class="pg-dot" style="background:${esc(o.color(d))}"></i><span data-nm>${esc(d.name)}</span></summary><div>
+          <div class="pg-row"><label>Название</label><span class="pg-ctl"><input class="ui-in" data-dn maxlength="80" value="${esc(d.name)}" style="flex:1;min-width:0"></span></div>
+          <div class="pg-row"><label>Цвет</label><span class="pg-ctl"><span class="pg-swatches">${SWATCHES.map(c => `<button type="button" data-sw="${c}" style="background:${c}" aria-label="Цвет ${c}"></button>`).join('')}</span><input type="color" data-dc value="${esc(o.color(d))}" aria-label="Свой цвет дневника"></span></div>
+          <div class="pg-fields"></div><div class="pg-msg" role="status" style="color:var(--ui-bad);font-size:12px"></div>
+          <div class="pg-sample" data-sample>Так выглядит текст записи в этом дневнике: съешь ещё этих мягких французских булок, 0123456789.</div></div></details>`).join('');
+        ds.forEach(d => {
+          const blk = box.querySelector(`[data-d="${CSS.escape(d.id)}"]`), K = p => SM.diaryKey(d.id, p);
+          handles.push(ctx.fields(blk.querySelector('.pg-fields'), [{ key: K('font'), fallback: SM.entry(K('font')).opts[0][0], label: 'Шрифт записей' }, { key: K('size'), fallback: 14 }, { key: K('lh'), fallback: 140 }, { key: K('ink'), fallback: 'diary' }]));
+        });
+        sync();
+      }
+      function sync() {
+        const ds = sorted(); if (ds.map(d => d.id).join(',') !== shownIds) return build();
+        ds.forEach(d => {
+          const blk = box.querySelector(`[data-d="${CSS.escape(d.id)}"]`); if (!blk) return; const c = o.color(d);
+          blk.querySelector('.pg-dot').style.background = c; blk.querySelector('[data-nm]').textContent = d.name;
+          blk.querySelectorAll('[data-sw]').forEach(b => b.classList.toggle('on', b.dataset.sw.toLowerCase() === c.toLowerCase()));
+          const dc = blk.querySelector('[data-dc]'); if (dc !== document.activeElement) dc.value = c;
+          const dn = blk.querySelector('[data-dn]'); if (dn !== document.activeElement) dn.value = d.name;
+          blk.querySelector('[data-sample]').setAttribute('style', sample(d));
+        });
+      }
+      const say = (blk, msg) => { const m = blk.querySelector('.pg-msg'); if (m) m.textContent = msg || ''; };
+      box.addEventListener('click', e => {
+        const b = e.target.closest('[data-sw]'); if (!b) return; const blk = b.closest('[data-d]'), r = S.updateDiary(blk.dataset.d, { color: b.dataset.sw }); say(blk, r.ok ? '' : r.msg);
+      });
+      box.addEventListener('input', e => {
+        const t = e.target; if (!t.matches('[data-dc]')) return; const blk = t.closest('[data-d]'); clearTimeout(timers.c); timers.c = setTimeout(() => say(blk, (S.updateDiary(blk.dataset.d, { color: t.value }) || {}).msg), 300);
+      });
+      box.addEventListener('change', e => {
+        const t = e.target, blk = t.closest && t.closest('[data-d]'); if (!blk) return;
+        if (t.matches('[data-dn]')) { const r = S.updateDiary(blk.dataset.d, { name: t.value }); say(blk, r.ok ? '' : r.msg); if (!r.ok) { const d = S.D.diaries.find(x => x.id === blk.dataset.d); t.value = d ? d.name : ''; } }
+        else if (t.matches('[data-dc]')) { clearTimeout(timers.c); const r = S.updateDiary(blk.dataset.d, { color: t.value }); say(blk, r.ok ? '' : r.msg); }
+      });
+      build();
+      const off1 = SS.subscribe(sync), off2 = o.onDiaries(sync);
+      return { sync, destroy() { off1(); off2(); handles.splice(0).forEach(h => h.destroy()); Object.keys(timers).forEach(k => clearTimeout(timers[k])); box.innerHTML = ''; } };
+    };
+  }
+  global.LifeDiaryPanel = { create, textStyle, SWATCHES };
+})(window);
+
+</script>
+<script>
 /* ---- modules/diary.js ---- */
 /* «Дневник» (компьютер): экран. Данные и действия — diary-store.js, расчёты — diary-model.js, стили — diary-css.js.
    Точка входа: LifeModules.diary.mount(элемент, {core, onAuthLost}) → {unmount, reload}.
@@ -2183,14 +2584,24 @@ window.LifeDiaryCss = `
     const visible = id => ui.on === null ? true : ui.on.indexOf(id) >= 0;
     const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const diaryColor = d => (d && M.validColor(d.color) ? d.color : '#404040');
+    /* Настройки: у каждого дневника свой шрифт/размер/интервал/цвет текста записей (панель страницы, diary-panel.js) */
+    let SS = ctxIn.settings; if (!SS) { SS = global.LifeSettingsStore.create(core); SS.fromCache(); }
+    const panelSubs = [];
     el.innerHTML = '<div class="dy-app"></div>'; const root = el.firstChild;
+    function applyType() {
+      root.querySelectorAll('[data-dd]').forEach(n => {
+        const d = D.diaries.find(x => x.id === n.dataset.dd), st = global.LifeDiaryPanel.textStyle(SS, n.dataset.dd, diaryColor(d));
+        n.style.fontFamily = st.fontFamily; n.style.fontSize = st.fontSize; n.style.lineHeight = st.lineHeight; n.style.color = st.color;
+      });
+    }
+    const offSS = SS.subscribe(() => { if (alive) applyType(); });
 
     function entryHtml(e, dr, withDate) {
       const c = diaryColor(dr), ed = editing && editing.id === e.id, ts = Date.parse(e.ts), stamp = withDate ? M.fmtDM(ts, TZ) : M.hm(ts, TZ);
       let body;
-      if (ed) body = `<textarea class="dy-ta" data-f="edit" style="color:${c}">${esc(editing.tx)}</textarea>${editing.err ? `<div class="dy-warn">${esc(editing.err)}</div>` : ''}<div class="dy-row"><button class="dy-btn primary" data-act="edit-save">Сохранить</button><button class="dy-btn" data-act="edit-cancel">Отмена</button></div>`;
-      else if (open[e.id]) body = `<div class="dy-x" style="color:${c}">${esc(e.body)}</div><div class="dy-row"><button class="dy-btn sm" data-act="edit" data-id="${esc(e.id)}">Исправить</button><button class="dy-btn sm" data-act="del" data-id="${esc(e.id)}">${delAsk === e.id ? 'Точно удалить?' : 'Удалить'}</button></div>`;
-      else body = `<div class="dy-x" style="color:${c}">${esc(M.preview(e.body))}</div>`;
+      if (ed) body = `<textarea class="dy-ta" data-f="edit" data-dd="${esc(dr && dr.id)}" style="color:${c}">${esc(editing.tx)}</textarea>${editing.err ? `<div class="dy-warn">${esc(editing.err)}</div>` : ''}<div class="dy-row"><button class="dy-btn primary" data-act="edit-save">Сохранить</button><button class="dy-btn" data-act="edit-cancel">Отмена</button></div>`;
+      else if (open[e.id]) body = `<div class="dy-x" data-dd="${esc(dr && dr.id)}" style="color:${c}">${esc(e.body)}</div><div class="dy-row"><button class="dy-btn sm" data-act="edit" data-id="${esc(e.id)}">Исправить</button><button class="dy-btn sm" data-act="del" data-id="${esc(e.id)}">${delAsk === e.id ? 'Точно удалить?' : 'Удалить'}</button></div>`;
+      else body = `<div class="dy-x" data-dd="${esc(dr && dr.id)}" style="color:${c}">${esc(M.preview(e.body))}</div>`;
       return `<div class="dy-e" ${ed ? '' : `data-act="tog" data-id="${esc(e.id)}"`}><span class="dy-stamp" style="color:${c}">${esc(stamp)}</span>${e.edited_at ? `<span class="dy-badge" title="Запись исправлена">Редакция · ${esc(M.fmtShort(Date.parse(e.edited_at), TZ))}</span>` : ''}${body}</div>`;
     }
 
@@ -2215,7 +2626,7 @@ window.LifeDiaryCss = `
           const cur = ds.find(x => x.id === form.dy) || ds[0], c = cur ? diaryColor(cur) : 'inherit';
           h += `<div class="dy-box"><div class="dy-top"><b>Новая запись · ${esc(M.fmtDay(form.day))}</b><button class="dy-btn sm" data-act="form-close">Закрыть</button></div><div class="dy-row">${ds.length ? `<select class="dy-sel" data-f="dy">${ds.map(x => `<option value="${esc(x.id)}" ${cur && x.id === cur.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>` : '<span class="dy-mut">Дневников пока нет</span>'}<button class="dy-btn sm" data-act="mk-open">Создать дневник</button><input class="dy-in" type="date" data-f="day" value="${esc(form.day)}"></div>`;
           if (mk) h += `<div class="dy-box"><input class="dy-in" data-f="mkname" maxlength="80" placeholder="Название дневника" value="${esc(mk.name)}"><div class="dy-sw">${M.PALETTE.map(p => `<i data-act="mk-col" data-c="${p}" style="background:${p}" class="${mk.color === p ? 'on' : ''}"></i>`).join('')}</div>${mk.err ? `<div class="dy-warn">${esc(mk.err)}</div>` : ''}<div class="dy-row"><button class="dy-btn primary" data-act="mk-save">Создать</button><button class="dy-btn" data-act="mk-cancel">Отмена</button></div></div>`;
-          h += `<div class="dy-mut">Время фиксируется при записи (пояс ${esc(TZ)}).</div><textarea class="dy-ta" data-f="text" placeholder="Текст записи" style="color:${c}">${esc(form.tx)}</textarea>${form.err ? `<div class="dy-warn">${esc(form.err)}</div>` : ''}<div class="dy-row"><button class="dy-btn primary" data-act="form-save">Записать</button></div></div>`;
+          h += `<div class="dy-mut">Время фиксируется при записи (пояс ${esc(TZ)}).</div><textarea class="dy-ta" data-f="text" data-dd="${esc(cur && cur.id)}" placeholder="Текст записи" style="color:${c}">${esc(form.tx)}</textarea>${form.err ? `<div class="dy-warn">${esc(form.err)}</div>` : ''}<div class="dy-row"><button class="dy-btn primary" data-act="form-save">Записать</button></div></div>`;
         }
         vis.forEach(dr => {
           const es = D.entries.filter(e => e.diary_id === dr.id).sort(M.byTsDesc), top = es.slice(0, 5);
@@ -2228,10 +2639,10 @@ window.LifeDiaryCss = `
       }
       root.innerHTML = h;
       if (focusF) { const n = root.querySelector('[data-f="' + focusF + '"]'); if (n) { n.focus(); try { n.setSelectionRange(n.value.length, n.value.length); } catch (e) { /* поле без выделения */ } } }
-      window.scrollTo(0, keep.y);
+      applyType(); window.scrollTo(0, keep.y);
     }
 
-    S.onChange = () => { if (alive) render(); };
+    S.onChange = () => { if (alive) { render(); panelSubs.slice().forEach(f => f()); } };
     const setUi = v => { ui.on = v; saveUi(); };
     const allIds = () => D.diaries.map(d => d.id);
     const field = n => root.querySelector('[data-f="' + n + '"]');
@@ -2278,7 +2689,8 @@ window.LifeDiaryCss = `
     });
     const onAuth = setInterval(() => { if (S.authLost && ctxIn.onAuthLost) { S.authLost = false; ctxIn.onAuthLost(); } }, 800);
     render(); S.load();
-    return { reload: () => S.load(), unmount() { alive = false; clearInterval(onAuth); S.onChange = null; el.innerHTML = ''; } };
+    const panel = global.LifeDiaryPanel.create({ S, SS, current: () => (form && form.dy) || '', color: diaryColor, onDiaries: f => { panelSubs.push(f); return () => { const i = panelSubs.indexOf(f); if (i >= 0) panelSubs.splice(i, 1); }; } });
+    return { reload: () => S.load(), panel, unmount() { alive = false; offSS(); clearInterval(onAuth); S.onChange = null; el.innerHTML = ''; } };
   }
   global.LifeModules.diary = { mount };
 })(window);
@@ -2813,8 +3225,8 @@ window.LifeTracksCss = `
 .tk-in,.tk-sel,.tk-ta{border:1px solid var(--ui-line);border-radius:var(--ui-r-s);padding:6px 10px;font:inherit;background:var(--ui-card);color:var(--ui-text);min-width:0}
 .tk-in::placeholder,.tk-ta::placeholder{color:var(--ui-mut)}
 .tk-gw{overflow-x:auto;border:1px solid var(--ui-line);border-radius:var(--ui-r);background:var(--ui-card);box-shadow:var(--ui-shadow)}
-table.tk-g{border-collapse:separate;border-spacing:0;width:100%;font-size:13px}
-.tk-g th,.tk-g td{border-bottom:1px solid var(--ui-line);border-right:1px solid color-mix(in srgb,var(--ui-line) 55%,transparent);padding:0;text-align:center;min-width:38px}
+table.tk-g{border-collapse:separate;border-spacing:0;width:100%;font-size:var(--tk-fs,13px)}
+.tk-g th,.tk-g td{border-bottom:1px solid var(--ui-line);border-right:1px solid color-mix(in srgb,var(--ui-line) 55%,transparent);padding:0;text-align:center;min-width:var(--tk-cw,38px)}
 .tk-g th{font-weight:500;font-size:12px;padding:5px 2px;background:var(--ui-soft);position:sticky;top:0}.tk-g th.td{background:var(--ui-main);color:var(--ui-on-main)}
 .tk-g .nmc{position:sticky;left:0;z-index:2;background:var(--ui-card);text-align:left;padding:4px 10px;min-width:170px;max-width:230px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
 .tk-g th.nmc{background:var(--ui-soft);z-index:3}.tk-g .nmc.sel{background:var(--ui-main-soft)}
@@ -2824,7 +3236,7 @@ table.tk-g{border-collapse:separate;border-spacing:0;width:100%;font-size:13px}
 .tk-ar{opacity:.3;font-size:9px;margin-left:8px;white-space:nowrap}.tk-ar a{cursor:pointer;padding:1px 2px}.nmc:hover .tk-ar{opacity:.9}
 .tk-c{position:relative;padding:0}.tk-c.hcm::after{content:"";position:absolute;top:0;right:0;border-top:7px solid var(--ui-bad);border-left:7px solid transparent;pointer-events:none}
 .tk-c.cs{outline:2px solid var(--ui-main);outline-offset:-2px}
-input.tk-ci{width:100%;min-width:38px;height:30px;border:0;background:transparent;text-align:center;font:inherit;color:inherit;padding:0 2px}
+input.tk-ci{width:100%;min-width:var(--tk-cw,38px);height:30px;border:0;background:transparent;text-align:center;font:inherit;color:inherit;padding:0 2px}
 input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,transparent)}input.tk-ci::placeholder{opacity:.35}
 .tk-sg{min-width:62px;font-weight:600;padding:0 8px;white-space:nowrap}.tk-sg small{font-weight:400;color:var(--ui-mut);margin-right:3px}
 .tk-gp{background:var(--ui-card);border:1px solid var(--ui-line);border-radius:var(--ui-r);box-shadow:var(--ui-shadow);padding:var(--ui-padv) var(--ui-padh);display:flex;flex-direction:column;gap:8px}
@@ -3169,7 +3581,16 @@ input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,t
     const saveUi = () => core.store.set(UI_KEY, { n: V.n, wishOpen: V.wishOpen });
     const ctx = { S, D, M, V, core, TZ, esc, E, SM, render: () => render(), alive: () => alive };
     let alive = true, focusNext = null;
+    let SS = ctxIn.settings; if (!SS) { SS = global.LifeSettingsStore.create(core); SS.fromCache(); }
     el.innerHTML = '<div class="tk-app"></div>'; const root = el.firstChild;
+    const OPT = [['okColor', '--ok'], ['okColor', '--cn'], ['badColor', '--bad'], ['incomeColor', '--cin'], ['expenseColor', '--cout']];
+    const applyOpt = () => {
+      OPT.forEach(([k, v]) => { const x = SS.get('modules.tracks.opt.' + k); if (x) root.style.setProperty(v, x); else root.style.removeProperty(v); });
+      const fs = SS.get('modules.tracks.opt.cellFont'), cw = SS.get('modules.tracks.opt.colWidth');
+      if (fs) root.style.setProperty('--tk-fs', fs + 'px'); else root.style.removeProperty('--tk-fs');
+      if (cw) root.style.setProperty('--tk-cw', cw + 'px'); else root.style.removeProperty('--tk-cw');
+    };
+    applyOpt(); const offSS = SS.subscribe ? SS.subscribe(() => { if (alive) applyOpt(); }) : null;
     const fmtDM = k => k.slice(8) + '.' + k.slice(5, 7);
     const colorOf = t => (t.kind === 'in' ? 'var(--cin)' : t.kind === 'out' ? 'var(--cout)' : t.status === 'new' ? 'var(--cn)' : t.status === 'off' ? 'var(--co)' : 'var(--cc)');
 
@@ -3266,7 +3687,7 @@ input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,t
     });
     const poll0 = 0; const poll = setInterval(() => { if (S.authLost && ctxIn.onAuthLost) { S.authLost = false; ctxIn.onAuthLost(); } }, 800);
     render(); S.load(); if (E) E.load();
-    return { reload: () => { S.load(); if (E) E.load(); }, unmount() { alive = false; clearInterval(poll); clearTimeout(rt); document.removeEventListener('mousedown', md, true); document.removeEventListener('mouseup', mu, true); S.onChange = null; if (E) E.onChange = null; el.innerHTML = ''; } };
+    return { panelSpec: [{ title: 'Цвета' }, { key: 'modules.tracks.opt.okColor', label: 'Выполнено', cssVar: '--ui-ok' }, { key: 'modules.tracks.opt.badColor', label: 'Не выполнено', cssVar: '--ui-bad' }, { key: 'modules.tracks.opt.incomeColor', label: 'Доходы', cssVar: '--ui-in' }, { key: 'modules.tracks.opt.expenseColor', label: 'Расходы', cssVar: '--ui-out' }, { title: 'Таблица' }, { key: 'modules.tracks.opt.cellFont', label: 'Шрифт ячеек', fallback: 13 }, { key: 'modules.tracks.opt.colWidth', label: 'Ширина колонки', fallback: 38 }], reload: () => { S.load(); if (E) E.load(); }, unmount() { alive = false; if (offSS) offSS(); clearInterval(poll); clearTimeout(rt); document.removeEventListener('mousedown', md, true); document.removeEventListener('mouseup', mu, true); S.onChange = null; if (E) E.onChange = null; el.innerHTML = ''; } };
   }
   global.LifeModules.tracks = { mount };
 })(window);
@@ -3713,7 +4134,10 @@ window.LifePlanCss = `
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const fd = d => d.slice(8, 10) + '.' + d.slice(5, 7);
   /* цвет по знаку и силе: приятное зелёное, неприятное красное, ноль серый */
-  function vCol(v, a) { const al = a == null ? 0.3 + 0.7 * Math.min(Math.abs(v), 5) / 5 : a; return v > 0 ? 'hsla(145,58%,42%,' + al + ')' : v < 0 ? 'hsla(0,72%,52%,' + al + ')' : 'hsla(0,0%,55%,' + al + ')'; }
+  let PAL = { pos: '#2d9f5a', neg: '#d33b3b', zero: '#8c8c8c' };
+  function setPalette(p) { ['pos', 'neg', 'zero'].forEach(k => { if (p && /^#[0-9a-f]{6}$/i.test(p[k] || '')) PAL[k] = p[k]; }); }
+  function rgba(h, a) { return 'rgba(' + parseInt(h.slice(1, 3), 16) + ',' + parseInt(h.slice(3, 5), 16) + ',' + parseInt(h.slice(5, 7), 16) + ',' + a + ')'; }
+  function vCol(v, a) { const al = a == null ? 0.3 + 0.7 * Math.min(Math.abs(v), 5) / 5 : a; return rgba(v > 0 ? PAL.pos : v < 0 ? PAL.neg : PAL.zero, al); }
   const tsOf = m => Date.parse(m.ts);
   function dayRecs(marks, k) { return marks.filter(m => m.local_date === k).sort((a, b) => tsOf(a) - tsOf(b) || String(a.id).localeCompare(String(b.id))); }
   function dayAvg(marks, k) { const v = dayRecs(marks, k).filter(m => m.value != null).map(m => m.value); return v.length ? avgA(v) : null; }
@@ -3791,7 +4215,7 @@ window.LifePlanCss = `
     return { records, tags: (Array.isArray(st.feels) ? st.feels : []).map(x => String(x).trim()).filter(Boolean), total: st.checks.length, used, skipped };
   }
 
-  global.LifeStateModel = { legacyChecks, CMN, MODES, vCol, dayRecs, dayAvg, dayCount, tagNames, chartModel, chartSvg, hint, corr, feelsSorted, avgA, r1 };
+  global.LifeStateModel = { legacyChecks, CMN, MODES, vCol, setPalette, dayRecs, dayAvg, dayCount, tagNames, chartModel, chartSvg, hint, corr, feelsSorted, avgA, r1 };
 })(window);
 
 
@@ -3843,8 +4267,11 @@ window.LifeStateCss = `
     ctxIn = ctxIn || {};
     const core = ctxIn.core || global.LifeCore, TZ = core.TZ, S = global.LifeEmoStore.create(core), D = S.D, T = global.LifeTracksStore ? global.LifeTracksStore.create(core) : null;
     if (!document.getElementById('st-css')) { const s = document.createElement('style'); s.id = 'st-css'; s.textContent = global.LifeStateCss; document.head.appendChild(s); }
+    let SS = ctxIn.settings; if (!SS) { SS = global.LifeSettingsStore.create(core); SS.fromCache(); }
+    const applyPal = () => M.setPalette({ pos: SS.get('modules.state.opt.colPos'), neg: SS.get('modules.state.opt.colNeg'), zero: SS.get('modules.state.opt.colZero') });
+    applyPal();
     const u0 = core.store.get(UI_KEY, null) || {};
-    const ui = { mode: M.CMN[u0.mode] ? u0.mode : 'day', emin: isFinite(+u0.emin) && u0.emin !== '' && u0.emin != null ? +u0.emin : 0, tlOpen: !!u0.tlOpen };
+    const ui = { mode: M.CMN[u0.mode] ? u0.mode : (M.CMN[SS.get('modules.state.opt.range')] ? SS.get('modules.state.opt.range') : 'day'), emin: isFinite(+u0.emin) && u0.emin !== '' && u0.emin != null ? +u0.emin : 0, tlOpen: !!u0.tlOpen };
     const saveUi = () => core.store.set(UI_KEY, { mode: ui.mode, emin: ui.emin, tlOpen: ui.tlOpen });
     let alive = true, P = 0, sel = [], off = 0, err = '', note = '', newTag = '', imp = { open: false, text: '', info: '', busy: false, confirm: false };
     el.innerHTML = '<div class="st-app"></div>'; const root = el.firstChild;
@@ -3887,6 +4314,8 @@ window.LifeStateCss = `
     const sched = () => { clearTimeout(rt); rt = setTimeout(() => { if (down) { pending = true; return; } pending = false; render(); }, 0); };
     const md = () => { down = true; }, mu = () => { down = false; if (pending) sched(); };
     document.addEventListener('mousedown', md, true); document.addEventListener('mouseup', mu, true);
+    let rangeSeen = SS.get('modules.state.opt.range');
+    const offSS = SS.subscribe ? SS.subscribe(() => { if (!alive) return; applyPal(); const r = SS.get('modules.state.opt.range'); if (r !== rangeSeen) { rangeSeen = r; if (M.CMN[r]) { ui.mode = r; saveUi(); } } sched(); }) : null;
     S.onChange = () => { if (alive) sched(); }; if (T) T.onChange = () => { if (alive) sched(); };
     const addTagNow = () => {
       const t = newTag.trim().toLowerCase(); if (!t) return; const r = S.addTags(t);
@@ -3924,7 +4353,7 @@ window.LifeStateCss = `
     });
     const onAuth = setInterval(() => { if (S.authLost && ctxIn.onAuthLost) { S.authLost = false; ctxIn.onAuthLost(); } }, 800);
     render(); S.load(); if (T) T.load();
-    return { reload: () => { S.load(); if (T) T.load(); }, unmount() { alive = false; clearInterval(onAuth); clearTimeout(rt); document.removeEventListener('mousedown', md, true); document.removeEventListener('mouseup', mu, true); S.onChange = null; if (T) T.onChange = null; el.innerHTML = ''; } };
+    return { panelSpec: [{ title: 'Цвета оценок' }, { key: 'modules.state.opt.colPos', label: 'Плюс' }, { key: 'modules.state.opt.colNeg', label: 'Минус' }, { key: 'modules.state.opt.colZero', label: 'Ноль' }, { title: 'Период' }, { key: 'modules.state.opt.range', label: 'Период по умолчанию' }], reload: () => { S.load(); if (T) T.load(); }, unmount() { alive = false; if (offSS) offSS(); clearInterval(onAuth); clearTimeout(rt); document.removeEventListener('mousedown', md, true); document.removeEventListener('mouseup', mu, true); S.onChange = null; if (T) T.onChange = null; el.innerHTML = ''; } };
   }
   global.LifeModules.state = { mount };
 })(window);
@@ -4957,298 +5386,6 @@ window.LifeOverviewCss = `
 
 </script>
 <script>
-/* ---- modules/settings-model.js ---- */
-/* «Настройки»: каталог настроек, значения по умолчанию, проверка значений, расчёт оформления (CSS). Без экрана и сети.
-   window.LifeSettingsModel. Новая настройка = одна строка в CATALOG (и, если нужно, её применение в оболочке/модуле); миграции базы не нужны.
-   Хранение: таблица app_settings, одна настройка = одна строка, id = '<scope>.<key>' (см. db/migrations/0011_settings.sql). */
-(function (global) {
-  'use strict';
-  const ID = /^#[0-9a-f]{6}$/i;
-  const isColor = v => typeof v === 'string' && ID.test(v);
-
-  /* Модули, которыми управляет раскладка (порядок, скрытие, стартовый). Служебные «Данные» и «Настройки» всегда доступны из меню. */
-  const MODULES = [
-    { id: 'overview', title: 'Обзор', rail: 'Обзор', icon: 'home', fixed: false },
-    { id: 'spheres', title: 'Сферы и дела', rail: 'Сферы', icon: 'grid' },
-    { id: 'things', title: 'Вещицы', rail: 'Вещи', icon: 'box' },
-    { id: 'tracks', title: 'Треки', rail: 'Треки', icon: 'bars' },
-    { id: 'plan', title: 'Моделирование финансов и времени', rail: 'Деньги', icon: 'coin' },
-    { id: 'diary', title: 'Дневник', rail: 'Дневник', icon: 'book' },
-    { id: 'state', title: 'Состояние', rail: 'Состояние', icon: 'heart' }
-  ];
-  const OV_BLOCKS = [['tiles', 'Плитки сверху'], ['spheres', 'Сферы жизни'], ['tracks', 'Треки'], ['diary', 'Дневник'], ['plan', 'Моделирование']];
-  const OV_SIDE = [['timers', 'Таймеры'], ['emo', 'Эмоции'], ['shop', 'Покупки']];
-  /* Виджеты быстрого просмотра (плитки сверху «Обзора»). Новый виджет = строка здесь + функция в overview.js (WIDGETS) */
-  const OV_TILES = [['today', 'Сегодня', 'время таймеров за день'], ['income', 'Доходы', 'за 14 дней'], ['expense', 'Расходы', 'за 14 дней'], ['volume', 'Объём в сферах', 'часы и суммы в планах'], ['mood', 'Состояние', 'дней с отметками из 10'],
-    ['balance', 'Баланс', 'доходы минус расходы за 14 дней'], ['shop', 'Список покупок', 'сумма и число позиций'], ['diary', 'Дневник', 'записей за 7 дней'], ['sleeping', 'Спящие дела', 'дел без движения в сферах']];
-
-  const FONTS = {
-    onest: { name: 'Onest', stack: '"Onest","Manrope","Inter",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif' },
-    inter: { name: 'Inter', stack: '"Inter",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif' },
-    manrope: { name: 'Manrope', stack: '"Manrope","Inter",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif' },
-    ptsans: { name: 'PT Sans', stack: '"PT Sans","Trebuchet MS",system-ui,"Segoe UI",Arial,sans-serif' },
-    system: { name: 'Системный', stack: 'system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif' },
-    serif: { name: 'С засечками', stack: 'Georgia,"Times New Roman",serif' },
-    mono: { name: 'Моноширинный', stack: 'ui-monospace,"SF Mono",Menlo,Consolas,monospace' }
-  };
-  const idsOf = list => list.map(x => (Array.isArray(x) ? x[0] : x.id));
-
-  /* Каталог. type: enum | color | int | bool | text | list (порядок из допустимых) | subset (подмножество допустимых) | image.
-     color с emptyOk: пустая строка = «по умолчанию режима». */
-  const CATALOG = {
-    'profile.name': { type: 'text', def: '', max: 60, label: 'Имя' },
-    'profile.avatar': { type: 'image', def: '', label: 'Картинка' },
-    'profile.showLetter': { type: 'bool', def: false, label: 'Отображать символ имени поверх картинки' },
-
-    'theme.mode': { type: 'enum', def: 'light', opts: [['light', 'Светлая'], ['dark', 'Тёмная'], ['auto', 'Как в системе']], label: 'Тема' },
-    'theme.accent': { type: 'color', def: '#1f5c45', label: 'Главный цвет', hint: 'Кнопки, выбранные пункты, значок' },
-    'theme.income': { type: 'color', def: '#2f7d7a', label: 'Цвет доходов' },
-    'theme.expense': { type: 'color', def: '#b7791f', label: 'Цвет расходов' },
-    'theme.danger': { type: 'color', def: '#b3261e', label: 'Цвет «внимание»' },
-    'theme.bg': { type: 'color', def: '', emptyOk: true, label: 'Фон страницы', hint: 'Пусто = по умолчанию (для светлой темы)' },
-    'theme.card': { type: 'color', def: '', emptyOk: true, label: 'Фон карточек', hint: 'Пусто = по умолчанию (для светлой темы)' },
-    'theme.text': { type: 'color', def: '', emptyOk: true, label: 'Цвет текста', hint: 'Пусто = по умолчанию (для светлой темы)' },
-    'theme.font': { type: 'enum', def: 'onest', opts: Object.keys(FONTS).map(k => [k, FONTS[k].name]), label: 'Шрифт' },
-    'theme.fontScale': { type: 'int', def: 100, min: 85, max: 130, step: 5, unit: '%', label: 'Масштаб содержимого' },
-    'theme.radius': { type: 'int', def: 14, min: 0, max: 24, step: 1, unit: ' px', label: 'Скругление карточек' },
-    'theme.density': { type: 'enum', def: 'normal', opts: [['compact', 'Плотно'], ['normal', 'Обычно'], ['roomy', 'Свободно']], label: 'Плотность' },
-    'theme.shadows': { type: 'bool', def: true, label: 'Тени у карточек' },
-    'theme.railLabels': { type: 'bool', def: true, label: 'Подписи под значками в боковой панели' },
-
-    'layout.order': { type: 'list', def: idsOf(MODULES), of: idsOf(MODULES), label: 'Порядок модулей' },
-    'layout.hidden': { type: 'subset', def: [], of: idsOf(MODULES), label: 'Скрытые модули' },
-    'layout.start': { type: 'enum', def: 'overview', opts: MODULES.map(m => [m.id, m.title]), label: 'Открывать при входе' },
-    'layout.dockOpen': { type: 'bool', def: false, label: 'Правая колонка «Телефон» открыта при входе' },
-
-    'overview.blocks': { type: 'list', def: idsOf(OV_BLOCKS), of: idsOf(OV_BLOCKS), label: 'Порядок блоков' },
-    'overview.hidden': { type: 'subset', def: [], of: idsOf(OV_BLOCKS).concat('search'), label: 'Скрытые блоки' },
-    'overview.side': { type: 'list', def: idsOf(OV_SIDE), of: idsOf(OV_SIDE), label: 'Порядок правой колонки' },
-    'overview.sideHidden': { type: 'subset', def: [], of: idsOf(OV_SIDE), label: 'Скрытые блоки правой колонки' },
-    'overview.tiles': { type: 'list', def: idsOf(OV_TILES), of: idsOf(OV_TILES), label: 'Порядок виджетов' },
-    'overview.tilesHidden': { type: 'subset', def: ['balance', 'shop', 'diary', 'sleeping'], of: idsOf(OV_TILES), label: 'Скрытые виджеты' },
-    'overview.spheresSort': { type: 'enum', def: 'manual', opts: [['manual', 'Как в «Сферах»'], ['name', 'По названию'], ['activity', 'По времени (больше сверху)'], ['plan', 'По сумме в планах']], label: 'Порядок сфер' },
-    'overview.spheresOpen': { type: 'int', def: 2, min: 0, max: 8, step: 1, unit: '', label: 'Сколько сфер раскрыто' },
-    'overview.itemLimit': { type: 'int', def: 4, min: 2, max: 12, step: 1, unit: '', label: 'Дел на уровне, не больше' },
-    'overview.freeOnly': { type: 'bool', def: false, label: 'Только бесплатные дела' },
-    'overview.tracksDays': { type: 'enum', def: '14', opts: [['14', '14 дней'], ['28', '28 дней']], label: 'Треки: период' },
-    'overview.tracksKind': { type: 'enum', def: 'all', opts: [['all', 'Все'], ['money', 'Только деньги'], ['tracks', 'Только треки']], label: 'Треки: что показывать' },
-    'overview.tracksSort': { type: 'enum', def: 'manual', opts: [['manual', 'Как во вкладке «Треки»'], ['name', 'По названию'], ['recent', 'Недавние сверху']], label: 'Треки: порядок строк' }
-  };
-  /* Свои настройки оформления у каждой страницы (модуля): ключи modules.<модуль>.<параметр>.
-     Нет строки (null) = «как в общих настройках»; значение хранится, даже если равно общему. */
-  const PAGE_PARAMS = ['mode', 'accent', 'income', 'expense', 'danger', 'bg', 'card', 'text', 'font', 'fontScale', 'radius', 'density', 'shadows'];
-  MODULES.forEach(m => PAGE_PARAMS.forEach(p => { CATALOG['modules.' + m.id + '.' + p] = Object.assign({}, CATALOG['theme.' + p], { ovr: true, base: 'theme.' + p, def: null }); }));
-  const KEYS = Object.keys(CATALOG);
-  const idOf = key => key;                       /* id строки совпадает с ключом '<scope>.<key>' */
-  const split = key => { const i = key.indexOf('.'); return { scope: key.slice(0, i), key: key.slice(i + 1) }; };
-
-  const clone = v => (v && typeof v === 'object' ? JSON.parse(JSON.stringify(v)) : v);
-  function norm(key, v) {
-    const c = CATALOG[key]; if (!c) return undefined;
-    if (c.ovr) return v === null || v === undefined ? null : norm(c.base, v);
-    switch (c.type) {
-      case 'bool': return typeof v === 'boolean' ? v : c.def;
-      case 'color': return v === '' && c.emptyOk ? '' : (isColor(v) ? v.toLowerCase() : c.def);
-      case 'int': { const n = Math.round(+v); return Number.isFinite(n) ? Math.min(c.max, Math.max(c.min, n)) : c.def; }
-      case 'enum': { const s = String(v); return c.opts.some(o => o[0] === s) ? s : c.def; }
-      case 'text': return typeof v === 'string' ? v.trim().slice(0, c.max || 200) : c.def;
-      case 'image': return v && typeof v === 'object' && typeof v.data === 'string' && /^data:image\/(jpeg|png|webp);base64,/.test(v.data) && v.data.length <= 200000 ? v.data : '';
-      case 'list': { const seen = [], arr = Array.isArray(v) ? v : []; arr.forEach(x => { if (c.of.includes(x) && !seen.includes(x)) seen.push(x); }); c.of.forEach(x => { if (!seen.includes(x)) seen.push(x); }); return seen; }
-      case 'subset': return Array.isArray(v) ? c.of.filter(x => v.includes(x)) : [];
-    }
-    return c.def;
-  }
-  /* Значение для записи в базу: аватар упаковывается в {data}, остальное как есть */
-  const pack = (key, v) => (CATALOG[key].type === 'image' ? { data: norm(key, { data: v }) } : norm(key, v));
-  const unpackRaw = (key, raw) => (CATALOG[key].type === 'image' ? raw : raw);
-
-  const defaults = () => { const o = {}; KEYS.forEach(k => { o[k] = clone(CATALOG[k].def); }); return o; };
-  /* rows = строки app_settings (без удалённых) → полный объект настроек {ключ: значение} */
-  function resolve(rows) {
-    const o = defaults();
-    (rows || []).forEach(r => { if (r.deleted_at || !CATALOG[r.id]) return; o[r.id] = norm(r.id, r.value); });
-    return o;
-  }
-
-  /* Настройки оформления для страницы: общие, поверх них — свои значения этой страницы */
-  function effective(S, modId) {
-    const e = Object.assign({}, S);
-    PAGE_PARAMS.forEach(p => { const v = S['modules.' + modId + '.' + p]; if (v !== null && v !== undefined) e['theme.' + p] = v; });
-    return e;
-  }
-  const pageKey = (modId, p) => 'modules.' + modId + '.' + p;
-  const pageOwn = (S, modId) => PAGE_PARAMS.filter(p => S[pageKey(modId, p)] != null);
-
-  /* Модули в порядке пользователя; скрытые убраны; хотя бы один остаётся. Возвращает [{id,title,rail,icon}] */
-  function visibleModules(S) {
-    const byId = {}; MODULES.forEach(m => { byId[m.id] = m; });
-    let list = S['layout.order'].map(id => byId[id]).filter(m => m && !S['layout.hidden'].includes(m.id));
-    if (!list.length) list = [byId.overview];
-    return list;
-  }
-  function startModule(S) { const v = visibleModules(S).map(m => m.id), s = S['layout.start']; return v.includes(s) ? s : v[0]; }
-
-  /* ---------- оформление ---------- */
-  const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
-  const lum = h => { const [r, g, b] = hex(h).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
-  const onColor = h => (lum(h) > 0.45 ? '#1a1f1c' : '#ffffff');
-  const DENS = { compact: { gap: 10, padv: 12, padh: 14 }, normal: { gap: 14, padv: 16, padh: 18 }, roomy: { gap: 20, padv: 22, padh: 24 } };
-  const DARK = '--ui-bg:#141917;--ui-card:#1d2420;--ui-soft:#262e29;--ui-line:#34403a;--ui-text:#e7ede9;--ui-mut:#93a099;--ui-shadow:none;';
-
-  function themeCss(S) {
-    const g = k => S[k], d = DENS[g('theme.density')] || DENS.normal, acc = g('theme.accent');
-    const light = [
-      g('theme.bg') && '--ui-bg:' + g('theme.bg'), g('theme.card') && '--ui-card:' + g('theme.card') + ';--ui-soft:color-mix(in srgb,' + g('theme.card') + ' 94%,#7a7a6a)', g('theme.text') && '--ui-text:' + g('theme.text')
-    ].filter(Boolean).join(';');
-    let css = ':root{--ui-main:' + acc + ';--ui-on-main:' + onColor(acc) + ';--ui-main-soft:color-mix(in srgb,' + acc + ' 14%,var(--ui-card));--ui-in:' + g('theme.income') + ';--ui-out:' + g('theme.expense') + ';--ui-bad:' + g('theme.danger') +
-      ';--ui-r:' + g('theme.radius') + 'px;--ui-r-s:' + Math.max(3, Math.round(g('theme.radius') * 0.65)) + 'px;--ui-gap:' + d.gap + 'px;--ui-padv:' + d.padv + 'px;--ui-padh:' + d.padh + 'px;--ui-font:' + (FONTS[g('theme.font')] || FONTS.onest).stack +
-      ';--ui-zoom:' + (g('theme.fontScale') / 100) + (g('theme.shadows') ? '' : ';--ui-shadow:none') + (light ? ';' + light : '') + '}';
-    const mode = g('theme.mode');
-    if (mode === 'dark') css += ':root{' + DARK + '}'; else if (mode === 'auto') css += '@media(prefers-color-scheme:dark){:root{' + DARK + '}}';
-    css += ':root{color-scheme:' + (mode === 'dark' ? 'dark' : mode === 'auto' ? 'light dark' : 'light') + '}';
-    return css;
-  }
-
-  /* Наборы (пресеты): какие ключи входят в набор данного вида */
-  const PRESET_SCOPES = { theme: 'theme.', layout: 'layout.' };
-  const presetKeys = kind => KEYS.filter(k => k.startsWith(PRESET_SCOPES[kind]));
-  function presetData(kind, S) { const o = {}; presetKeys(kind).forEach(k => { o[k] = clone(S[k]); }); return o; }
-  function presetClean(kind, data) { const o = {}; presetKeys(kind).forEach(k => { if (data && k in data) o[k] = norm(k, data[k]); }); return o; }
-
-  /* Готовые наборы оформления: показываются всегда, без записи в базу */
-  const BUILTIN_THEMES = [
-    { id: 'b_green', name: 'Лес (по умолчанию)', data: { 'theme.mode': 'light', 'theme.accent': '#1f5c45', 'theme.income': '#2f7d7a', 'theme.expense': '#b7791f', 'theme.bg': '', 'theme.card': '', 'theme.text': '' } },
-    { id: 'b_blue', name: 'Море', data: { 'theme.mode': 'light', 'theme.accent': '#2b5fa8', 'theme.income': '#1f8a70', 'theme.expense': '#c9722b', 'theme.bg': '#eef2f6', 'theme.card': '#ffffff', 'theme.text': '' } },
-    { id: 'b_plum', name: 'Слива', data: { 'theme.mode': 'light', 'theme.accent': '#7a3b8f', 'theme.income': '#2f7d7a', 'theme.expense': '#b7791f', 'theme.bg': '#f4eff6', 'theme.card': '#ffffff', 'theme.text': '' } },
-    { id: 'b_night', name: 'Ночь', data: { 'theme.mode': 'dark', 'theme.accent': '#5fbf93', 'theme.income': '#4cc0b8', 'theme.expense': '#e0a94a', 'theme.bg': '', 'theme.card': '', 'theme.text': '' } }
-  ];
-
-  global.LifeSettingsModel = { PAGE_PARAMS, effective, pageKey, pageOwn, CATALOG, KEYS, MODULES, OV_BLOCKS, OV_SIDE, OV_TILES, FONTS, BUILTIN_THEMES, DENS, idOf, split, norm, pack, defaults, resolve, visibleModules, startModule, themeCss, onColor, isColor, presetKeys, presetData, presetClean };
-})(window);
-
-</script>
-<script>
-/* ---- modules/settings-store.js ---- */
-/* «Настройки»: данные и действия (без экрана). LifeSettingsStore.create(core) → объект S.
-   Таблицы app_settings (одна настройка = строка) и app_presets (наборы оформления/раскладки), миграция 0011.
-   Нет строки = значение по умолчанию из каталога. Сброс = мягкое удаление строки. В журнал значения (и аватар) не пишутся. */
-(function (global) {
-  'use strict';
-  const M = global.LifeSettingsModel;
-  const MOD = 'settings';
-
-  function create(core) {
-    const D = { rows: [], presets: [] };
-    const S = { D, state: 'loading', note: '', loadedAt: 0, onChange: null, v: M.defaults() };
-    const iso = ms => new Date(ms).toISOString();
-    const subs = [];
-    const changed = () => { if (S.onChange) S.onChange(S.v); subs.slice().forEach(f => f(S.v)); };
-    /* Подписка на изменения настроек: возвращает функцию отписки */
-    S.subscribe = fn => { subs.push(fn); return () => { const i = subs.indexOf(fn); if (i >= 0) subs.splice(i, 1); }; };
-    const recalc = () => { S.v = M.resolve(D.rows); };
-    function apply(d) { D.rows = (d.rows || []).filter(r => !r.deleted_at); D.presets = (d.presets || []).filter(r => !r.deleted_at); recalc(); }
-
-    S.get = key => S.v[key];
-    S.all = () => S.v;
-    S.isSet = key => D.rows.some(r => r.id === key);
-    /* Настройки всегда свои, даже когда мастер смотрит данные другого пользователя: чтение asUser, запись owner, копия на устройстве по своему id */
-    const ckey = () => 'lifeerp-settings-' + core.me();
-    const cacheGet = () => { const c = core.store.get(ckey(), null); return c && c.data ? c : null; };
-    const cacheSet = d => { core.store.set(ckey(), { ts: Date.now(), data: d }); };
-    S.clear = () => { D.rows = []; D.presets = []; S.state = 'loading'; S.note = ''; recalc(); };
-    S.fromCache = () => { S.clear(); const c = cacheGet(); if (c) { apply(c.data); return true; } return false; };
-
-    S.load = async function () {
-      if (S.state !== 'ready') S.state = 'loading'; changed();
-      try { await core.flush(); } catch (e) { /* очередь повторит */ }
-      try {
-        if (core.status().pending > 0) throw Object.assign(new Error('очередь'), { pendingQueue: true });
-        const f = { filters: ['deleted_at=is.null'], asUser: core.me() };
-        const [rows, presets] = await Promise.all([core.select('app_settings', f), core.select('app_presets', f)]);
-        apply({ rows, presets }); cacheSet({ rows: D.rows, presets: D.presets }); S.state = 'ready'; S.note = ''; S.loadedAt = Date.now();
-      } catch (e) {
-        if (e.auth) { S.state = 'error'; S.note = 'нужно войти'; S.authLost = true; changed(); return; }
-        const c = cacheGet();
-        if (c && (e.net || e.pendingQueue)) { apply(c.data); S.state = 'ready'; S.note = 'Показаны настройки, сохранённые на устройстве.'; }
-        else { S.state = 'error'; S.note = e.net ? 'нет связи с базой' : (e.message || 'ошибка чтения'); }
-      }
-      changed();
-    };
-
-    function tx() {
-      const w = {}, j = [];
-      return {
-        put(table, row) {
-          row = Object.assign({}, row, { updated_at: core.now() });
-          const arr = table === 'app_settings' ? D.rows : D.presets, i = arr.findIndex(r => r.id === row.id);
-          if (row.deleted_at) { if (i >= 0) arr.splice(i, 1); } else if (i >= 0) arr[i] = row; else arr.push(row);
-          const out = Object.assign({}, row); delete out.user_id; delete out.updated_by; (w[table] = w[table] || {})[row.id] = out;
-        },
-        log(op, kind, id, summary) { j.push({ op, module: MOD, entity_kind: kind, entity_id: id, summary }); },
-        commit() {
-          recalc(); cacheSet({ rows: D.rows, presets: D.presets });
-          const writes = ['app_settings', 'app_presets'].filter(t => w[t]).map(t => ({ table: t, rows: Object.keys(w[t]).map(k => w[t][k]) }));
-          try { if (writes.length) core.commit({ writes, journal: j, owner: core.me() }); } catch (e) { S.note = 'Не сохранено: ' + (e.message || e); }
-          changed();
-        }
-      };
-    }
-    function setRow(T, key, value) {
-      const old = D.rows.find(r => r.id === key), sp = M.split(key);
-      T.put('app_settings', { id: key, scope: sp.scope, key: sp.key, value, created_at: old ? old.created_at : iso(Date.now()), deleted_at: null });
-    }
-    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-    const logName = k => { const c = M.CATALOG[k]; if (!c) return k; if (!c.ovr) return c.label; const m = M.MODULES.find(x => k.startsWith('modules.' + x.id + '.')); return 'страница «' + (m ? m.rail : '?') + '»: ' + c.label; };
-
-    /* Записать одну настройку. Значение, равное умолчанию, не хранится (строка удаляется). */
-    S.set = function (key, value) { return S.setMany({ [key]: value }); };
-    S.setMany = function (obj, label) {
-      const T = tx(), done = [];
-      Object.keys(obj).forEach(k => {
-        const c = M.CATALOG[k]; if (!c) return;
-        const raw = c.type === 'image' ? (typeof obj[k] === 'string' ? obj[k] : '') : obj[k];
-        const v = M.norm(k, c.type === 'image' ? { data: raw } : raw), have = D.rows.find(r => r.id === k);
-        if (same(v, c.type === 'image' ? '' : c.def) || (c.type === 'image' && !v)) { if (have) { T.put('app_settings', Object.assign({}, have, { deleted_at: core.now() })); done.push(k); } return; }
-        const packed = M.pack(k, c.type === 'image' ? v : v);
-        if (have && same(have.value, packed)) return;
-        setRow(T, k, packed); done.push(k);
-      });
-      if (!done.length) return { ok: true, same: true };
-      T.log('change', 'setting', done[0], label || ('Настройки: ' + done.map(logName).slice(0, 6).join(', ') + (done.length > 6 ? ' и ещё ' + (done.length - 6) : '')));
-      T.commit(); return { ok: true, keys: done };
-    };
-    /* Сбросить к умолчанию: ключи или целый раздел ('theme.', 'layout.', 'overview.', 'profile.') */
-    S.reset = function (what) {
-      const pref = Array.isArray(what) ? null : String(what), keys = Array.isArray(what) ? what : D.rows.map(r => r.id).filter(k => k.startsWith(pref));
-      const T = tx(); let n = 0;
-      keys.forEach(k => { const have = D.rows.find(r => r.id === k); if (have) { T.put('app_settings', Object.assign({}, have, { deleted_at: core.now() })); n++; } });
-      if (!n) return { ok: true, same: true };
-      T.log('delete', 'setting', keys[0], 'Настройки сброшены к умолчанию: ' + n); T.commit(); return { ok: true, n };
-    };
-
-    /* ---- наборы ---- */
-    S.presets = kind => D.presets.filter(p => p.kind === kind).sort((a, b) => (a.sort - b.sort) || String(a.created_at).localeCompare(String(b.created_at)));
-    S.savePreset = function (kind, name) {
-      name = String(name || '').trim(); if (!M.presetKeys(kind).length) return { ok: false, msg: 'Неизвестный вид набора' };
-      if (!name) return { ok: false, msg: 'Введите название набора' }; if (name.length > 60) return { ok: false, msg: 'Название длиннее 60 знаков' };
-      const ex = S.presets(kind).find(p => p.name.toLowerCase() === name.toLowerCase()), T = tx(), data = M.presetData(kind, S.v);
-      if (ex) T.put('app_presets', Object.assign({}, ex, { data })); else T.put('app_presets', { id: 'p' + Date.now(), kind, name, data, sort: S.presets(kind).length, created_at: iso(Date.now()), deleted_at: null });
-      T.log(ex ? 'change' : 'create', 'preset', ex ? ex.id : 'new', 'Набор «' + name + '» ' + (ex ? 'обновлён' : 'сохранён')); T.commit(); return { ok: true, updated: !!ex };
-    };
-    S.deletePreset = function (id) {
-      const p = D.presets.find(x => x.id === id); if (!p) return { ok: false, msg: 'Набор не найден' };
-      const T = tx(); T.put('app_presets', Object.assign({}, p, { deleted_at: core.now() })); T.log('delete', 'preset', id, 'Набор «' + p.name + '» удалён'); T.commit(); return { ok: true };
-    };
-    /* Применить набор (свой или готовый): записывает его значения; ключи, которых в наборе нет, не трогает */
-    S.applyData = function (kind, data, label) { return S.setMany(M.presetClean(kind, data), label); };
-
-    return S;
-  }
-  global.LifeSettingsStore = { create };
-})(window);
-
-</script>
-<script>
 /* ---- modules/settings-css.js ---- */
 /* «Настройки»: стили экрана. Цвета берутся из общей основы (shell/ui-css.js). window.LifeSettingsCss */
 window.LifeSettingsCss = `
@@ -5467,6 +5604,13 @@ window.LifePageStyleCss = `
 .pg-chips{display:flex;gap:5px;flex-wrap:wrap}.pg-chips button{font:inherit;font-size:12px;padding:3px 9px;border:1px solid var(--ui-line);border-radius:999px;background:var(--ui-card);color:var(--ui-text);cursor:pointer}
 .pg-chips button.on{background:var(--ui-main-soft);border-color:var(--ui-main)}
 .pg-undo{flex:none;width:26px;height:26px;padding:0;border:1px solid var(--ui-line);border-radius:8px;background:var(--ui-card);color:var(--ui-text);cursor:pointer}.pg-undo[hidden]{display:none}
+.pg-sec{font-weight:650;font-size:13px;margin:12px 0 2px;padding-top:6px;border-top:2px solid var(--ui-line)}.pg-b>.pg-sec:first-child{border-top:0;margin-top:2px}
+.pg-sub{font-weight:650;font-size:12px;color:var(--ui-mut);margin:12px 0 0}
+.pg-chk{display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap}.pg-chk input{accent-color:var(--ui-main)}
+.pg-dy{border:1px solid var(--ui-line);border-radius:var(--ui-r-s);margin:8px 0;background:var(--ui-soft)}.pg-dy>summary{cursor:pointer;padding:8px 10px;font-weight:650;display:flex;align-items:center;gap:8px;list-style:none}.pg-dy>summary::-webkit-details-marker{display:none}
+.pg-dy>div{padding:0 10px 10px}.pg-dot{width:12px;height:12px;border-radius:50%;flex:none;display:inline-block}
+.pg-swatches{display:flex;gap:5px;flex-wrap:wrap}.pg-swatches button{width:20px;height:20px;border-radius:6px;border:2px solid transparent;padding:0;cursor:pointer;box-shadow:0 0 0 1px rgba(0,0,0,.25) inset}.pg-swatches button.on{border-color:var(--ui-text)}
+.pg-sample{margin-top:6px;padding:8px 10px;border:1px dashed var(--ui-line);border-radius:var(--ui-r-s);background:var(--ui-card);white-space:pre-wrap;word-break:break-word}
 .pg-f{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 14px;border-top:1px solid var(--ui-line)}.pg-f .sp{flex:1}
 .pg-x{border:0;background:transparent;color:var(--ui-text);font-size:18px;cursor:pointer;padding:0 4px;line-height:1}
 .sh-pgb{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;padding:0;border-radius:10px}.sh-pgb svg{width:18px;height:18px}.sh-pgb.on{background:var(--ui-main);border-color:var(--ui-main);color:var(--ui-on-main)}.sh-pgb[hidden]{display:none}
@@ -5489,8 +5633,53 @@ window.LifePageStyleCss = `
   /* Реальный цвет сейчас на странице (для полей «фон/карточки/текст», у которых в общих настройках нет значения) */
   const shown = v => { const t = document.createElement('span'); t.style.cssText = 'position:absolute;visibility:hidden;color:var(' + v + ');background:var(' + v + ')'; document.body.appendChild(t); const c = getComputedStyle(t).color; t.remove(); return toHex(c); };
 
+  /* Универсальный набор полей для настроек модуля: specs = [{title}|{key, label?, cssVar?, fallback?}|{key, label, hide:[[id,название]]}].
+     Тип поля берётся из каталога настроек. Меняется сразу, без перерисовки (открытый выбор цвета не закрывается). Возвращает {destroy, sync}. */
+  function fields(box, S, specs) {
+    const E = k => M.entry(k), has = k => { const c = E(k); return c.nullable ? S.get(k) != null : S.isSet(k); };
+    const cur = (sp) => { const v = S.get(sp.key), c = E(sp.key); if (v != null) return v; if (c.type === 'color') return sp.cssVar ? shown(sp.cssVar) : '#888888'; return sp.fallback != null ? sp.fallback : (c.min || 0); };
+    const html = specs.map((sp, i) => {
+      if (sp.title) return `<div class="pg-sub">${esc(sp.title)}</div>`;
+      const c = E(sp.key), lab = esc(sp.label || c.label), v = cur(sp); let ctl = '';
+      if (sp.hide) { const hid = S.get(sp.key) || []; ctl = `<span class="pg-chips">${sp.hide.map(x => `<label class="pg-chk"><input type="checkbox" data-hide="${esc(sp.key)}" data-id="${esc(x[0])}" ${hid.includes(x[0]) ? '' : 'checked'}> ${esc(x[1])}</label>`).join('')}</span>`; }
+      else if (c.type === 'color') ctl = `<input type="color" data-k="${esc(sp.key)}" value="${esc(v)}" aria-label="${lab}">`;
+      else if (c.type === 'enum' && c.opts.length > 5) ctl = `<select class="ui-in" data-k="${esc(sp.key)}">${c.opts.map(x => `<option value="${esc(x[0])}" ${String(v) === String(x[0]) ? 'selected' : ''}>${esc(x[1])}</option>`).join('')}</select>`;
+      else if (c.type === 'enum') ctl = `<span class="pg-chips">${c.opts.map(x => `<button type="button" data-k="${esc(sp.key)}" data-v="${esc(x[0])}" class="${String(v) === String(x[0]) ? 'on' : ''}">${esc(x[1])}</button>`).join('')}</span>`;
+      else if (c.type === 'int') ctl = `<input type="range" data-k="${esc(sp.key)}" min="${c.min}" max="${c.max}" step="${c.step}" value="${v}"><b data-out="${esc(sp.key)}">${v}${c.unit}</b>`;
+      else if (c.type === 'bool') ctl = `<input type="checkbox" data-k="${esc(sp.key)}" ${v ? 'checked' : ''}>`;
+      return `<div class="pg-row" data-fk="${esc(sp.key)}"><label>${lab}</label><span class="pg-ctl">${ctl}</span><button type="button" class="pg-undo" data-undo="${esc(sp.key)}" title="Вернуть по умолчанию" aria-label="Вернуть по умолчанию: ${lab}" hidden>↺</button></div>`;
+    }).join('');
+    box.innerHTML = html;
+    const tm = {}; const later = (k, fn, ms) => { clearTimeout(tm[k]); tm[k] = setTimeout(fn, ms); };
+    const setv = (k, v) => S.set(k, v);
+    function sync() {
+      specs.forEach(sp => {
+        if (!sp.key) return; const row = box.querySelector(`[data-fk="${CSS.escape(sp.key)}"]`); if (!row) return; const own = has(sp.key), c = E(sp.key), v = cur(sp);
+        row.classList.toggle('own', own); row.querySelector('[data-undo]').hidden = !own;
+        row.querySelectorAll('[data-k]').forEach(i => {
+          if (i === document.activeElement) return;
+          if (i.type === 'color') i.value = v; else if (i.type === 'checkbox') i.checked = !!v; else if (i.type === 'range') { i.value = v; const o = row.querySelector('[data-out]'); if (o) o.textContent = v + c.unit; }
+          else if (i.tagName === 'SELECT') i.value = v; else if (i.dataset.v !== undefined) i.classList.toggle('on', i.dataset.v === String(v));
+        });
+        if (sp.hide) { const hid = S.get(sp.key) || []; row.querySelectorAll('[data-hide]').forEach(i => { i.checked = !hid.includes(i.dataset.id); }); }
+      });
+    }
+    const onInput = e => { const t = e.target, k = t.dataset && t.dataset.k; if (!k) return;
+      if (t.type === 'range') { const o = box.querySelector(`[data-out="${CSS.escape(k)}"]`); if (o) o.textContent = t.value + E(k).unit; later(k, () => setv(k, +t.value), 250); } else if (t.type === 'color') later(k, () => setv(k, t.value), 300); };
+    const onChange = e => { const t = e.target;
+      if (t.dataset && t.dataset.hide) { const k = t.dataset.hide, id = t.dataset.id; let h = (S.get(k) || []).filter(x => x !== id); if (!t.checked) h = h.concat(id); return void setv(k, h); }
+      const k = t.dataset && t.dataset.k; if (!k) return; clearTimeout(tm[k]);
+      if (t.type === 'color' || t.tagName === 'SELECT') setv(k, t.value); else if (t.type === 'checkbox') setv(k, t.checked); else if (t.type === 'range') setv(k, +t.value); };
+    const onClick = e => { const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.undo) { const k = b.dataset.undo, c = E(k); if (c.nullable) setv(k, null); else S.reset([k]); return; }
+      if (b.dataset.k && b.dataset.v !== undefined) setv(b.dataset.k, b.dataset.v); };
+    box.addEventListener('input', onInput); box.addEventListener('change', onChange); box.addEventListener('click', onClick);
+    const off = S.subscribe(sync); sync();
+    return { sync, destroy() { off(); Object.keys(tm).forEach(k => clearTimeout(tm[k])); box.removeEventListener('input', onInput); box.removeEventListener('change', onChange); box.removeEventListener('click', onClick); } };
+  }
+
   function create(o) {
-    const S = o.store, host = o.host; let mod = null, built = false, off = null; const refs = {};
+    const S = o.store, host = o.host; let mod = null, inst = null, built = false, off = null, modHandle = null; const refs = {};
     if (!document.getElementById('pg-css')) { const s = document.createElement('style'); s.id = 'pg-css'; s.textContent = global.LifePageStyleCss; document.head.appendChild(s); }
     const box = document.createElement('aside'); box.className = 'pg'; box.hidden = true; box.setAttribute('aria-label', 'Оформление страницы'); host.appendChild(box);
     const K = p => M.pageKey(mod.id, p), own = p => S.get(K(p)) != null, val = p => own(p) ? S.get(K(p)) : S.get('theme.' + p);
@@ -5506,10 +5695,13 @@ window.LifePageStyleCss = `
       return '';
     }
     function build() {
-      box.innerHTML = `<div class="pg-h"><b>Оформление страницы<small>«${esc(mod.title)}»: только для этой страницы. Что не меняли, берётся из общих настроек.</small></b><button type="button" class="pg-x" data-x aria-label="Закрыть панель">×</button></div>
-        <div class="pg-b">${ROWS.map(r => `<div class="pg-row" data-row="${r[0]}"><label>${esc(r[1])}</label><span class="pg-ctl">${ctl(r[0])}</span><button type="button" class="pg-undo" data-undo="${r[0]}" title="Как в общих настройках" aria-label="Сбросить: ${esc(r[1])}" hidden>↺</button></div>`).join('')}</div>
+      if (modHandle) { try { modHandle.destroy(); } catch (e) { /* уже убрано */ } modHandle = null; }
+      const hasMod = !!(inst && (typeof inst.panel === 'function' || inst.panelSpec));
+      box.innerHTML = `<div class="pg-h"><b>Страница «${esc(mod.title)}»<small>Настройки только для неё. Что не меняли, берётся из общих настроек.</small></b><button type="button" class="pg-x" data-x aria-label="Закрыть панель">×</button></div>
+        <div class="pg-b">${hasMod ? '<div class="pg-sec">Настройки страницы</div><div class="pg-mod"></div>' : ''}<div class="pg-sec">Оформление</div>${ROWS.map(r => `<div class="pg-row" data-row="${r[0]}"><label>${esc(r[1])}</label><span class="pg-ctl">${ctl(r[0])}</span><button type="button" class="pg-undo" data-undo="${r[0]}" title="Как в общих настройках" aria-label="Сбросить: ${esc(r[1])}" hidden>↺</button></div>`).join('')}</div>
         <div class="pg-f"><button type="button" class="ui-btn sm" data-resetpage>Сбросить для страницы</button><span class="sp"></span><button type="button" class="ui-btn sm" data-global>Общие настройки…</button></div>`;
       built = true; sync();
+      if (hasMod) { const mb = box.querySelector('.pg-mod'); try { modHandle = typeof inst.panel === 'function' ? inst.panel(mb, { fields: (b, specs) => fields(b, S, specs), settings: S }) : fields(mb, S, inst.panelSpec); } catch (e) { mb.textContent = 'Не удалось показать настройки: ' + e.message; } }
     }
     /* Обновить состояние полей, не пересоздавая их (чтобы открытый выбор цвета не закрывался) */
     function sync() {
@@ -5544,18 +5736,18 @@ window.LifePageStyleCss = `
     const onKey = e => { if (e.key === 'Escape' && !box.hidden) close(); };
     document.addEventListener('keydown', onKey);
 
-    function open(m) { mod = m; build(); box.hidden = false; if (!off) off = S.subscribe(sync); }
-    function close() { box.hidden = true; if (off) { off(); off = null; } }
+    function open(m, i) { mod = m; inst = i || null; build(); box.hidden = false; if (!off) off = S.subscribe(sync); }
+    function close() { box.hidden = true; if (off) { off(); off = null; } if (modHandle) { try { modHandle.destroy(); } catch (e) { /* уже убрано */ } modHandle = null; } }
     return {
       isOpen: () => !box.hidden,
       open, close,
-      toggle(m) { if (!box.hidden && mod && mod.id === m.id) close(); else open(m); },
+      toggle(m, i) { if (!box.hidden && mod && mod.id === m.id) close(); else open(m, i); },
       /* Смена страницы: панель остаётся открытой и показывает настройки новой; для служебных экранов закрывается */
-      refresh(m) { if (box.hidden) return; if (!m) return close(); mod = m; build(); },
+      refresh(m, i) { if (box.hidden) return; if (!m) return close(); mod = m; inst = i || null; build(); },
       destroy() { document.removeEventListener('keydown', onKey); if (off) off(); box.remove(); }
     };
   }
-  global.LifePageStyle = { create };
+  global.LifePageStyle = { create, fields };
 })(window);
 
 </script>
@@ -5830,7 +6022,7 @@ window.LifePageStyleCss = `
     renderHead(); render();
     const loadAll = () => { stores.forEach(s => s.load()); loadSpheres(); };
     loadAll();
-    return { reload: loadAll, unmount() { alive = false; clearInterval(tick); clearInterval(authPoll); clearTimeout(rt); document.removeEventListener('click', docClick); stores.forEach(s => { s.onChange = null; }); el.removeEventListener('click', onClick); if (offSS) offSS(); el.innerHTML = ''; } };
+    return { panelSpec: [{ title: 'Что показывать' }, { key: 'overview.hidden', label: 'Блоки', hide: global.LifeSettingsModel.OV_BLOCKS.concat([['search', 'Строка поиска']]) }, { key: 'overview.tilesHidden', label: 'Плитки', hide: global.LifeSettingsModel.OV_TILES }, { key: 'overview.sideHidden', label: 'Правая колонка', hide: global.LifeSettingsModel.OV_SIDE }, { title: 'Сферы' }, { key: 'overview.spheresSort' }, { key: 'overview.spheresOpen' }, { key: 'overview.itemLimit' }, { key: 'overview.freeOnly' }, { title: 'Треки' }, { key: 'overview.tracksDays' }, { key: 'overview.tracksKind' }, { key: 'overview.tracksSort' }], reload: loadAll, unmount() { alive = false; clearInterval(tick); clearInterval(authPoll); clearTimeout(rt); document.removeEventListener('click', docClick); stores.forEach(s => { s.onChange = null; }); el.removeEventListener('click', onClick); if (offSS) offSS(); el.innerHTML = ''; } };
   }
   global.LifeModules.overview = { mount };
 })(window);
@@ -6229,7 +6421,7 @@ html,body{margin:0;background:var(--ui-bg);color:var(--ui-text);font:14px/1.4 va
     /* Оформление текущей страницы (панель справа): доступно у основных модулей */
     const pageMod = () => SM.MODULES.find(m => m.id === tab) || null;
     const PS = global.LifePageStyle.create({ store: ST, host: el, openGlobal: () => go('settings') });
-    top.addEventListener('click', e => { if (e.target.closest('[data-pagestyle]')) { const m = pageMod(); if (m) { PS.toggle(m); syncPg(); } } });
+    top.addEventListener('click', e => { if (e.target.closest('[data-pagestyle]')) { const m = pageMod(); if (m) { PS.toggle(m, mod); syncPg(); } } });
     function syncPg() { const b = $('[data-pagestyle]'); b.hidden = !pageMod(); b.classList.toggle('on', PS.isOpen()); b.setAttribute('aria-pressed', String(PS.isOpen())); }
     let moved = false;
     async function loadSettings() {
@@ -6292,9 +6484,10 @@ html,body{margin:0;background:var(--ui-bg);color:var(--ui-text);font:14px/1.4 va
       core.reloadSession();
       if (loadedFor !== core.me()) { loadedFor = core.me(); moved = false; dockApplied = false; ST.fromCache(); applyTheme(); const kept = core.store.get(TAB_KEY, ''); if (kept && isShown(kept)) { tab = kept; moved = true; } else tab = SM.startModule(ST.all()); loadSettings(); }
       top.hidden = false; rail.hidden = false; paintLogo(); $('.sh-who').textContent = core.email();
-      renderTabs(); updateBanner(); applyDock(); applyTheme(); PS.refresh(pageMod()); syncPg();
+      renderTabs(); updateBanner(); applyDock(); applyTheme();
       const m = modules.find(x => x.id === tab);
       mod = m.mount(main, { core, onAuthLost: show, go, phone: setPhone, settings: ST, profile: { name: myName, saveName } });
+      PS.refresh(pageMod(), mod); syncPg();
       loadProfiles();
     }
     function renderTabs() {
