@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=PT+Sans:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
-<script>window.LIFE_BUILD = "D99_M38_S22";</script>
+<script>window.LIFE_BUILD = "D100_M38_S22";</script>
 <div id="app"></div>
 <script>
 /* ---- core/core.js ---- */
@@ -5483,7 +5483,8 @@ window.LifeOverviewCss = `
 .ov-tb th{font-weight:400;color:var(--ui-mut);font-size:11px;text-align:center;padding:0 0 3px;min-width:28px}
 .ov-tb th.we{color:var(--ui-bad)}.ov-tb th.td{background:var(--ui-main);color:var(--ui-on-main);border-radius:6px}
 .ov-tb td{text-align:center;border-radius:6px;background:var(--ui-soft);height:26px;padding:0 2px}
-.ov-tb td.nm{text-align:left;background:transparent;padding:0 8px 0 0;white-space:nowrap;font-weight:600;position:sticky;left:0;z-index:1}
+.ov-tb td.nm{text-align:left;background:var(--ui-card);border-radius:0;padding:0 10px 0 2px;white-space:nowrap;font-weight:600;position:sticky;left:0;z-index:2;box-shadow:8px 0 6px -4px var(--ui-card),1px 0 0 var(--ui-line)}
+.ov-tb th:first-child{position:sticky;left:0;z-index:2;background:var(--ui-card)}
 .ov-tb td.nm small{color:var(--ui-mut);font-weight:400;margin-left:4px}
 .ov-tb td.nm i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
 .ov-tb tr.gh td{background:var(--ui-soft);text-align:left;font-weight:650;font-size:12px;height:24px;padding:0 8px}
