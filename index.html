@@ -4881,7 +4881,7 @@ window.LifeStateCss = `
   'use strict';
   const M = global.LifeShopModel, TM = global.LifeTimersModel;
   const MOD = 'shop', CACHE = 'shop', CACHE_DAYS = 45;
-  const TBL = { shop_items: 'cards', shop_list_state: 'st', shop_receipts: 'receipts', shop_purchases: 'lines' };
+  const TBL = { shop_items: 'cards', shop_list_state: 'st', shop_receipts: 'receipts', shop_purchases: 'lines', track_entries: 'rcEntries' };
   const LIST_KEY = 'lifeerp-shop-list', LISTS = [1, 2, 3];
   const CARD_F = ['name', 'price', 'unit', 'days', 'ref_qty'], STATE_F = ['status', 'qty', 'price_now', 'ord_at', 'due_on', 'checked'];
   const setId = n => (n === 1 ? 'main' : 'main' + n);
@@ -4889,7 +4889,7 @@ window.LifeStateCss = `
   function create(core) {
     const TZ = core.TZ;
     /* Карточки (cards) общие, состояние карточки в каждом из трёх списков своё (st). D.items — карточки с состоянием текущего списка S.list. */
-    const D = { cards: [], st: [], setts: {}, items: [], receipts: [], lines: [], lastBought: {} };
+    const D = { cards: [], st: [], setts: {}, items: [], receipts: [], lines: [], lastBought: {}, tracks: [], rcEntries: [] };
     const S = { D, TZ, state: 'loading', note: '', loadedAt: 0, onChange: null, lists: LISTS };
     S.list = +core.store.get(LIST_KEY, 1); if (LISTS.indexOf(S.list) < 0) S.list = 1;
     const iso = ms => new Date(ms).toISOString();
@@ -4915,12 +4915,12 @@ window.LifeStateCss = `
     S.view = view;
     function apply(d) {
       D.cards = (d.cards || []).filter(r => !r.deleted_at); D.st = (d.st || []).filter(r => !r.deleted_at); D.receipts = (d.receipts || []).filter(r => !r.deleted_at); D.lines = (d.lines || []).filter(r => !r.deleted_at);
-      D.setts = d.setts || {}; D.lastBought = d.lastBought || {}; rebuild();
+      D.tracks = (d.tracks || []).filter(r => !r.deleted_at); D.rcEntries = (d.rcEntries || []).filter(r => !r.deleted_at && String(r.id).startsWith('te_rc_')); D.setts = d.setts || {}; D.lastBought = d.lastBought || {}; rebuild();
     }
     function lastBoughtOf(lines) { const m = {}; lines.forEach(l => { if (l.kind === 'goods') { const t = Date.parse(l.bought_at); if (!m[l.name] || t > m[l.name]) m[l.name] = t; } }); return m; }
     function saveCache() {
       const from = TM.shiftDay(today(), -CACHE_DAYS), lines = D.lines.filter(l => l.local_date >= from), ids = {}; lines.forEach(l => { ids[l.receipt_id] = 1; });
-      core.cache.set(CACHE, { cards: D.cards, st: D.st, setts: D.setts, lines, receipts: D.receipts.filter(r => ids[r.id]), lastBought: D.lastBought });
+      core.cache.set(CACHE, { cards: D.cards, st: D.st, setts: D.setts, lines, receipts: D.receipts.filter(r => ids[r.id]), lastBought: D.lastBought, tracks: D.tracks, rcEntries: D.rcEntries });
     }
     function legacyCache(d) { /* копия, сохранённая до трёх списков: все состояния уходят в список 1 */
       const cards = (d.items || []).map(i => ({ id: i.id, name: i.name, price: i.price, unit: i.unit, days: i.days, ref_qty: i.ref_qty, created_at: i.created_at, ord_at: i.ord_at, deleted_at: null }));
@@ -4933,9 +4933,9 @@ window.LifeStateCss = `
       try {
         if (core.status().pending > 0) throw Object.assign(new Error('очередь'), { pendingQueue: true });
         const nd = ['deleted_at=is.null'];
-        const [cards, st, receipts, lines, set] = await Promise.all([core.select('shop_items', { filters: nd }), core.select('shop_list_state', { filters: nd }), core.select('shop_receipts', { filters: nd }), core.select('shop_purchases', { filters: nd }), core.select('shop_settings', { filters: nd })]);
+        const [cards, st, receipts, lines, set, tracks, rcEntries] = await Promise.all([core.select('shop_items', { filters: nd }), core.select('shop_list_state', { filters: nd }), core.select('shop_receipts', { filters: nd }), core.select('shop_purchases', { filters: nd }), core.select('shop_settings', { filters: nd }), core.select('tracks', { filters: nd.concat('kind=eq.out') }).catch(() => []), core.select('track_entries', { filters: nd.concat('id=like.te_rc_*') }).catch(() => [])]);
         const setts = {}; set.forEach(r => { setts[r.id] = r; });
-        apply({ cards, st, receipts, lines, setts, lastBought: lastBoughtOf(lines) });
+        apply({ cards, st, receipts, lines, setts, lastBought: lastBoughtOf(lines), tracks, rcEntries });
         saveCache(); S.state = 'ready'; S.note = ''; S.loadedAt = Date.now();
       } catch (e) {
         if (e.auth) { S.state = 'error'; S.note = 'нужно войти'; S.authLost = true; changed(); return; }
@@ -5106,13 +5106,44 @@ window.LifeStateCss = `
       const due = TM.shiftDay(day, supply);
       T.put('shop_items', Object.assign({}, it, { status: 'bought', checked: false, due_on: due }));
       D.lastBought[it.name] = now;
+      S.rcSync(T, rid);
       T.log('create', 'purchase', g.id, `Куплено: ${it.name}, ${M.fmtQ(q, it.unit)}, ${M.money(g.amount)}${bagsText.length ? '; пакеты ' + bagsText.join(' ') : ''}`); T.commit();
       return { tx: T, name: it.name, text: `${it.name}, ${M.fmtQ(q, it.unit)}`, due };
+    };
+
+    /* ---------- «В базу»: сумма чека в трек расходов ---------- */
+    /* Состояние хранится в самих записях трека: id 'te_rc_<чек>_<трек>' (одна на чек). Нет записи — чек «не в базе». Новых таблиц нет. */
+    const RC = 'te_rc_';
+    S.outTracks = () => D.tracks.filter(t => t.kind === 'out' && !t.deleted_at).slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || String(a.name).localeCompare(String(b.name), 'ru'));
+    const rcRows = rid => D.rcEntries.filter(e => String(e.id).startsWith(RC + rid + '_') && !e.deleted_at);
+    S.receiptBase = rid => { const e = rcRows(rid).find(x => D.tracks.some(t => t.id === x.track_id)); return e ? { track: D.tracks.find(t => t.id === e.track_id), value: +e.value } : null; };
+    const thousand = amount => Math.round(amount / 100) / 10; /* 13228 → 13,2; 7587 → 7,6 */
+    S.rcValue = thousand;
+    /* привести запись трека в соответствие с чеком (сумма изменилась или чек исчез); T — открытая транзакция */
+    S.rcSync = function (T, rid) {
+      const rows = rcRows(rid); if (!rows.length) return;
+      const r = M.receiptsOf(D).find(x => x.id === rid);
+      rows.forEach(e => {
+        if (!r || !r.amount) T.put('track_entries', Object.assign({}, e, { deleted_at: core.now() }));
+        else if (+e.value !== thousand(r.amount) || e.day !== r.date) T.put('track_entries', Object.assign({}, e, { value: thousand(r.amount), day: r.date }));
+      });
+    };
+    /* нажатие: серый → трек 1 → трек 2 … → последний → серый */
+    S.cycleReceipt = function (rid) {
+      const r = M.receiptsOf(D).find(x => x.id === rid); if (!r) return { ok: false, msg: 'Чек не найден.' };
+      const outs = S.outTracks(); if (!outs.length) return { ok: false, msg: 'Нет треков расходов: создайте их во вкладке «Треки».' };
+      const cur = S.receiptBase(rid), i = cur ? outs.findIndex(t => t.id === cur.track.id) : -1, T = tx();
+      rcRows(rid).forEach(e => T.put('track_entries', Object.assign({}, e, { deleted_at: core.now() })));
+      const next = i + 1 < outs.length ? outs[i + 1] : null, v = thousand(r.amount);
+      if (next) { T.put('track_entries', { id: RC + rid + '_' + next.id, track_id: next.id, day: r.date, value: v, deleted_at: null }); }
+      T.log('change', 'receipt', rid, next ? `Чек ${r.date} (${M.money(r.amount)}) в базу: «${next.name}» +${v}` : `Чек ${r.date} (${M.money(r.amount)}): убран из базы`);
+      T.commit(); return { ok: true, track: next, value: v };
     };
     S.deleteLine = function (lineId) {
       const l = D.lines.find(x => x.id === lineId); if (!l) return false; const T = tx();
       T.del('shop_purchases', l); T.putMoney(money(l, { deleted_at: core.now() }));
       if (!D.lines.some(x => x.receipt_id === l.receipt_id)) { const r = D.receipts.find(x => x.id === l.receipt_id); if (r) T.del('shop_receipts', r); }
+      S.rcSync(T, l.receipt_id);
       T.log('delete', 'purchase', lineId, `Строка чека удалена: ${l.name}, ${M.money(+l.amount)} (${l.local_date})`); T.commit(); return true;
     };
     /* перенос строки чека в «Вещицы»: одна транзакция в базе, нужна связь; повтор безопасен */
