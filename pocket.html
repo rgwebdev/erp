@@ -2248,7 +2248,7 @@ window.LifeShopCss = `
     let openMenu = null, alive = true; const els = new Map();
     ['LifeTimersCss', 'LifeShopCss'].forEach((k, i) => { const id = i ? 'sh-css' : 'tm-css'; if (!document.getElementById(id)) { const s = document.createElement('style'); s.id = id; s.textContent = global[k]; document.head.appendChild(s); } });
     el.innerHTML = `<div class="app" data-mode="shop">
-  <div class="tm-bar"><span class="tm-note" role="status"></span><button type="button" class="tm-refresh">Обновить</button></div>
+  <div class="tm-bar"><span class="tm-note" role="status"></span><button type="button" class="tm-refresh">Обновить</button><button type="button" class="tm-refresh sh-torc" aria-label="К чекам" title="К чекам">⚙</button></div>
   <header class="head">
     <div class="total"><span class="sh-total-label">К покупке</span><span class="num sh-total">0</span></div>
     <div class="total cart sh-cartline" hidden><span class="sh-cart-label">В корзине</span><span class="bags"><button type="button" class="bag" data-bag="s">М</button><button type="button" class="bag" data-bag="l">Б</button></span><span class="num sh-cart">0</span></div>
@@ -2428,6 +2428,7 @@ window.LifeShopCss = `
     S.onChange = () => { if (S.authLost) { S.authLost = false; if (ctxIn.onAuthLost) ctxIn.onAuthLost(); return; } render(true); };
     $('.tm-refresh').addEventListener('click', () => S.load());
     if (global.LifeShopTools) global.LifeShopTools.build(env, $('.tm-tools'));
+    $('.sh-torc').addEventListener('click', () => { const b = $('#receiptsBox'); if (!b) return; b.open = true; b.dispatchEvent(new Event('toggle')); b.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
     const tick = setInterval(() => { if (S.state === 'ready') S.refreshDue(); }, 60000);
     const offs = [core.on('queue', () => render(false)), core.on('drained', () => { if (S.note && S.state === 'ready' && !core.status().pending) S.load(); else render(false); }), core.on('net', () => { if (S.note && S.state === 'ready' && core.status().online && !core.status().pending) S.load(); else render(false); })];
     const onVis = () => { if (document.visibilityState === 'visible' && S.state === 'ready' && Date.now() - S.loadedAt > 60000 && !core.status().pending) S.load(); };
