@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=PT+Sans:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
-<script>window.LIFE_BUILD = "D97_M38_S21";</script>
+<script>window.LIFE_BUILD = "D98_M38_S22";</script>
 <div id="app"></div>
 <script>
 /* ---- core/core.js ---- */
@@ -3131,8 +3131,8 @@ window.LifeDiaryCss = `
   const STATUS = { wish: 'желание', new: 'новая', cur: 'текущая', off: 'неактивная' };
   const KIND = { habit: 'Трек', in: 'Доход', out: 'Расход' };
   const GROUPS = ['Треки', 'Доходы', 'Расходы'];
-  const SUMMARY = { none: 'не показывать', auto: 'по умолчанию (сумма)', sum: 'сумма', avg: 'среднее (по дням с записью)', last: 'последнее значение', max: 'максимум', min: 'минимум', count: 'число дней с записью' };
-  const SUMMARY_SIGN = { auto: 'Σ', sum: 'Σ', avg: 'ср', last: 'послед.', max: 'макс', min: 'мин', count: 'дней', none: '' };
+  const SUMMARY = { none: 'не показывать', avgall: 'среднее за период таблицы (все дни, пустые = 0)', auto: 'по умолчанию (сумма)', sum: 'сумма', avg: 'среднее (по дням с записью)', last: 'последнее значение', max: 'максимум', min: 'минимум', count: 'число дней с записью' };
+  const SUMMARY_SIGN = { auto: 'Σ', sum: 'Σ', avg: 'ср', last: 'послед.', max: 'макс', min: 'мин', count: 'дней', none: '', avgall: 'ср/пер' };
   const THR = { none: 'без порога', below: 'ниже: норма ≤ порога', exact: 'точное значение: норма = порога', above: 'выше: норма ≥ порога' };
   const WD = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
   const isDay = s => /^\d{4}-\d\d-\d\d$/.test(String(s || '')) && !isNaN(Date.parse(s + 'T12:00:00Z'));
@@ -3162,6 +3162,7 @@ window.LifeDiaryCss = `
     if (m === 'none' || !v.length) return { mode: m, value: null, text: '' };
     let x;
     if (m === 'sum') x = v.reduce((a, b) => a + b, 0); else if (m === 'avg') x = v.reduce((a, b) => a + b, 0) / v.length;
+    else if (m === 'avgall') x = v.reduce((a, b) => a + b, 0) / Math.max(1, days.length);
     else if (m === 'last') x = days.filter(d => d.sum != null).sort((a, b) => (a.day < b.day ? 1 : -1))[0].sum;
     else if (m === 'max') x = Math.max(...v); else if (m === 'min') x = Math.min(...v); else if (m === 'count') x = v.length; else x = v.reduce((a, b) => a + b, 0);
     x = round1(x); return { mode: m, value: x, text: fmt(x) };
@@ -3265,6 +3266,7 @@ input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,t
 .tk-sg::after{content:"";position:absolute;width:6px;height:6px;border-radius:50%;pointer-events:none}
 .tk-sg.sg-sum::after{left:3px;bottom:3px;background:#2d9f5a}
 .tk-sg.sg-avg::after{right:3px;bottom:3px;background:#3b7de0}
+.tk-sg.sg-avgall::after{left:50%;margin-left:-3px;bottom:3px;background:#3cc4e8}
 .tk-sg.sg-none::after{right:3px;top:3px;background:#d33b3b}
 .tk-sg:hover{background:color-mix(in srgb,var(--ui-main) 8%,transparent)}
 `;
@@ -3729,7 +3731,7 @@ input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,t
             h += `<td class="tk-c ${on ? 'cs' : ''} ${cm ? 'hcm' : ''} ${rcd ? 'rcd' : ''}" ${cm ? `title="${esc(cm.note)}"` : ''} ${bg ? `style="background:${bg}"` : ''}><input class="tk-ci" id="c_${esc(t.id)}_${d}" data-t="${esc(t.id)}" data-d="${d}" value="${has ? M.fmt(s) : ''}"${ph} inputmode="decimal" autocomplete="off"></td>`;
           });
           const sgm = !t.summary_mode || t.summary_mode === 'auto' ? 'sum' : t.summary_mode;
-          h += `<td class="tk-sg sg-${esc(sgm)}" data-act="sumcyc" data-t="${esc(t.id)}" title="${esc(M.SUMMARY[sgm])} · клик — следующий режим (сумма → среднее → не показывать)">${sm.text ? sm.text : ''}</td></tr>`;
+          h += `<td class="tk-sg sg-${esc(sgm)}" data-act="sumcyc" data-t="${esc(t.id)}" title="${esc(M.SUMMARY[sgm])} · клик — следующий режим (сумма → среднее → среднее за период → не показывать)">${sm.text ? sm.text : ''}</td></tr>`;
         });
         h += '</table></div>';
         if (!rows.length) h += '<div class="tk-empty">В таблице пока пусто. Нажмите «+ Добавить» или включите «Неактивные».</div>';
@@ -3779,7 +3781,7 @@ input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,t
       if (a === 'onlymoney') { V.onlyMoney = !V.onlyMoney; if (V.onlyMoney) V.onlyTr = false; render(); return; }
       if (a === 'onlytr') { V.onlyTr = !V.onlyTr; if (V.onlyTr) V.onlyMoney = false; render(); return; }
       if (a === 'reload') { S.load(); if (E) E.load(); return; }
-      if (a === 'sumcyc') { const tk = S.track(t.dataset.t); if (!tk) return; const cur = !tk.summary_mode || tk.summary_mode === 'auto' ? 'sum' : tk.summary_mode; S.editTrack(tk.id, { summary_mode: cur === 'sum' ? 'avg' : cur === 'avg' ? 'none' : 'sum' }); return; }
+      if (a === 'sumcyc') { const tk = S.track(t.dataset.t); if (!tk) return; const cur = !tk.summary_mode || tk.summary_mode === 'auto' ? 'sum' : tk.summary_mode; S.editTrack(tk.id, { summary_mode: cur === 'sum' ? 'avg' : cur === 'avg' ? 'avgall' : cur === 'avgall' ? 'none' : 'sum' }); return; }
       if (a === 'mv') { ev.stopPropagation(); S.move(t.dataset.t, +t.dataset.d, rowsList().map(x => x.id)); render(); return; }
       if (a === 'card') { focusNext = null; V.card = V.card === t.dataset.t ? null : t.dataset.t; V.cell = null; V.delAsk = null; render(); return; }
       await global.LifeTracksCard.onClick(ctx, t, a, ev);
