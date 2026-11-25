@@ -3247,6 +3247,12 @@ input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,t
 .tk-ent{display:inline-flex;gap:4px;align-items:center;margin-right:10px}
 .tk-empty{padding:24px;text-align:center;color:var(--ui-mut)}
 @media (max-width:560px){.tk-g .nmc{min-width:120px}}
+.tk-c.rcd::before{content:"";position:absolute;right:3px;bottom:3px;width:6px;height:6px;border-radius:50%;background:#2d9f5a;pointer-events:none}
+.tk-rcd{margin:8px 0;padding:8px 10px;border:1px solid var(--ui-line);border-radius:8px;background:var(--ui-surface)}
+.tk-rcd h4{margin:0 0 6px;font-size:13px;display:flex;justify-content:space-between;gap:8px}
+.tk-rcd ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.tk-rcd li{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px}
+.tk-rcd .dg{display:inline-block;width:8px;height:8px;border-radius:50%;background:#2d9f5a;margin-right:6px}
 `;
 
 </script>
@@ -3449,6 +3455,71 @@ input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,t
 
 </script>
 <script>
+/* ---- modules/tracks-details.js ---- */
+/* «Треки» → «Детали»: в панели клетки показывает содержимое чека, записанного в клетку кнопкой «В базу» из «Покупок»,
+   и даёт кнопку «В Вещицы» у каждого товара. Данные чеков читает сам (общий LifeShopStore), только когда клетка с такой записью открыта.
+   window.LifeTracksDetails: placeholder(entries) → html, fill(root, ctx), drop(ctx) */
+(function (global) {
+  'use strict';
+  const RC = 'te_rc_';
+  const rcOf = e => (String(e.id).startsWith(RC) ? String(e.id).slice(RC.length, String(e.id).length - String(e.track_id).length - 1) : null);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const states = new WeakMap();
+
+  function placeholder(entries) {
+    const ids = [...new Set((entries || []).map(rcOf).filter(Boolean))]; if (!ids.length) return '';
+    return `<div class="tk-rcd" data-rcs="${esc(ids.join(','))}"><h4>Детали</h4><div class="tk-mut">загрузка…</div></div>`;
+  }
+  function state(ctx) {
+    let st = states.get(ctx);
+    if (!st) {
+      const SS = global.LifeShopStore.create(ctx.core); st = { S: SS, ready: false, loading: false, msg: '' }; states.set(ctx, st);
+      SS.onChange = () => { if (ctx.alive()) paint(ctx, st); };
+    }
+    return st;
+  }
+  function paint(ctx, st) {
+    const root = document.querySelector('.tk-app'); if (!root) return;
+    const M = global.LifeShopModel, D = st.S.D, all = M.receiptsOf(D);
+    root.querySelectorAll('.tk-rcd').forEach(box => {
+      const rs = box.dataset.rcs.split(',').map(id => all.find(r => r.id === id)).filter(Boolean);
+      let h = '<h4>Детали</h4>';
+      if (!st.ready) h += `<div class="tk-mut">${esc(st.msg || 'загрузка…')}</div>`;
+      else if (!rs.length) h += '<div class="tk-mut">Чек не найден (возможно, удалён в «Покупках»).</div>';
+      else rs.forEach(r => {
+        const hm = global.LifeTimersModel.hm;
+        h += `<div class="tk-mut" style="margin:4px 0">Чек ${hm(r.first, ctx.TZ)}${r.first !== r.last ? '–' + hm(r.last, ctx.TZ) : ''}, ${esc(M.money(r.amount))}</div><ul>` +
+          r.goods.map(p => `<li><span>${esc(p.name)}, ${esc(M.fmtQ(+p.qty, p.unit))} · ${esc(M.money(+p.amount))}</span>${p.thing_id ? '<span class="tk-mut">в Вещицах</span>' : `<button class="tk-btn sm" data-act="det-thing" data-line="${esc(p.id)}">В Вещицы</button>`}</li>`).join('') +
+          (r.bagS || r.bagL ? `<li><span class="tk-mut">Пакеты: ${r.bagS ? 'М' + r.bagS : ''}${r.bagS && r.bagL ? ' ' : ''}${r.bagL ? 'Б' + r.bagL : ''} · ${esc(M.money(r.bagsAmount))}</span></li>` : '') + '</ul>';
+      });
+      box.innerHTML = h;
+    });
+  }
+  async function fill(root, ctx) {
+    if (!root.querySelector('.tk-rcd')) return;
+    const st = state(ctx);
+    if (!st.ready && !st.loading) {
+      st.loading = true;
+      try { await st.S.load(); st.ready = st.S.state === 'ready'; st.msg = st.ready ? '' : (st.S.note || 'нет данных'); } catch (e) { st.msg = e.message || 'ошибка'; }
+      st.loading = false;
+    }
+    paint(ctx, st);
+    if (!root.dataset.detBound) {
+      root.dataset.detBound = '1';
+      root.addEventListener('click', async ev => {
+        const b = ev.target.closest('[data-act=det-thing]'); if (!b) return; ev.stopPropagation();
+        b.disabled = true; b.textContent = '…'; const r = await st.S.moveToThing(b.dataset.line);
+        if (!r.ok) { b.disabled = false; b.textContent = 'В Вещицы'; b.title = r.msg; b.insertAdjacentHTML('afterend', `<span class="tk-warn">${esc(r.msg)}</span>`); return; }
+        paint(ctx, st);
+      });
+    }
+  }
+  function drop(ctx) { const st = states.get(ctx); if (st) st.S.onChange = null; states.delete(ctx); }
+  global.LifeTracksDetails = { placeholder, fill, drop };
+})(window);
+
+</script>
+<script>
 /* ---- modules/tracks-card.js ---- */
 /* «Треки»: панель клетки, карточка трека, форма добавления, пул желаний, настройки и перенос (часть экрана tracks.js).
    window.LifeTracksCard. Получает общий контекст ctx = {S, D, M, V, esc, render, core}. Своих данных не хранит, кроме состояния переноса. */
@@ -3472,6 +3543,7 @@ input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,t
       const t = S.track(V.cell.t), d = V.cell.d, es = (S.byDay(t.id)[d] || []), u = t.unit || 'раз', cm = S.noteOf(t.id, d);
       return `<div class="tk-gp"><div class="top"><b>${esc(t.name)}</b><span class="tk-mut">${d.slice(8)}.${d.slice(5, 7)}.${d.slice(0, 4)}, ${M.weekday(d)}</span></div>` +
         (es.length ? `<div class="tk-row">${es.map(e => `<span class="tk-ent">${M.fmt(e.value)} ${esc(u)} <button class="tk-btn sm" data-act="dele" data-id="${esc(e.id)}" title="Удалить запись">×</button></span>`).join('')}<span class="tk-mut">итого ${M.fmt(M.sumOf(es))}</span></div>` : '') +
+        ((global.LifeTracksDetails && global.LifeTracksDetails.placeholder(es)) || '') +
         `<div class="tk-row"><input class="tk-in" data-f="cmt" style="flex:1;min-width:240px" maxlength="500" placeholder="Комментарий к клетке (например: продал ноутбук)" value="${esc(cm ? cm.note : '')}"></div>` +
         `<div class="tk-row"><input class="tk-in" data-f="addv" type="text" inputmode="decimal" style="width:90px" placeholder="1"><span class="tk-mut">${esc(u)}</span><button class="tk-btn primary" data-act="addv">Добавить</button><span class="tk-mut">Число прямо в клетке задаёт сумму дня, «+5» прибавляет к ней, пустая клетка удаляет записи дня.</span></div></div>`;
     }
@@ -3630,7 +3702,8 @@ input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,t
             const s = sums[j], has = s != null, cm = S.noteOf(t.id, d), on = V.cell && V.cell.t === t.id && V.cell.d === d; let bg = '';
             if (has) { if (thr) bg = `color-mix(in srgb,${M.okThreshold(thr.threshold_mode, thr.threshold_value, s) ? 'var(--ok)' : 'var(--bad)'} 55%,transparent)`; else if (s > 0) bg = `color-mix(in srgb,${col} ${Math.round(25 + s / (mx || 1) * 65)}%,transparent)`; }
             const ph = !has && ds != null && offs[j] === 0 ? ` placeholder="${ds}"` : '';
-            h += `<td class="tk-c ${on ? 'cs' : ''} ${cm ? 'hcm' : ''}" ${cm ? `title="${esc(cm.note)}"` : ''} ${bg ? `style="background:${bg}"` : ''}><input class="tk-ci" id="c_${esc(t.id)}_${d}" data-t="${esc(t.id)}" data-d="${d}" value="${has ? M.fmt(s) : ''}"${ph} inputmode="decimal" autocomplete="off"></td>`;
+            const rcd = (S.byDay(t.id)[d] || []).some(e => String(e.id).startsWith('te_rc_'));
+            h += `<td class="tk-c ${on ? 'cs' : ''} ${cm ? 'hcm' : ''} ${rcd ? 'rcd' : ''}" ${cm ? `title="${esc(cm.note)}"` : ''} ${bg ? `style="background:${bg}"` : ''}><input class="tk-ci" id="c_${esc(t.id)}_${d}" data-t="${esc(t.id)}" data-d="${d}" value="${has ? M.fmt(s) : ''}"${ph} inputmode="decimal" autocomplete="off"></td>`;
           });
           h += `<td class="tk-sg" title="${esc(M.SUMMARY[t.summary_mode || 'auto'])}">${sm.text ? `${sm.mode === 'sum' ? '' : `<small>${M.SUMMARY_SIGN[sm.mode]}</small>`}${sm.text}` : ''}</td></tr>`;
         });
@@ -3642,6 +3715,7 @@ input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,t
       const keep = window.scrollY, fx = focusNext; focusNext = null;
       const ae = document.activeElement, hadFocus = ae && ae.classList && ae.classList.contains('tk-ci') ? ae.id : null;
       root.innerHTML = h; window.scrollTo(0, keep);
+      if (global.LifeTracksDetails) global.LifeTracksDetails.fill(root, ctx);
       const want = fx || hadFocus; if (want) { const n = root.querySelector('[id="' + want + '"]'); if (n) { n.focus(); n.select(); } }
     }
 
@@ -3687,7 +3761,7 @@ input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,t
     });
     const poll0 = 0; const poll = setInterval(() => { if (S.authLost && ctxIn.onAuthLost) { S.authLost = false; ctxIn.onAuthLost(); } }, 800);
     render(); S.load(); if (E) E.load();
-    return { panelSpec: [{ title: 'Цвета' }, { key: 'modules.tracks.opt.okColor', label: 'Выполнено', cssVar: '--ui-ok' }, { key: 'modules.tracks.opt.badColor', label: 'Не выполнено', cssVar: '--ui-bad' }, { key: 'modules.tracks.opt.incomeColor', label: 'Доходы', cssVar: '--ui-in' }, { key: 'modules.tracks.opt.expenseColor', label: 'Расходы', cssVar: '--ui-out' }, { title: 'Таблица' }, { key: 'modules.tracks.opt.cellFont', label: 'Шрифт ячеек', fallback: 13 }, { key: 'modules.tracks.opt.colWidth', label: 'Ширина колонки', fallback: 38 }], reload: () => { S.load(); if (E) E.load(); }, unmount() { alive = false; if (offSS) offSS(); clearInterval(poll); clearTimeout(rt); document.removeEventListener('mousedown', md, true); document.removeEventListener('mouseup', mu, true); S.onChange = null; if (E) E.onChange = null; el.innerHTML = ''; } };
+    return { panelSpec: [{ title: 'Цвета' }, { key: 'modules.tracks.opt.okColor', label: 'Выполнено', cssVar: '--ui-ok' }, { key: 'modules.tracks.opt.badColor', label: 'Не выполнено', cssVar: '--ui-bad' }, { key: 'modules.tracks.opt.incomeColor', label: 'Доходы', cssVar: '--ui-in' }, { key: 'modules.tracks.opt.expenseColor', label: 'Расходы', cssVar: '--ui-out' }, { title: 'Таблица' }, { key: 'modules.tracks.opt.cellFont', label: 'Шрифт ячеек', fallback: 13 }, { key: 'modules.tracks.opt.colWidth', label: 'Ширина колонки', fallback: 38 }], reload: () => { S.load(); if (E) E.load(); }, unmount() { alive = false; if (global.LifeTracksDetails) global.LifeTracksDetails.drop(ctx); if (offSS) offSS(); clearInterval(poll); clearTimeout(rt); document.removeEventListener('mousedown', md, true); document.removeEventListener('mouseup', mu, true); S.onChange = null; if (E) E.onChange = null; el.innerHTML = ''; } };
   }
   global.LifeModules.tracks = { mount };
 })(window);
