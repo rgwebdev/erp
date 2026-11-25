@@ -3728,7 +3728,7 @@ input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,t
             h += `<td class="tk-c ${on ? 'cs' : ''} ${cm ? 'hcm' : ''} ${rcd ? 'rcd' : ''}" ${cm ? `title="${esc(cm.note)}"` : ''} ${bg ? `style="background:${bg}"` : ''}><input class="tk-ci" id="c_${esc(t.id)}_${d}" data-t="${esc(t.id)}" data-d="${d}" value="${has ? M.fmt(s) : ''}"${ph} inputmode="decimal" autocomplete="off"></td>`;
           });
           const sgm = !t.summary_mode || t.summary_mode === 'auto' ? 'sum' : t.summary_mode;
-          h += `<td class="tk-sg sg-${esc(sgm)}" data-act="sumcyc" data-t="${esc(t.id)}" title="${esc(M.SUMMARY[sgm])} · клик — следующий режим (сумма → среднее → не показывать)">${sm.text ? `${sm.mode === 'sum' ? '' : `<small>${M.SUMMARY_SIGN[sm.mode]}</small>`}${sm.text}` : ''}</td></tr>`;
+          h += `<td class="tk-sg sg-${esc(sgm)}" data-act="sumcyc" data-t="${esc(t.id)}" title="${esc(M.SUMMARY[sgm])} · клик — следующий режим (сумма → среднее → не показывать)">${sm.text ? sm.text : ''}</td></tr>`;
         });
         h += '</table></div>';
         if (!rows.length) h += '<div class="tk-empty">В таблице пока пусто. Нажмите «+ Добавить» или включите «Неактивные».</div>';
