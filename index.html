@@ -3130,8 +3130,8 @@ window.LifeDiaryCss = `
   const STATUS = { wish: 'желание', new: 'новая', cur: 'текущая', off: 'неактивная' };
   const KIND = { habit: 'Трек', in: 'Доход', out: 'Расход' };
   const GROUPS = ['Треки', 'Доходы', 'Расходы'];
-  const SUMMARY = { auto: 'по умолчанию (сумма)', sum: 'сумма', avg: 'среднее (по дням с записью)', last: 'последнее значение', max: 'максимум', min: 'минимум', count: 'число дней с записью' };
-  const SUMMARY_SIGN = { auto: 'Σ', sum: 'Σ', avg: 'ср', last: 'послед.', max: 'макс', min: 'мин', count: 'дней' };
+  const SUMMARY = { none: 'не показывать', auto: 'по умолчанию (сумма)', sum: 'сумма', avg: 'среднее (по дням с записью)', last: 'последнее значение', max: 'максимум', min: 'минимум', count: 'число дней с записью' };
+  const SUMMARY_SIGN = { auto: 'Σ', sum: 'Σ', avg: 'ср', last: 'послед.', max: 'макс', min: 'мин', count: 'дней', none: '' };
   const THR = { none: 'без порога', below: 'ниже: норма ≤ порога', exact: 'точное значение: норма = порога', above: 'выше: норма ≥ порога' };
   const WD = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
   const isDay = s => /^\d{4}-\d\d-\d\d$/.test(String(s || '')) && !isNaN(Date.parse(s + 'T12:00:00Z'));
@@ -3158,7 +3158,7 @@ window.LifeDiaryCss = `
   /* Последний столбец строки по видимым дням: days = [{day, sum|null}] (sum = null, если в этот день записей нет) */
   function summarize(mode, days) {
     const v = days.filter(d => d.sum != null).map(d => d.sum), m = !mode || mode === 'auto' ? 'sum' : mode;
-    if (!v.length) return { mode: m, value: null, text: '' };
+    if (m === 'none' || !v.length) return { mode: m, value: null, text: '' };
     let x;
     if (m === 'sum') x = v.reduce((a, b) => a + b, 0); else if (m === 'avg') x = v.reduce((a, b) => a + b, 0) / v.length;
     else if (m === 'last') x = days.filter(d => d.sum != null).sort((a, b) => (a.day < b.day ? 1 : -1))[0].sum;
@@ -3239,7 +3239,7 @@ table.tk-g{border-collapse:separate;border-spacing:0;width:100%;font-size:var(--
 .tk-c.cs{outline:2px solid var(--ui-main);outline-offset:-2px}
 input.tk-ci{width:100%;min-width:var(--tk-cw,38px);height:30px;border:0;background:transparent;text-align:center;font:inherit;color:inherit;padding:0 2px}
 input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,transparent)}input.tk-ci::placeholder{opacity:.35}
-.tk-sg{min-width:62px;font-weight:600;padding:0 8px;white-space:nowrap}.tk-sg small{font-weight:400;color:var(--ui-mut);margin-right:3px}
+.tk-sg{position:relative;cursor:pointer;user-select:none;min-width:62px;font-weight:600;padding:0 8px;white-space:nowrap}.tk-sg small{font-weight:400;color:var(--ui-mut);margin-right:3px}
 .tk-gp{background:var(--ui-card);border:1px solid var(--ui-line);border-radius:var(--ui-r);box-shadow:var(--ui-shadow);padding:var(--ui-padv) var(--ui-padh);display:flex;flex-direction:column;gap:8px}
 .tk-gp .top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.tk-gp .nm{font:inherit;font-weight:650;font-size:15px;border:1px solid transparent;border-radius:var(--ui-r-s);padding:2px 6px;min-width:200px;background:transparent;color:var(--ui-text)}.tk-gp .nm:hover,.tk-gp .nm:focus{border-color:var(--ui-line)}
 .tk-badge{font-size:11px;border:1px solid var(--ui-line);border-radius:999px;padding:0 8px;color:var(--ui-mut)}
@@ -3261,6 +3261,11 @@ input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,t
 .tk-paper hr{border:0;border-top:1px dashed currentColor;opacity:.5;margin:3px 0}
 .tk-paper .th{background:none;border:1px solid currentColor;border-radius:3px;color:#000;font:inherit;padding:0 5px;margin-left:12px;cursor:pointer;opacity:.5;transition:opacity .12s}.tk-paper .th:hover,.tk-paper .th:focus-visible{opacity:1}
 .tk-paper .nt{opacity:.7}
+.tk-sg::after{content:"";position:absolute;width:6px;height:6px;border-radius:50%;pointer-events:none}
+.tk-sg.sg-sum::after{left:3px;bottom:3px;background:#2d9f5a}
+.tk-sg.sg-avg::after{right:3px;bottom:3px;background:#3b7de0}
+.tk-sg.sg-none::after{right:3px;top:3px;background:#d33b3b}
+.tk-sg:hover{background:color-mix(in srgb,var(--ui-main) 8%,transparent)}
 `;
 
 </script>
@@ -3722,7 +3727,8 @@ input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,t
             const rcd = (S.byDay(t.id)[d] || []).some(e => String(e.id).startsWith('te_rc_'));
             h += `<td class="tk-c ${on ? 'cs' : ''} ${cm ? 'hcm' : ''} ${rcd ? 'rcd' : ''}" ${cm ? `title="${esc(cm.note)}"` : ''} ${bg ? `style="background:${bg}"` : ''}><input class="tk-ci" id="c_${esc(t.id)}_${d}" data-t="${esc(t.id)}" data-d="${d}" value="${has ? M.fmt(s) : ''}"${ph} inputmode="decimal" autocomplete="off"></td>`;
           });
-          h += `<td class="tk-sg" title="${esc(M.SUMMARY[t.summary_mode || 'auto'])}">${sm.text ? `${sm.mode === 'sum' ? '' : `<small>${M.SUMMARY_SIGN[sm.mode]}</small>`}${sm.text}` : ''}</td></tr>`;
+          const sgm = !t.summary_mode || t.summary_mode === 'auto' ? 'sum' : t.summary_mode;
+          h += `<td class="tk-sg sg-${esc(sgm)}" data-act="sumcyc" data-t="${esc(t.id)}" title="${esc(M.SUMMARY[sgm])} · клик — следующий режим (сумма → среднее → не показывать)">${sm.text ? `${sm.mode === 'sum' ? '' : `<small>${M.SUMMARY_SIGN[sm.mode]}</small>`}${sm.text}` : ''}</td></tr>`;
         });
         h += '</table></div>';
         if (!rows.length) h += '<div class="tk-empty">В таблице пока пусто. Нажмите «+ Добавить» или включите «Неактивные».</div>';
@@ -3772,6 +3778,7 @@ input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,t
       if (a === 'onlymoney') { V.onlyMoney = !V.onlyMoney; if (V.onlyMoney) V.onlyTr = false; render(); return; }
       if (a === 'onlytr') { V.onlyTr = !V.onlyTr; if (V.onlyTr) V.onlyMoney = false; render(); return; }
       if (a === 'reload') { S.load(); if (E) E.load(); return; }
+      if (a === 'sumcyc') { const tk = S.track(t.dataset.t); if (!tk) return; const cur = !tk.summary_mode || tk.summary_mode === 'auto' ? 'sum' : tk.summary_mode; S.editTrack(tk.id, { summary_mode: cur === 'sum' ? 'avg' : cur === 'avg' ? 'none' : 'sum' }); return; }
       if (a === 'mv') { ev.stopPropagation(); S.move(t.dataset.t, +t.dataset.d, rowsList().map(x => x.id)); render(); return; }
       if (a === 'card') { focusNext = null; V.card = V.card === t.dataset.t ? null : t.dataset.t; V.cell = null; V.delAsk = null; render(); return; }
       await global.LifeTracksCard.onClick(ctx, t, a, ev);
