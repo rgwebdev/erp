@@ -11,6 +11,7 @@
 <title>LifeERP: телефон</title>
 </head>
 <body>
+<script>window.LIFE_BUILD = "D97_M38_S21";</script>
 <div id="app"></div>
 <script>
 /* ---- core/core.js ---- */
@@ -3099,7 +3100,8 @@ html,body{margin:0}
 .pk-soon{max-width:560px;margin:60px auto;padding:0 16px;color:var(--muted,#5e6e69);text-align:center;line-height:1.5}
 .tm-bar{padding-right:88px!important}
 .tm-bar .tm-note{flex:1;min-width:0}
-.pk-embed .pk-out{display:none!important}
+.pk-embed .pk-out,.pk-embed .pk-ver{display:none!important}
+.pk-ver{position:fixed;top:2px;left:16px;z-index:80;font-size:10px;line-height:1.2;color:var(--muted,#5e6e69);opacity:.55;letter-spacing:.02em;pointer-events:none}
 .pk-embed .tm-bar{padding-right:0!important}
 .pk-out{position:fixed;top:8px;right:16px;z-index:70;box-sizing:border-box;width:64px;border:1px solid var(--line);background:var(--surface);color:inherit;border-radius:10px;height:32px;padding:0;font:inherit;font-size:13px;line-height:30px;text-align:center;cursor:pointer;display:none}
 `;
@@ -3118,7 +3120,8 @@ html,body{margin:0}
     let tab = core.store.get(TAB_KEY, 'timers'); if (!modules.some(m => m.id === tab)) tab = 'timers';
     let mod = null;
     const shopTitle = () => { const n = +core.store.get('lifeerp-shop-list', 1); return n > 1 && n <= 3 ? 'Покупки' + n : 'Покупки'; };
-    el.innerHTML = '<div class="pk-wrap"><div class="pk-main"></div></div><nav class="pk-nav" hidden></nav><button class="pk-out" type="button">Выйти</button>';
+    el.innerHTML = '<div class="pk-wrap"><div class="pk-main"></div></div><nav class="pk-nav" hidden></nav><button class="pk-out" type="button">Выйти</button><span class="pk-ver"></span>';
+    el.querySelector('.pk-ver').textContent = global.LIFE_BUILD || '';
     const main = el.querySelector('.pk-main'), nav = el.querySelector('.pk-nav'), out = el.querySelector('.pk-out');
     function unmount() { if (mod) { try { mod.unmount(); } catch (e) { /* уже убрано */ } mod = null; } main.innerHTML = ''; }
     function show() {

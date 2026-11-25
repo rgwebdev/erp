@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=PT+Sans:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
+<script>window.LIFE_BUILD = "D97_M38_S21";</script>
 <div id="app"></div>
 <script>
 /* ---- core/core.js ---- */
@@ -6460,6 +6461,7 @@ html,body{margin:0;background:var(--ui-bg);color:var(--ui-text);font:14px/1.4 va
 .sh-top[hidden]{display:none}
 .sh-top h1{margin:0;font-size:24px;font-weight:700;letter-spacing:-.01em}
 .sh-top small{display:block;color:var(--ui-mut);font-size:12px}
+.sh-top small.sh-ver{font-size:11px;opacity:.55;letter-spacing:.02em;user-select:all}
 .sh-sync{font-size:12px;color:var(--ui-mut)}.sh-sync.warn{color:var(--ui-bad)}
 .sh-phone{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;padding:0;border-radius:10px}
 .sh-phone svg{width:18px;height:18px}
@@ -6511,7 +6513,7 @@ html,body{margin:0;background:var(--ui-bg);color:var(--ui-text);font:14px/1.4 va
       <button type="button" class="sh-ri" data-settings aria-haspopup="true" aria-expanded="false">${ICON.settings}<span>Настройки</span></button>
       <div class="sh-menu" hidden><div class="sh-who"></div><label class="sh-view" hidden>Данные: <select></select></label><hr>
         <button type="button" data-tab="settings">Настройки: профиль, оформление, модули</button><button type="button" data-tab="data">Данные: выгрузка и восстановление</button><button type="button" data-tab="legacy">Старая система (состояние, дневник)</button><hr><button type="button" class="sh-out">Выйти</button></div></aside>
-      <div class="sh-col"><header class="sh-top" hidden><div><h1></h1><small></small></div><span class="sh-fill"></span><span class="sh-sync"></span>
+      <div class="sh-col"><header class="sh-top" hidden><div><h1></h1><small></small><small class="sh-ver" title="Версия сборки: D — компьютер, M — телефон, S — SQL"></small></div><span class="sh-fill"></span><span class="sh-sync"></span>
         <button type="button" class="ui-btn sh-pgb" data-pagestyle aria-pressed="false" title="Оформление этой страницы: цвета, шрифт, масштаб" aria-label="Оформление этой страницы" hidden>${PALETTE_SVG}</button><button type="button" class="ui-btn sh-phone" data-phone aria-pressed="false" title="Телефонная версия: Таймеры, Покупки, Эмоции (правая колонка)" aria-label="Телефонная версия">${PHONE_SVG}</button></header>
       <div class="sh-banner" hidden></div><div class="sh-body"><main class="sh-main"></main></div></div><aside class="sh-dock" hidden aria-label="Телефонная версия: Таймеры, Покупки, Эмоции"></aside></div>`;
     const $ = s => el.querySelector(s), top = $('.sh-top'), rail = $('.sh-rail'), menu = $('.sh-menu'), main = $('.sh-main'), banner = $('.sh-banner'), sel = $('.sh-view select'), dock = $('.sh-dock');
@@ -6624,6 +6626,7 @@ html,body{margin:0;background:var(--ui-bg);color:var(--ui-text);font:14px/1.4 va
       const ph = $('[data-phone]'); ph.classList.toggle('on', dockOn); ph.setAttribute('aria-pressed', String(dockOn));
       const m = modules.find(x => x.id === tab);
       top.querySelector('h1').textContent = m.title;
+      top.querySelector('.sh-ver').textContent = global.LIFE_BUILD || '';
       top.querySelector('small').textContent = new Intl.DateTimeFormat('ru-RU', { timeZone: core.TZ, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date());
     }
     function setPhone(on) { if (on === undefined) return dockOn; if (!!on === dockOn) return dockOn; dockOn = !!on; core.store.set(DOCK_KEY, dockOn); renderTabs(); applyDock(); return dockOn; }
