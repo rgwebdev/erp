@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=PT+Sans:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
-<script>window.LIFE_BUILD = "D101_M38_S22";</script>
+<script>window.LIFE_BUILD = "D102_M38_S22";</script>
 <div id="app"></div>
 <script>
 /* ---- core/core.js ---- */
@@ -4291,17 +4291,19 @@ window.LifePlanCss = `
 .xp-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .xp-head h2{margin:0;font-size:18px;font-weight:650;min-width:150px;text-align:center}
 .xp-head .sp{flex:1}.xp-head small{color:var(--ui-mut);font-size:12px}
-.xp-cols{display:grid;grid-template-columns:minmax(0,1.5fr);gap:var(--ui-gap,14px);align-items:start}
-.xp-cols.d1{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)}
-.xp-cols.d2{grid-template-columns:minmax(0,1.7fr) minmax(0,1fr) minmax(0,1.1fr)}
-@media(max-width:1100px){.xp-cols.d1,.xp-cols.d2{grid-template-columns:minmax(0,1fr)}}
-.xp-cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.xp-months{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:10px}
+@media(max-width:1000px){.xp-months{grid-template-columns:minmax(0,1fr)}}
+.xp-mo h4{margin:0 0 4px;font-size:13px;font-weight:650;display:flex;justify-content:space-between;gap:6px;align-items:baseline}.xp-mo h4 small{font-weight:400;color:var(--ui-mut);font-size:11px;white-space:nowrap}
+.xp-sub{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--ui-gap,14px);align-items:start}
+.xp-sub.s2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.xp-sub.s1{grid-template-columns:minmax(0,640px)}
+@media(max-width:1000px){.xp-sub.s2{grid-template-columns:minmax(0,1fr)}}
+.xp-cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
 .xp-wd{font-size:11px;color:var(--ui-mut);text-align:center;padding-bottom:2px}.xp-wd.we{color:var(--ui-bad)}
-.xp-c{min-height:78px;border-radius:8px;background:var(--ui-soft);padding:4px 6px;display:flex;flex-direction:column;gap:3px;min-width:0}
-.xp-c.out{opacity:.4}.xp-c.today{outline:2px solid var(--ui-main)}.xp-c.sel{box-shadow:0 0 0 2px var(--ui-main) inset}
-.xp-c .n{font-size:12px;color:var(--ui-mut)}
+.xp-c{min-height:40px;border-radius:6px;background:var(--ui-soft);padding:2px 2px;display:flex;flex-direction:column;gap:3px;min-width:0}
+.xp-c.out{background:transparent}.xp-c.today{outline:2px solid var(--ui-main)}.xp-c.sel{box-shadow:0 0 0 2px var(--ui-main) inset}
+.xp-c .n{font-size:10.5px;line-height:1.1;color:var(--ui-mut);padding-left:2px}
 .xp-day{display:flex;flex-direction:column;align-items:flex-start;gap:1px;border:0;background:var(--ui-card);color:var(--ui-text);border-radius:6px;padding:3px 5px;font:inherit;font-size:12px;line-height:1.25;cursor:pointer;text-align:left;width:100%;border:1px solid var(--ui-line)}
-.xp-day:hover{border-color:var(--ui-main)}.xp-day{font-size:11.5px}.xp-day b{font-weight:650;white-space:nowrap}.xp-day span{color:var(--ui-mut);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}.xp-c{padding:4px}
+.xp-day:hover{border-color:var(--ui-main)}.xp-day{font-size:10px;padding:1px 3px;line-height:1.2;border-radius:5px}.xp-day b{font-weight:650;white-space:nowrap}.xp-day span{color:var(--ui-mut);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .xp-c.sel .xp-day{border-color:var(--ui-main)}
 .xp-pn{padding:12px 14px}.xp-pn h3{margin:0 0 8px;font-size:14px;font-weight:650;display:flex;justify-content:space-between;gap:8px}
 .xp-pn h3 button{border:0;background:none;color:var(--ui-mut);cursor:pointer;font-size:16px;line-height:1}
@@ -4318,7 +4320,7 @@ window.LifePlanCss = `
 .xp-st{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:2px 0 8px}
 .xp-st div{background:var(--ui-soft);border-radius:8px;padding:5px 8px;font-size:11px;color:var(--ui-mut)}.xp-st b{display:block;font-size:14px;color:var(--ui-text);font-weight:650;white-space:nowrap}
 .xp-st .up b{color:var(--ui-bad)}.xp-st .dn b{color:var(--ui-ok)}
-.xp-svg{width:100%;height:auto;display:block}
+.xp-svg{width:100%;max-width:520px;height:auto;display:block}
 .xp-svg text{fill:var(--ui-mut);font-size:11px}.xp-svg .gl{stroke:var(--ui-line);stroke-width:1}.xp-svg .ax{stroke:var(--ui-mut);stroke-width:1}
 .xp-svg .ln{fill:none;stroke:var(--ui-main);stroke-width:2;stroke-linejoin:round}.xp-svg .pt{fill:var(--ui-card);stroke:var(--ui-main);stroke-width:2}.xp-svg .pt.cur{fill:var(--ui-main)}
 .xp-tb{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}.xp-tb td{padding:2px 4px;border-top:1px solid var(--ui-line)}.xp-tb td:nth-child(n+2){text-align:right}
@@ -4384,15 +4386,22 @@ window.LifePlanCss = `
     };
     applyOpt(); const offSS = SS.subscribe ? SS.subscribe(() => { if (alive) applyOpt(); }) : null;
 
+    /* три месяца в ряд: выбранный и два предыдущих (чеки — в прошлом, свежий месяц справа) */
+    function months3() { const out = []; for (let k = 2; k >= 0; k--) { const d = new Date(Date.UTC(ui.y, ui.m - 1 - k, 1)); out.push([d.getUTCFullYear(), d.getUTCMonth() + 1]); } return out; }
     function calendar() {
-      const mo = X.month(S.receipts, ui.y, ui.m), wd = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-      let h = '<div class="ui-card"><div class="xp-head"><button class="ui-btn" data-a="prev" aria-label="Предыдущий месяц">‹</button><h2>' + X.MONTHS[ui.m - 1] + ' ' + ui.y + '</h2><button class="ui-btn" data-a="next" aria-label="Следующий месяц">›</button>' +
-        '<button class="ui-btn" data-a="now">Сегодня</button><span class="sp"></span><small>' + (mo.count ? X.checks(mo.count) + ' · ' + X.tg(mo.amount) : 'за месяц чеков нет') + '</small><button class="ui-btn" data-a="reload">Обновить</button></div>' +
-        '<div class="xp-cal" style="margin-top:10px">' + wd.map((d, i) => '<div class="xp-wd' + (i > 4 ? ' we' : '') + '">' + d + '</div>').join('');
-      mo.weeks.forEach(w => w.forEach(c => {
-        h += '<div class="xp-c' + (c.inMonth ? '' : ' out') + (c.day === today ? ' today' : '') + (c.day === ui.day ? ' sel' : '') + '" data-day="' + c.day + '"><span class="n">' + +c.day.slice(8) + '</span>' +
-          (c.count ? '<button type="button" class="xp-day" data-a="day" data-day="' + c.day + '"><b>' + X.checks(c.count) + '</b><span>' + X.tg(c.amount) + '</span></button>' : '') + '</div>';
-      }));
+      const ms = months3().map(([y, m]) => ({ y, m, mo: X.month(S.receipts, y, m) })), wd = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+      const cnt = ms.reduce((a, x) => a + x.mo.count, 0), amt = ms.reduce((a, x) => a + x.mo.amount, 0), f = ms[0], l = ms[2];
+      let h = '<div class="ui-card"><div class="xp-head"><button class="ui-btn" data-a="prev" aria-label="Раньше">‹</button><h2>' + (f.y === l.y ? X.MONTHS[f.m - 1] + ' – ' + X.MONTHS[l.m - 1] + ' ' + l.y : X.MONTHS[f.m - 1] + ' ' + f.y + ' – ' + X.MONTHS[l.m - 1] + ' ' + l.y) + '</h2><button class="ui-btn" data-a="next" aria-label="Позже">›</button>' +
+        '<button class="ui-btn" data-a="now">Сегодня</button><span class="sp"></span><small>' + (cnt ? X.checks(cnt) + ' · ' + X.tg(amt) : 'чеков нет') + '</small><button class="ui-btn" data-a="reload">Обновить</button></div><div class="xp-months">';
+      ms.forEach(x => {
+        h += '<div class="xp-mo"><h4><span>' + X.MONTHS[x.m - 1] + ' ' + x.y + '</span><small>' + (x.mo.count ? X.checks(x.mo.count) + ' · ' + X.tg(x.mo.amount) : '') + '</small></h4><div class="xp-cal">' + wd.map((d, i) => '<div class="xp-wd' + (i > 4 ? ' we' : '') + '">' + d + '</div>').join('');
+        x.mo.weeks.forEach(w => w.forEach(c => {
+          if (!c.inMonth) { h += '<div class="xp-c out"></div>'; return; }
+          h += '<div class="xp-c' + (c.day === today ? ' today' : '') + (c.day === ui.day ? ' sel' : '') + '" data-day="' + c.day + '"><span class="n">' + +c.day.slice(8) + '</span>' +
+            (c.count ? '<button type="button" class="xp-day" data-a="day" data-day="' + c.day + '"><b>' + X.checks(c.count) + '</b><span>' + X.tg(c.amount) + '</span></button>' : '') + '</div>';
+        }));
+        h += '</div></div>';
+      });
       return h + '</div>' + (S.state === 'error' ? '<div class="xp-empty">' + esc(S.note) + '</div>' : S.state === 'loading' && !painted ? '<div class="xp-empty">Загрузка чеков…</div>' : '') + '</div>';
     }
     function paper(r) {
@@ -4430,7 +4439,7 @@ window.LifePlanCss = `
       painted = painted || S.state === 'ready';
       const keep = [root.scrollTop];
       const n = (ui.day ? 1 : 0) + (ui.day && ui.item ? 1 : 0);
-      root.innerHTML = '<div class="xp-cols d' + n + '">' + calendar() + (ui.day ? details() : '') + (ui.day && ui.item ? chartPanel() : '') + '</div>';
+      root.innerHTML = calendar() + (ui.day ? '<div class="xp-sub s' + n + '">' + details() + (ui.item ? chartPanel() : '') + '</div>' : '');
     }
     S.onChange = () => { if (alive) render(); };
     root.addEventListener('click', ev => {
