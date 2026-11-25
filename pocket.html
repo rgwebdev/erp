@@ -2401,9 +2401,18 @@ window.LifeShopCss = `
       let dorm = $('.dormant');
       if (!dorm) { dorm = document.createElement('details'); dorm.className = 'data dormant'; dorm.hidden = true; const ds = document.createElement('summary'); const dl = document.createElement('div'); dl.className = 'list'; dorm.append(ds, dl); listEl.parentNode.insertBefore(dorm, listEl.nextSibling); }
       const dlist = dorm.querySelector('.list'); let dc = 0, now = Date.now();
+      /* Двигаем карточку только если она стоит не на своём месте: повторная вставка уже стоящего узла убирает фокус из поля (стирание/ввод веса прерывались при каждой перерисовке) */
+      const lastIn = new Map(), isCard = n => n && n.nodeType === 1 && n.classList.contains('item');
+      const place = (cont, e) => {
+        const prev = lastIn.get(cont) || null; lastIn.set(cont, e);
+        if (e.contains(document.activeElement)) { if (e.parentNode !== cont) cont.appendChild(e); return; }
+        let okPos = e.parentNode === cont;
+        if (okPos) { let p = e.previousElementSibling; while (p && !isCard(p)) p = p.previousElementSibling; okPos = p === prev; }
+        if (!okPos) cont.appendChild(e);
+      };
       M.ordered(D.items).forEach(it => {
         const e = els.get(it.id) || create(it), dm = M.isDormant(it, D.lastBought, now); if (dm) dc++;
-        (dm ? dlist : listEl).appendChild(e); const on = it.status === 'on', bought = it.status === 'bought';
+        place(dm ? dlist : listEl, e); const on = it.status === 'on', bought = it.status === 'bought';
         e.classList.toggle('active', on); e.classList.toggle('bought', bought); e.querySelector('.name').textContent = it.name;
         if (bought) e.querySelector('.cd b').textContent = String(Math.max(0, M.dayDiff(it.due_on, S.today())));
         e.setAttribute('aria-label', it.name + (on ? ', в списке, ' + M.fmtQ(+it.qty, it.unit) : (bought ? ', куплено' : ', не в списке')));
