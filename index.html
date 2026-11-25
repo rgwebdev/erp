@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=PT+Sans:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
-<script>window.LIFE_BUILD = "D98_M38_S22";</script>
+<script>window.LIFE_BUILD = "D99_M38_S22";</script>
 <div id="app"></div>
 <script>
 /* ---- core/core.js ---- */
@@ -6036,7 +6036,7 @@ window.LifePageStyleCss = `
           if (s == null) return '<td></td>'; let bg = '';
           if (thr) bg = `color-mix(in srgb,${TK.okThreshold(thr.threshold_mode, thr.threshold_value, s) ? 'var(--ui-ok)' : 'var(--ui-bad)'} 35%,var(--ui-card))`; else if (s > 0) bg = `color-mix(in srgb,${col} ${Math.round(18 + s / (mx || 1) * 62)}%,var(--ui-card))`;
           return `<td ${bg ? `style="background:${bg}"` : ''}>${TK.fmt(s)}</td>`;
-        }).join('') + `<td class="sg">${sm.text ? (sm.mode === 'sum' ? '' : '<small>' + TK.SUMMARY_SIGN[sm.mode] + '</small>') + sm.text : ''}</td></tr>`;
+        }).join('') + `<td class="sg">${sm.text || ''}</td></tr>`;
       });
       return h + '</table></div><div class="ov-sub">Деньги в тысячах ₸. Редактировать клетки — во вкладке «Треки».</div></section>';
     }
