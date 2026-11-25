@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=PT+Sans:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
-<script>window.LIFE_BUILD = "D100_M38_S22";</script>
+<script>window.LIFE_BUILD = "D101_M38_S22";</script>
 <div id="app"></div>
 <script>
 /* ---- core/core.js ---- */
@@ -4222,6 +4222,275 @@ window.LifePlanCss = `
 
 </script>
 <script>
+/* ---- modules/expenses-model.js ---- */
+/* «Деньги → Расходы»: чистые расчёты (без экрана и базы). window.LifeExpensesModel.
+   Календарь месяца по чекам, склонение «чек», ряд цен товара по коду карточки (item_id) и геометрия графика. */
+(function (global) {
+  'use strict';
+  const pad = n => String(n).padStart(2, '0');
+  const ymd = (y, m, d) => y + '-' + pad(m) + '-' + pad(d);
+  const num = n => { const r = Math.round(n * 100) / 100; return r.toLocaleString('ru-RU', { maximumFractionDigits: 2 }); };
+  const tg = n => num(n) + ' тг';
+  const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+  const MONTHS_G = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+  function plural(n, a, b, c) { const m = n % 100, k = n % 10; return m > 10 && m < 20 ? c : k === 1 ? a : k >= 2 && k <= 4 ? b : c; }
+  const checks = n => n + ' ' + plural(n, 'чек', 'чека', 'чеков');
+  const dayLabel = d => +d.slice(8) + ' ' + MONTHS_G[+d.slice(5, 7) - 1] + ' ' + d.slice(0, 4);
+  const shortDate = d => d.slice(8) + '.' + d.slice(5, 7) + '.' + d.slice(2, 4);
+
+  /* Сетка месяца (понедельник первый): недели по 7 клеток; клетка {day, inMonth, count, amount}. receipts — результат LifeShopModel.receiptsOf */
+  function month(receipts, y, m) {
+    const by = {}; receipts.forEach(r => { const o = (by[r.date] = by[r.date] || { count: 0, amount: 0 }); o.count++; o.amount += r.amount; });
+    const first = new Date(Date.UTC(y, m - 1, 1, 12)), lead = (first.getUTCDay() + 6) % 7, dim = new Date(Date.UTC(y, m, 0, 12)).getUTCDate();
+    const cells = []; for (let i = -lead; cells.length % 7 || i < dim; i++) {
+      const dt = new Date(Date.UTC(y, m - 1, 1 + i, 12)), day = ymd(dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate()), v = by[day] || { count: 0, amount: 0 };
+      cells.push({ day, inMonth: i >= 0 && i < dim, count: v.count, amount: Math.round(v.amount * 100) / 100 });
+    }
+    const weeks = []; for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+    const mine = cells.filter(c => c.inMonth);
+    return { weeks, count: mine.reduce((a, c) => a + c.count, 0), amount: Math.round(mine.reduce((a, c) => a + c.amount, 0) * 100) / 100 };
+  }
+  /* Покупки одного товара по коду карточки: [{ts, day, price, qty, unit, receipt}] по возрастанию времени */
+  function series(receipts, itemId) {
+    const out = []; receipts.forEach(r => r.goods.forEach(p => { if (p.item_id === itemId) out.push({ ts: Date.parse(p.bought_at) || r.first, day: p.local_date || r.date, price: +p.price, qty: +p.qty, unit: p.unit, receipt: r.id, name: p.name }); }));
+    return out.sort((a, b) => a.ts - b.ts);
+  }
+  function stats(pts) {
+    if (!pts.length) return null;
+    const ps = pts.map(p => p.price), first = pts[0].price, last = pts[pts.length - 1].price;
+    return { first, last, min: Math.min(...ps), max: Math.max(...ps), change: first ? Math.round((last - first) / first * 1000) / 10 : 0, count: pts.length };
+  }
+  /* «красивые» отметки оси */
+  function ticks(lo, hi, n) {
+    if (hi - lo < 1e-9) { const d = Math.max(1, Math.abs(lo) * 0.1); lo -= d; hi += d; }
+    const raw = (hi - lo) / Math.max(1, n), p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p, step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p;
+    const a = Math.floor(lo / step) * step, b = Math.ceil(hi / step) * step, t = []; for (let v = a; v <= b + step / 2; v += step) t.push(Math.round(v * 1e6) / 1e6);
+    return t;
+  }
+  /* Геометрия графика: точки в пикселях внутри рамки w×h с полями; X — время от первой до последней покупки */
+  function chart(pts, w, h, pad4) {
+    const P = Object.assign({ l: 58, r: 30, t: 14, b: 34 }, pad4 || {}), iw = w - P.l - P.r, ih = h - P.t - P.b;
+    const ys = pts.map(p => p.price), yt = ticks(Math.min(...ys), Math.max(...ys), 4), y0 = yt[0], y1 = yt[yt.length - 1];
+    const t0 = pts[0].ts, t1 = pts[pts.length - 1].ts, span = t1 - t0;
+    const X = ts => P.l + 14 + (span ? (ts - t0) / span * (iw - 28) : (iw - 28) / 2), Y = v => P.t + ih - (v - y0) / (y1 - y0 || 1) * ih;
+    const xt = []; const nx = span ? Math.min(5, Math.max(2, Math.floor(iw / 90))) : 1;
+    for (let i = 0; i < (span ? nx : 1); i++) { const ts = span ? t0 + span * i / (nx - 1) : t0; xt.push({ x: X(ts), ts }); }
+    return { P, w, h, iw, ih, yt: yt.map(v => ({ v, y: Y(v) })), xt, pts: pts.map(p => Object.assign({ x: X(p.ts), y: Y(p.price) }, p)) };
+  }
+  global.LifeExpensesModel = { MONTHS, MONTHS_G, checks, num, tg, dayLabel, shortDate, month, series, stats, ticks, chart, plural };
+})(window);
+
+</script>
+<script>
+/* ---- modules/expenses-css.js ---- */
+/* «Деньги → Расходы»: стили (общий стиль интерфейса, светлая и тёмная тема; префикс классов xp-, id стиля xp-css). window.LifeExpensesCss */
+(function (global) {
+  'use strict';
+  global.LifeExpensesCss = `
+.xp-app{font:inherit;color:var(--ui-text);display:flex;flex-direction:column;gap:var(--ui-gap,14px)}
+.xp-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.xp-head h2{margin:0;font-size:18px;font-weight:650;min-width:150px;text-align:center}
+.xp-head .sp{flex:1}.xp-head small{color:var(--ui-mut);font-size:12px}
+.xp-cols{display:grid;grid-template-columns:minmax(0,1.5fr);gap:var(--ui-gap,14px);align-items:start}
+.xp-cols.d1{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)}
+.xp-cols.d2{grid-template-columns:minmax(0,1.7fr) minmax(0,1fr) minmax(0,1.1fr)}
+@media(max-width:1100px){.xp-cols.d1,.xp-cols.d2{grid-template-columns:minmax(0,1fr)}}
+.xp-cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.xp-wd{font-size:11px;color:var(--ui-mut);text-align:center;padding-bottom:2px}.xp-wd.we{color:var(--ui-bad)}
+.xp-c{min-height:78px;border-radius:8px;background:var(--ui-soft);padding:4px 6px;display:flex;flex-direction:column;gap:3px;min-width:0}
+.xp-c.out{opacity:.4}.xp-c.today{outline:2px solid var(--ui-main)}.xp-c.sel{box-shadow:0 0 0 2px var(--ui-main) inset}
+.xp-c .n{font-size:12px;color:var(--ui-mut)}
+.xp-day{display:flex;flex-direction:column;align-items:flex-start;gap:1px;border:0;background:var(--ui-card);color:var(--ui-text);border-radius:6px;padding:3px 5px;font:inherit;font-size:12px;line-height:1.25;cursor:pointer;text-align:left;width:100%;border:1px solid var(--ui-line)}
+.xp-day:hover{border-color:var(--ui-main)}.xp-day{font-size:11.5px}.xp-day b{font-weight:650;white-space:nowrap}.xp-day span{color:var(--ui-mut);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}.xp-c{padding:4px}
+.xp-c.sel .xp-day{border-color:var(--ui-main)}
+.xp-pn{padding:12px 14px}.xp-pn h3{margin:0 0 8px;font-size:14px;font-weight:650;display:flex;justify-content:space-between;gap:8px}
+.xp-pn h3 button{border:0;background:none;color:var(--ui-mut);cursor:pointer;font-size:16px;line-height:1}
+.xp-ics{display:flex;flex-wrap:wrap;gap:8px}
+.xp-ic{display:flex;flex-direction:column;align-items:center;gap:2px;width:84px;padding:6px 4px;border:1px solid var(--ui-line);border-radius:8px;background:var(--ui-card);color:var(--ui-text);font:inherit;font-size:11px;line-height:1.2;text-align:center;cursor:pointer}
+.xp-ic svg{width:22px;height:26px;color:#2d9f5a}.xp-ic.on{border-color:#2d9f5a;box-shadow:0 0 0 1px #2d9f5a inset}
+.xp-paper{display:inline-block;margin-top:10px;max-width:100%;overflow-x:auto;box-sizing:border-box;padding:8px 12px 14px;background:var(--rc-bg,#fffdf5);color:var(--rc-ink,#222);font:var(--rc-fs,12px)/1.25 ui-monospace,Menlo,Consolas,monospace;white-space:nowrap;border:1px solid rgba(0,0,0,.18);border-radius:2px;box-shadow:0 2px 6px rgba(0,0,0,.15);
+  -webkit-mask:conic-gradient(from -45deg at bottom,#0000,#000 1deg 89deg,#0000 90deg) 50%/10px 100%;mask:conic-gradient(from -45deg at bottom,#0000,#000 1deg 89deg,#0000 90deg) 50%/10px 100%}
+.xp-paper .ph{text-align:center;font-weight:700}.xp-paper hr{border:0;border-top:1px dashed currentColor;opacity:.5;margin:3px 0}
+.xp-paper .pl{display:flex;gap:12px}.xp-paper .pl>span:first-child{flex:1}.xp-paper .am{text-align:right}
+.xp-paper button.pl{width:100%;border:0;background:none;color:inherit;font:inherit;text-align:left;padding:0;cursor:pointer;border-radius:2px}
+.xp-paper button.pl:hover{background:rgba(0,0,0,.08)}.xp-paper button.pl.on{background:rgba(0,0,0,.14);font-weight:700}
+.xp-paper .hint{opacity:.6;font-size:.9em;margin-top:2px}
+.xp-st{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:2px 0 8px}
+.xp-st div{background:var(--ui-soft);border-radius:8px;padding:5px 8px;font-size:11px;color:var(--ui-mut)}.xp-st b{display:block;font-size:14px;color:var(--ui-text);font-weight:650;white-space:nowrap}
+.xp-st .up b{color:var(--ui-bad)}.xp-st .dn b{color:var(--ui-ok)}
+.xp-svg{width:100%;height:auto;display:block}
+.xp-svg text{fill:var(--ui-mut);font-size:11px}.xp-svg .gl{stroke:var(--ui-line);stroke-width:1}.xp-svg .ax{stroke:var(--ui-mut);stroke-width:1}
+.xp-svg .ln{fill:none;stroke:var(--ui-main);stroke-width:2;stroke-linejoin:round}.xp-svg .pt{fill:var(--ui-card);stroke:var(--ui-main);stroke-width:2}.xp-svg .pt.cur{fill:var(--ui-main)}
+.xp-tb{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}.xp-tb td{padding:2px 4px;border-top:1px solid var(--ui-line)}.xp-tb td:nth-child(n+2){text-align:right}
+.xp-tbw{max-height:180px;overflow:auto}
+.xp-empty{color:var(--ui-mut);font-size:13px;padding:8px 0}
+`;
+})(window);
+
+</script>
+<script>
+/* ---- modules/expenses-store.js ---- */
+/* «Деньги → Расходы»: данные (без экрана). LifeExpensesStore.create(core) → S.
+   Читает чеки и покупки целиком (только чтение): D = {receipts, lines} в том же виде, что у «Покупок», поэтому расчёты чеков — LifeShopModel.receiptsOf. */
+(function (global) {
+  'use strict';
+  function create(core) {
+    const S = { D: { receipts: [], lines: [] }, state: 'idle', note: '', onChange: null, receipts: [] };
+    const SM = global.LifeShopModel;
+    S.load = async function () {
+      S.state = 'loading'; S.note = ''; if (S.onChange) S.onChange();
+      try {
+        const nd = ['deleted_at=is.null'];
+        const [receipts, lines] = await Promise.all([core.select('shop_receipts', { filters: nd }), core.select('shop_purchases', { filters: nd })]);
+        S.D = { receipts, lines }; S.receipts = SM.receiptsOf(S.D); S.state = 'ready';
+      } catch (e) { if (e && e.auth) throw e; S.state = 'error'; S.note = (e && e.message) || 'Не удалось загрузить чеки'; }
+      if (S.onChange) S.onChange();
+    };
+    S.byDay = day => S.receipts.filter(r => r.date === day);
+    return S;
+  }
+  global.LifeExpensesStore = { create };
+})(window);
+
+</script>
+<script>
+/* ---- modules/expenses.js ---- */
+/* «Деньги → Расходы» (компьютер): календарь чеков по месяцам («N чеков · сумма»), детали чеков выбранного дня («бумажные» чеки)
+   и график цены выбранного товара по коду карточки. Только чтение. Данные — expenses-store.js, расчёты — expenses-model.js, стили — expenses-css.js.
+   Точка входа: LifeModules.expenses.mount(элемент, {core, onAuthLost, settings}) → {unmount, reload, panelSpec}. */
+(function (global) {
+  'use strict';
+  const X = global.LifeExpensesModel;
+  global.LifeModules = global.LifeModules || {};
+  const UI_KEY = 'lifeerp-expenses-ui';
+  const PAPER = '<svg viewBox="0 0 22 26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M3 1.5h16v21l-2.67-2-2.66 2-2.67-2-2.67 2-2.66-2L3 22.5z"/><path d="M7 7h8M7 11h8M7 15h5"/></svg>';
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  function mount(el, ctxIn) {
+    ctxIn = ctxIn || {}; const SM = global.LifeShopModel;
+    const core = ctxIn.core || global.LifeCore, S = global.LifeExpensesStore.create(core), TZ = core.TZ;
+    if (!document.getElementById('xp-css')) { const s = document.createElement('style'); s.id = 'xp-css'; s.textContent = global.LifeExpensesCss; document.head.appendChild(s); }
+    let SS = ctxIn.settings; if (!SS) { SS = global.LifeSettingsStore.create(core); SS.fromCache(); }
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    const u0 = core.store.get(UI_KEY, null) || {};
+    const ui = { y: +today.slice(0, 4), m: +today.slice(5, 7), day: null, open: new Set(), item: null };
+    let alive = true, painted = false;
+    el.innerHTML = '<div class="xp-app"></div>'; const root = el.firstChild;
+    const hm = global.LifeTimersModel.hm;
+
+    const applyOpt = () => {
+      [['rcBg', '--rc-bg'], ['rcInk', '--rc-ink']].forEach(([k, v]) => { const x = SS.get('modules.tracks.opt.' + k); if (x) root.style.setProperty(v, x); else root.style.removeProperty(v); });
+      const rf = SS.get('modules.tracks.opt.rcFont'); if (rf) root.style.setProperty('--rc-fs', rf + 'px'); else root.style.removeProperty('--rc-fs');
+    };
+    applyOpt(); const offSS = SS.subscribe ? SS.subscribe(() => { if (alive) applyOpt(); }) : null;
+
+    function calendar() {
+      const mo = X.month(S.receipts, ui.y, ui.m), wd = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+      let h = '<div class="ui-card"><div class="xp-head"><button class="ui-btn" data-a="prev" aria-label="Предыдущий месяц">‹</button><h2>' + X.MONTHS[ui.m - 1] + ' ' + ui.y + '</h2><button class="ui-btn" data-a="next" aria-label="Следующий месяц">›</button>' +
+        '<button class="ui-btn" data-a="now">Сегодня</button><span class="sp"></span><small>' + (mo.count ? X.checks(mo.count) + ' · ' + X.tg(mo.amount) : 'за месяц чеков нет') + '</small><button class="ui-btn" data-a="reload">Обновить</button></div>' +
+        '<div class="xp-cal" style="margin-top:10px">' + wd.map((d, i) => '<div class="xp-wd' + (i > 4 ? ' we' : '') + '">' + d + '</div>').join('');
+      mo.weeks.forEach(w => w.forEach(c => {
+        h += '<div class="xp-c' + (c.inMonth ? '' : ' out') + (c.day === today ? ' today' : '') + (c.day === ui.day ? ' sel' : '') + '" data-day="' + c.day + '"><span class="n">' + +c.day.slice(8) + '</span>' +
+          (c.count ? '<button type="button" class="xp-day" data-a="day" data-day="' + c.day + '"><b>' + X.checks(c.count) + '</b><span>' + X.tg(c.amount) + '</span></button>' : '') + '</div>';
+      }));
+      return h + '</div>' + (S.state === 'error' ? '<div class="xp-empty">' + esc(S.note) + '</div>' : S.state === 'loading' && !painted ? '<div class="xp-empty">Загрузка чеков…</div>' : '') + '</div>';
+    }
+    function paper(r) {
+      const L = (a, b, cls, id) => (id ? '<button type="button" class="pl' + (cls || '') + '" data-a="item" data-item="' + esc(id) + '" data-rc="' + esc(r.id) + '">' : '<div class="pl">') + '<span>' + a + '</span><span class="am">' + b + '</span>' + (id ? '</button>' : '</div>');
+      let h = '<div class="xp-paper"><div class="ph">ЧЕК ' + hm(r.first, TZ) + (r.first !== r.last ? '–' + hm(r.last, TZ) : '') + '</div><hr>';
+      r.goods.forEach(p => { h += L(esc(p.name) + ', ' + esc(SM.fmtQ(+p.qty, p.unit)), X.num(+p.amount), ui.item === p.item_id ? ' on' : '', p.item_id); });
+      if (r.bagS || r.bagL) h += L('Пакеты ' + (r.bagS ? 'М' + r.bagS : '') + (r.bagS && r.bagL ? ' ' : '') + (r.bagL ? 'Б' + r.bagL : ''), X.num(r.bagsAmount));
+      return h + '<hr>' + L('<b>ИТОГО</b>', '<b>' + X.num(r.amount) + ' тг</b>') + '<div class="hint">нажмите на товар — график цены</div></div>';
+    }
+    function details() {
+      const rs = S.byDay(ui.day);
+      let h = '<div class="ui-card xp-pn"><h3><span>Чеки: ' + X.dayLabel(ui.day) + '</span><button data-a="close-day" aria-label="Закрыть">×</button></h3><div class="xp-ics">';
+      rs.forEach(r => { h += '<button type="button" class="xp-ic' + (ui.open.has(r.id) ? ' on' : '') + '" data-a="rc" data-rc="' + esc(r.id) + '">' + PAPER + '<span>чек на ' + X.num(r.amount) + ' тг</span></button>'; });
+      h += '</div>'; rs.forEach(r => { if (ui.open.has(r.id)) h += paper(r); });
+      return h + '</div>';
+    }
+    function chartPanel() {
+      const pts = X.series(S.receipts, ui.item), name = pts.length ? pts[pts.length - 1].name : '';
+      let h = '<div class="ui-card xp-pn"><h3><span>Цена: ' + esc(name) + '</span><button data-a="close-item" aria-label="Закрыть">×</button></h3>';
+      if (!pts.length) return h + '<div class="xp-empty">По этому товару покупок не найдено.</div></div>';
+      const st = X.stats(pts), unit = pts[pts.length - 1].unit, cls = st.change > 0 ? 'up' : st.change < 0 ? 'dn' : '';
+      h += '<div class="xp-st"><div>первая<b>' + X.num(st.first) + '</b></div><div>последняя<b>' + X.num(st.last) + '</b></div><div>мин / макс<b>' + X.num(st.min) + ' / ' + X.num(st.max) + '</b></div><div class="' + cls + '">изменение<b>' + (st.change > 0 ? '+' : '') + String(st.change).replace('.', ',') + '%</b></div></div>';
+      const W = 460, H = 260, c = X.chart(pts, W, H), curTs = ui.day ? null : null;
+      h += '<svg class="xp-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="График цены: тг за ' + esc(unit) + '">';
+      c.yt.forEach(t => { h += '<line class="gl" x1="' + c.P.l + '" x2="' + (W - c.P.r) + '" y1="' + t.y.toFixed(1) + '" y2="' + t.y.toFixed(1) + '"/><text x="' + (c.P.l - 6) + '" y="' + (t.y + 4).toFixed(1) + '" text-anchor="end">' + X.num(t.v) + '</text>'; });
+      h += '<line class="ax" x1="' + c.P.l + '" x2="' + c.P.l + '" y1="' + c.P.t + '" y2="' + (H - c.P.b) + '"/><line class="ax" x1="' + c.P.l + '" x2="' + (W - c.P.r) + '" y1="' + (H - c.P.b) + '" y2="' + (H - c.P.b) + '"/>';
+      c.xt.forEach(t => { const d = new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(t.ts)); h += '<text x="' + t.x.toFixed(1) + '" y="' + (H - c.P.b + 16) + '" text-anchor="middle">' + X.shortDate(d) + '</text>'; });
+      if (c.pts.length > 1) h += '<polyline class="ln" points="' + c.pts.map(p => p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(' ') + '"/>';
+      c.pts.forEach(p => { h += '<circle class="pt' + (p.receipt === ui.rc ? ' cur' : '') + '" cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="4.5"><title>' + X.shortDate(p.day) + ': ' + X.num(p.price) + ' тг за ' + esc(p.unit) + '</title></circle>'; });
+      h += '</svg><div class="xp-mut" style="font-size:11px;color:var(--ui-mut)">Цена в тг за ' + esc(unit) + '; точки — покупки, по горизонтали даты от первой до последней покупки.</div>';
+      h += '<div class="xp-tbw"><table class="xp-tb">' + pts.slice().reverse().map(p => '<tr><td>' + X.shortDate(p.day) + '</td><td>' + X.num(p.price) + ' тг</td><td>' + esc(SM.fmtQ(p.qty, p.unit)) + '</td></tr>').join('') + '</table></div>';
+      return h + '</div>';
+    }
+    function render() {
+      painted = painted || S.state === 'ready';
+      const keep = [root.scrollTop];
+      const n = (ui.day ? 1 : 0) + (ui.day && ui.item ? 1 : 0);
+      root.innerHTML = '<div class="xp-cols d' + n + '">' + calendar() + (ui.day ? details() : '') + (ui.day && ui.item ? chartPanel() : '') + '</div>';
+    }
+    S.onChange = () => { if (alive) render(); };
+    root.addEventListener('click', ev => {
+      const b = ev.target.closest('[data-a]'); if (!b) return; const a = b.dataset.a;
+      if (a === 'prev' || a === 'next') { const d = new Date(Date.UTC(ui.y, ui.m - 1 + (a === 'next' ? 1 : -1), 1)); ui.y = d.getUTCFullYear(); ui.m = d.getUTCMonth() + 1; }
+      else if (a === 'now') { ui.y = +today.slice(0, 4); ui.m = +today.slice(5, 7); }
+      else if (a === 'reload') { S.load().catch(e => { if (e && e.auth && ctxIn.onAuthLost) ctxIn.onAuthLost(); }); return; }
+      else if (a === 'day') { ui.day = ui.day === b.dataset.day ? null : b.dataset.day; ui.item = null; ui.rc = null; ui.open = new Set(); if (ui.day) { const rs = S.byDay(ui.day); if (rs.length === 1) ui.open.add(rs[0].id); } }
+      else if (a === 'close-day') { ui.day = null; ui.item = null; }
+      else if (a === 'rc') { const id = b.dataset.rc; if (ui.open.has(id)) ui.open.delete(id); else ui.open.add(id); }
+      else if (a === 'item') { ui.item = ui.item === b.dataset.item ? null : b.dataset.item; ui.rc = ui.item ? b.dataset.rc : null; }
+      else if (a === 'close-item') { ui.item = null; ui.rc = null; }
+      render();
+    });
+    render(); S.load().catch(e => { if (e && e.auth && ctxIn.onAuthLost) ctxIn.onAuthLost(); });
+    return {
+      reload: () => S.load(),
+      panelSpec: [{ title: 'Чек' }, { key: 'modules.tracks.opt.rcBg', label: 'Цвет фона', fallback: '#fffdf5' }, { key: 'modules.tracks.opt.rcInk', label: 'Цвет шрифта', fallback: '#222222' }, { key: 'modules.tracks.opt.rcFont', label: 'Размер шрифта', fallback: 12 }],
+      unmount() { alive = false; S.onChange = null; if (offSS) offSS(); el.innerHTML = ''; }
+    };
+  }
+  global.LifeModules.expenses = { mount };
+})(window);
+
+</script>
+<script>
+/* ---- modules/money.js ---- */
+/* «Деньги»: вкладка из двух блоков — «Расходы» (чеки и цены) и «Моделирование» (план финансов и времени).
+   Это только переключатель: каждый блок — свой модуль (LifeModules.expenses, LifeModules.plan). Выбор запоминается.
+   LifeModules.money.mount(элемент, ctx) → {unmount, reload, panel?, panelSpec?} (панель страницы берётся у открытого блока). */
+(function (global) {
+  'use strict';
+  global.LifeModules = global.LifeModules || {};
+  const KEY = 'lifeerp-money-tab', TABS = [['expenses', 'Расходы'], ['plan', 'Моделирование']];
+  function mount(el, ctx) {
+    ctx = ctx || {}; const core = ctx.core || global.LifeCore;
+    let cur = core.store.get(KEY, null); if (!TABS.some(t => t[0] === cur)) cur = 'expenses';
+    el.innerHTML = '<div class="mn-app"><div class="mn-seg" role="tablist" aria-label="Деньги">' + TABS.map(t => '<button type="button" class="ui-btn mn-b" role="tab" data-t="' + t[0] + '">' + t[1] + '</button>').join('') + '</div><div class="mn-body"></div></div>';
+    if (!document.getElementById('mn-css')) { const s = document.createElement('style'); s.id = 'mn-css'; s.textContent = '.mn-seg{display:flex;gap:8px;margin:0 0 14px}.mn-b[aria-selected=true]{background:var(--ui-main);border-color:var(--ui-main);color:var(--ui-on-main)}'; document.head.appendChild(s); }
+    const body = el.querySelector('.mn-body'); let inst = null, alive = true;
+    function show(t, notify) {
+      if (inst) { try { inst.unmount(); } catch (e) {} inst = null; }
+      cur = t; core.store.set(KEY, t);
+      el.querySelectorAll('.mn-b').forEach(b => b.setAttribute('aria-selected', b.dataset.t === t ? 'true' : 'false'));
+      inst = global.LifeModules[t].mount(body, ctx);
+      if (notify && ctx.onPage) ctx.onPage();
+    }
+    el.querySelector('.mn-seg').addEventListener('click', ev => { const b = ev.target.closest('.mn-b'); if (b && b.dataset.t !== cur) show(b.dataset.t, true); });
+    show(cur, false);
+    return {
+      reload: () => inst && inst.reload && inst.reload(),
+      get panel() { return inst && inst.panel; }, get panelSpec() { return inst && inst.panelSpec; },
+      unmount() { alive = false; if (inst) { try { inst.unmount(); } catch (e) {} inst = null; } el.innerHTML = ''; }
+    };
+  }
+  global.LifeModules.money = { mount };
+})(window);
+
+</script>
+<script>
 /* ---- modules/state-model.js ---- */
 /* «Состояние» (компьютер): чистые расчёты без экрана и без базы. window.LifeStateModel.
    Данные те же, что у телефонной вкладки «Эмоции»: отметка (mood_marks) = момент, сила −5…5, комментарий, чувства (mood_tags).
@@ -6576,7 +6845,7 @@ html,body{margin:0;background:var(--ui-bg);color:var(--ui-text);font:14px/1.4 va
       { id: 'spheres', title: 'Сферы и дела', rail: 'Сферы', icon: 'grid', mount: (box, ctx) => global.LifeModules.spheres.mount(box, ctx) },
       { id: 'things', title: 'Вещицы', rail: 'Вещи', icon: 'box', mount: (box, ctx) => global.LifeModules.things.mount(box, ctx) },
       { id: 'tracks', title: 'Треки', rail: 'Треки', icon: 'bars', mount: (box, ctx) => global.LifeModules.tracks.mount(box, ctx) },
-      { id: 'plan', title: 'Моделирование финансов и времени', rail: 'Деньги', icon: 'coin', mount: (box, ctx) => global.LifeModules.plan.mount(box, ctx) },
+      { id: 'plan', title: 'Деньги', rail: 'Деньги', icon: 'coin', mount: (box, ctx) => global.LifeModules.money.mount(box, ctx) },
       { id: 'diary', title: 'Дневник', rail: 'Дневник', icon: 'book', mount: (box, ctx) => global.LifeModules.diary.mount(box, ctx) },
       { id: 'state', title: 'Состояние', rail: 'Состояние', icon: 'heart', mount: (box, ctx) => global.LifeModules.state.mount(box, ctx) },
       { id: 'settings', title: 'Настройки', menu: true, mount: (box, ctx) => global.LifeModules.settings.mount(box, ctx) },
@@ -6620,7 +6889,7 @@ html,body{margin:0;background:var(--ui-bg);color:var(--ui-text);font:14px/1.4 va
       top.hidden = false; rail.hidden = false; paintLogo(); $('.sh-who').textContent = core.email();
       renderTabs(); updateBanner(); applyDock(); applyTheme();
       const m = modules.find(x => x.id === tab);
-      mod = m.mount(main, { core, onAuthLost: show, go, phone: setPhone, settings: ST, profile: { name: myName, saveName } });
+      mod = m.mount(main, { core, onAuthLost: show, go, phone: setPhone, settings: ST, profile: { name: myName, saveName }, onPage: () => { if (PS) PS.refresh(pageMod(), mod); } });
       PS.refresh(pageMod(), mod); syncPg();
       loadProfiles();
     }
