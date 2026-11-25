@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=PT+Sans:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
-<script>window.LIFE_BUILD = "D102_M38_S22";</script>
+<script>window.LIFE_BUILD = "D103_M38_S22";</script>
 <div id="app"></div>
 <script>
 /* ---- core/core.js ---- */
@@ -4267,10 +4267,10 @@ window.LifePlanCss = `
     const a = Math.floor(lo / step) * step, b = Math.ceil(hi / step) * step, t = []; for (let v = a; v <= b + step / 2; v += step) t.push(Math.round(v * 1e6) / 1e6);
     return t;
   }
-  /* Геометрия графика: точки в пикселях внутри рамки w×h с полями; X — время от первой до последней покупки */
+  /* Геометрия графика: точки в пикселях внутри рамки w×h с полями; X — время от первой до последней покупки, Y — от 0 до максимальной цены */
   function chart(pts, w, h, pad4) {
     const P = Object.assign({ l: 58, r: 30, t: 14, b: 34 }, pad4 || {}), iw = w - P.l - P.r, ih = h - P.t - P.b;
-    const ys = pts.map(p => p.price), yt = ticks(Math.min(...ys), Math.max(...ys), 4), y0 = yt[0], y1 = yt[yt.length - 1];
+    const ys = pts.map(p => p.price), mx = Math.max(...ys), y0 = 0, y1 = mx, yt = ticks(0, mx, 4).filter(v => v < mx * 0.93).concat([mx]);
     const t0 = pts[0].ts, t1 = pts[pts.length - 1].ts, span = t1 - t0;
     const X = ts => P.l + 14 + (span ? (ts - t0) / span * (iw - 28) : (iw - 28) / 2), Y = v => P.t + ih - (v - y0) / (y1 - y0 || 1) * ih;
     const xt = []; const nx = span ? Math.min(5, Math.max(2, Math.floor(iw / 90))) : 1;
