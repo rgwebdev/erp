@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=PT+Sans:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
-<script>window.LIFE_BUILD = "D104_M38_S22";</script>
+<script>window.LIFE_BUILD = "D105_M38_S22";</script>
 <div id="app"></div>
 <script>
 /* ---- core/core.js ---- */
@@ -4707,12 +4707,12 @@ window.LifePlanCss = `
         (ui.mode !== 'period' ? '<button class="ui-btn" data-a="step" data-d="-1" aria-label="Назад">‹</button><button class="ui-btn" data-a="step" data-d="1" aria-label="Вперёд">›</button>' : '') + '<span class="tq-per">' + T.rangeLabel(a, b) + '</span></div>';
       if (ui.mode === 'period') h += '<div class="tq-per"><input type="date" data-a="from" value="' + ui.from + '"> — <input type="date" data-a="to" value="' + ui.to + '"><button class="ui-btn" data-a="preset" data-n="7">7 дней</button><button class="ui-btn" data-a="preset" data-n="30">30 дней</button><button class="ui-btn" data-a="preset" data-n="90">3 месяца</button><span>или два клика по календарю</span></div>';
       h += '<div class="tq-tot"><div>всего<b>' + T.fmt(total) + '</b></div>' + (n > 1 ? '<div>в среднем в день<b>' + T.fmt(total / n) + '</b></div><div>дней в периоде<b>' + n + '</b></div>' : '') + '</div>';
-      let any = false;
+      let any = false; const gmx = Math.max(1, ...[...pt.values()].map(o => Math.abs(o.sec)));
       cards.forEach(c => {
         const rows = c.tags.map(t => ({ t, o: pt.get(t.id) })).filter(x => x.o && x.o.sec !== 0).sort((x, y) => y.o.sec - x.o.sec); if (!rows.length) return; any = true;
-        const csum = rows.reduce((s, x) => s + x.o.sec, 0), mx = Math.max(...rows.map(x => Math.abs(x.o.sec)));
+        const csum = rows.reduce((s, x) => s + x.o.sec, 0), mx = gmx;
         h += '<div class="tq-grp" style="--c:' + c.color + '"><span><i></i>' + esc(c.name) + '</span><span>' + T.fmt(csum) + '</span></div>';
-        rows.forEach(({ t, o }) => { h += '<button type="button" class="tq-tag' + (ui.tag === t.id ? ' on' : '') + '" style="--c:' + c.color + '" data-a="tg" data-id="' + esc(t.id) + '"><span>' + esc(t.name) + '</span><span class="bar"><i style="width:' + Math.max(2, Math.round(Math.abs(o.sec) / mx * 100)) + '%"></i></span><span class="t">' + T.fmt(o.sec) + '</span><span class="pc">' + (total ? Math.round(o.sec / total * 100) : 0) + '%</span></button>'; });
+        rows.forEach(({ t, o }) => { h += '<button type="button" class="tq-tag' + (ui.tag === t.id ? ' on' : '') + '" style="--c:' + c.color + '" data-a="tg" data-id="' + esc(t.id) + '"><span>' + esc(t.name) + '</span><span class="bar"><i style="width:' + Math.max(1, Math.round(Math.abs(o.sec) / mx * 100)) + '%"></i></span><span class="t">' + T.fmt(o.sec) + '</span><span class="pc">' + (total ? Math.round(o.sec / total * 100) : 0) + '%</span></button>'; });
       });
       if (!any) h += '<div class="tq-empty">' + (S.state === 'ready' ? 'За выбранный период времени нет (проверьте включённые таймеры и тэги).' : '') + '</div>';
       return h + '</div>';
