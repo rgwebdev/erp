@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=PT+Sans:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
-<script>window.LIFE_BUILD = "D107_M38_S23";</script>
+<script>window.LIFE_BUILD = "D109_M38_S24";</script>
 <div id="app"></div>
 <script>
 /* ---- core/core.js ---- */
@@ -3316,7 +3316,7 @@ table.tk-g{border-collapse:separate;border-spacing:0;width:100%;font-size:var(--
 .tk-g tr.gh td{background:var(--ui-soft);text-align:left;font-weight:650;padding:4px 10px;position:static}
 .tk-g tr.ro td{font-size:12px;color:var(--ui-mut)}
 .tk-sq{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px}
-.tk-ar{opacity:.3;font-size:9px;margin-left:8px;white-space:nowrap}.tk-ar a{cursor:pointer;padding:1px 2px}.nmc:hover .tk-ar{opacity:.9}
+.tk-hid{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0}.nmc[data-act=hide]{cursor:pointer}.tk-ar{opacity:.3;font-size:9px;margin-left:8px;white-space:nowrap}.tk-ar a{cursor:pointer;padding:1px 2px}.nmc:hover .tk-ar{opacity:.9}
 .tk-c{position:relative;padding:0}.tk-c.hcm::after{content:"";position:absolute;top:0;right:0;border-top:7px solid var(--ui-bad);border-left:7px solid transparent;pointer-events:none}
 .tk-c.cs{outline:2px solid var(--ui-main);outline-offset:-2px}
 input.tk-ci{width:100%;min-width:var(--tk-cw,38px);height:30px;border:0;background:transparent;text-align:center;font:inherit;color:inherit;padding:0 2px}
@@ -3373,13 +3373,14 @@ input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,t
     /* настройки «слоты новых / сон желаний / дней до «текущей»» лежат на устройстве (в базе под них нет подходящей таблицы) */
     S.cfg = Object.assign({ cap: 3, sl: 60, thr: 75 }, core.store.get(CFG_KEY, null) || {});
     S.setCfg = (k, v) => { v = parseInt(v, 10); if (!(v > 0) || v > 365) return false; S.cfg[k] = v; core.store.set(CFG_KEY, S.cfg); changed(); return true; };
+    S.hasHidden = false; /* есть ли в базе столбец tracks.hidden (миграция 0015): иначе скрытие хранится только на устройстве */
     const track = id => D.tracks.find(t => t.id === id) || null; S.track = track;
     let idx = null; const reindex = () => { idx = M.indexEntries(D.entries); };
     S.byDay = id => (idx && idx[id]) || {};
     const noteOf = (id, day) => D.notes.find(n => n.track_id === id && n.day === day) || null; S.noteOf = noteOf;
 
     function apply(d) {
-      D.tracks = (d.tracks || []).filter(r => !r.deleted_at); const live = new Set(D.tracks.map(t => t.id));
+      D.tracks = (d.tracks || []).filter(r => !r.deleted_at); S.hasHidden = D.tracks.some(t => 'hidden' in t); const live = new Set(D.tracks.map(t => t.id));
       D.entries = (d.entries || []).filter(r => !r.deleted_at && live.has(r.track_id)); D.notes = (d.notes || []).filter(r => !r.deleted_at && live.has(r.track_id)); reindex();
     }
     const saveCache = () => core.cache.set(CACHE, { tracks: D.tracks, entries: D.entries, notes: D.notes });
@@ -3421,7 +3422,7 @@ input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,t
       return T;
     }
     const tr = (t, o) => Object.assign({ id: t.id, name: t.name, kind: t.kind, unit: t.unit, status: t.status, created: t.created, started: t.started || null, acked: t.acked || null, need: t.need || '', released: t.released || null,
-      threshold_mode: t.threshold_mode || 'none', threshold_value: t.threshold_value || 0, show_days_since: !!t.show_days_since, baseline_last: t.baseline_last || null, sort_order: t.sort_order || 0, summary_mode: t.summary_mode || 'auto', deleted_at: null }, o || {});
+      threshold_mode: t.threshold_mode || 'none', threshold_value: t.threshold_value || 0, show_days_since: !!t.show_days_since, baseline_last: t.baseline_last || null, sort_order: t.sort_order || 0, summary_mode: t.summary_mode || 'auto', deleted_at: null }, S.hasHidden ? { hidden: !!t.hidden } : {}, o || {});
     const er = (e, o) => Object.assign({ id: e.id, track_id: e.track_id, day: e.day, value: e.value, deleted_at: null }, o || {});
     const nr = (n, o) => Object.assign({ id: n.id, track_id: n.track_id, day: n.day, note: n.note, deleted_at: null }, o || {});
     let seq = 0; const newId = p => p + Date.now().toString(36) + (seq++).toString(36);
@@ -3433,12 +3434,12 @@ input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,t
       const t = tr({ id: 'h' + Date.now(), name, kind, unit: money ? 'тыс. ₸' : String(unit || '').trim().slice(0, 20), status: st, created: now, started: st === 'new' ? now : null, sort_order: nextSort(kind) });
       const T = tx(); T.put('tracks', t); T.log('create', 'track', t.id, (money ? (kind === 'in' ? 'Доход' : 'Расход') : 'Трек') + ' «' + name + '», статус ' + M.STATUS[st]); T.commit(); return { ok: true, id: t.id };
     };
-    const LBL = { name: 'название', need: 'потребность / причина', unit: 'единица', threshold_mode: 'порог: режим', threshold_value: 'порог: значение', show_days_since: 'дни с последнего события', baseline_last: 'базовая дата', summary_mode: 'последний столбец' };
+    const LBL = { name: 'название', need: 'потребность / причина', unit: 'единица', threshold_mode: 'порог: режим', threshold_value: 'порог: значение', show_days_since: 'дни с последнего события', baseline_last: 'базовая дата', summary_mode: 'последний столбец', hidden: 'скрыт/показан в таблице' };
     S.editTrack = function (id, patch) {
       const t = track(id); if (!t) return { ok: false, msg: 'Трек не найден' }; const T = tx(), next = tr(t); let any = false;
       Object.keys(patch).forEach(k => {
         let v = patch[k]; if (k === 'name') { v = String(v || '').trim(); if (!v) return; } if (k === 'threshold_value') v = parseFloat(String(v).replace(',', '.')) || 0; if (k === 'baseline_last') v = M.isDay(v) ? v : null;
-        if (k === 'need' || k === 'unit') v = String(v || '').trim(); if (k === 'show_days_since') v = !!v; if (k === 'summary_mode' && !M.SUMMARY[v]) return; if (k === 'threshold_mode' && !M.THR[v]) return;
+        if (k === 'need' || k === 'unit') v = String(v || '').trim(); if (k === 'show_days_since' || k === 'hidden') v = !!v; if (k === 'summary_mode' && !M.SUMMARY[v]) return; if (k === 'threshold_mode' && !M.THR[v]) return;
         if (!(k in next) || String(next[k] == null ? '' : next[k]) === String(v == null ? '' : v)) return;
         next[k] = v; any = true; T.log('change', 'track', id, 'Трек «' + t.name + '»: ' + (LBL[k] || k) + (k === 'need' ? ' изменено' : ''));
       });
@@ -3752,8 +3753,8 @@ input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,t
     const core = ctxIn.core || global.LifeCore, TZ = core.TZ, S = global.LifeTracksStore.create(core), D = S.D, E = global.LifeEmoStore ? global.LifeEmoStore.create(core) : null, SM = global.LifeStateModel || null;
     if (!document.getElementById('tk-css')) { const s = document.createElement('style'); s.id = 'tk-css'; s.textContent = global.LifeTracksCss; document.head.appendChild(s); }
     const u0 = core.store.get(UI_KEY, null) || {};
-    const V = { n: u0.n === 28 ? 28 : 14, off: 0, showOff: false, onlyMoney: false, onlyTr: false, cell: null, card: null, wishOpen: !!u0.wishOpen, delAsk: null, addOpen: false };
-    const saveUi = () => core.store.set(UI_KEY, { n: V.n, wishOpen: V.wishOpen });
+    const V = { n: u0.n === 28 ? 28 : 14, off: 0, showOff: false, onlyMoney: false, onlyTr: false, cell: null, card: null, wishOpen: !!u0.wishOpen, delAsk: null, addOpen: false, hidden: new Set(Array.isArray(u0.hidden) ? u0.hidden : []), hidOpen: false };
+    const saveUi = () => core.store.set(UI_KEY, { n: V.n, wishOpen: V.wishOpen, hidden: [...V.hidden] });
     const ctx = { S, D, M, V, core, TZ, esc, E, SM, render: () => render(), alive: () => alive };
     let alive = true, focusNext = null;
     let SS = ctxIn.settings; if (!SS) { SS = global.LifeSettingsStore.create(core); SS.fromCache(); }
@@ -3771,8 +3772,20 @@ input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,t
     const fmtDM = k => k.slice(8) + '.' + k.slice(5, 7);
     const colorOf = t => (t.kind === 'in' ? 'var(--cin)' : t.kind === 'out' ? 'var(--cout)' : t.status === 'new' ? 'var(--cn)' : t.status === 'off' ? 'var(--co)' : 'var(--cc)');
 
+    /* скрытие: в базе (tracks.hidden, миграция 0015), а пока столбца нет, только на этом устройстве */
+    const isHid = t => (S.hasHidden ? !!t.hidden : V.hidden.has(t.id));
+    function setHid(id, on) {
+      if (S.hasHidden) { S.editTrack(id, { hidden: on }); return; }
+      if (on) V.hidden.add(id); else V.hidden.delete(id); saveUi();
+    }
+    let moving = false;
+    function moveLocal() { /* то, что успели скрыть на устройстве до миграции, переносится в базу один раз */
+      if (moving || !S.hasHidden || !V.hidden.size || S.state !== 'ready') return; moving = true;
+      const ids = [...V.hidden]; V.hidden.clear(); saveUi();
+      setTimeout(() => { ids.forEach(id => { const t = S.track(id); if (t && !t.hidden) S.editTrack(id, { hidden: true }); }); moving = false; }, 0);
+    }
     function rowsList() {
-      return D.tracks.filter(t => (t.status === 'new' || t.status === 'cur' || (V.showOff && t.status === 'off')) && (!V.onlyMoney || t.kind !== 'habit') && (!V.onlyTr || t.kind === 'habit'))
+      return D.tracks.filter(t => !isHid(t) && (t.status === 'new' || t.status === 'cur' || (V.showOff && t.status === 'off')) && (!V.onlyMoney || t.kind !== 'habit') && (!V.onlyTr || t.kind === 'habit'))
         .sort((a, b) => M.groupOf(a) - M.groupOf(b) || (a.sort_order || 0) - (b.sort_order || 0) || (a.created < b.created ? -1 : 1));
     }
     ctx.rows = rowsList;
@@ -3780,15 +3793,17 @@ input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,t
     function render() {
       if (!alive) return;
       const today = S.today(), offs = []; for (let o = V.n - 1 + V.off; o >= V.off; o--) offs.push(o);
-      const days = offs.map(o => M.shiftDay(today, -o)), rows = rowsList(), nOff = D.tracks.filter(t => t.status === 'off').length;
+      const days = offs.map(o => M.shiftDay(today, -o)), rows = rowsList(), nOff = D.tracks.filter(t => t.status === 'off').length, hid = (moveLocal(), D.tracks.filter(isHid)).sort((a, b) => M.groupOf(a) - M.groupOf(b) || (a.sort_order || 0) - (b.sort_order || 0));
+      if (!hid.length) V.hidOpen = false;
       const noteBad = S.state === 'error' || /Нет связи|неотправленные/.test(S.note);
       const tk = kind => M.round1(D.tracks.filter(t => t.kind === kind).reduce((a, t) => a + days.reduce((b, d) => b + M.sumOf(S.byDay(t.id)[d] || []), 0), 0));
       let h = `<div class="tk-bar"><span class="tk-note ${noteBad ? 'warn' : ''}" role="status">${S.state === 'loading' ? 'Загрузка…' : esc(S.note)}</span><button class="tk-btn" data-act="reload">Обновить</button></div>`;
       if (S.state === 'error' && !D.tracks.length) h += `<div class="tk-empty">${esc(S.note)}</div>`;
       else {
         h += `<div class="tk-row"><button class="tk-btn sm" data-act="nav" data-n="7">‹ неделя</button><span class="tk-mut">${fmtDM(days[0])} – ${fmtDM(days[days.length - 1])}</span><button class="tk-btn sm" data-act="nav" data-n="-7" ${V.off ? '' : 'disabled'}>неделя ›</button><span style="flex:1"></span>` +
-          `<button class="tk-btn sm ${V.showOff ? 'on' : ''}" data-act="showoff">Неактивные (${nOff})</button><button class="tk-btn sm ${V.onlyMoney ? 'on' : ''}" data-act="onlymoney">Только деньги</button><button class="tk-btn sm ${V.onlyTr ? 'on' : ''}" data-act="onlytr">Только треки</button>` +
+          (hid.length ? `<button class="tk-btn sm ${V.hidOpen ? 'on' : ''}" data-act="hidlist" title="Треки, скрытые из таблицы">Отобразить (${hid.length})</button>` : '') + `<button class="tk-btn sm ${V.showOff ? 'on' : ''}" data-act="showoff">Неактивные (${nOff})</button><button class="tk-btn sm ${V.onlyMoney ? 'on' : ''}" data-act="onlymoney">Только деньги</button><button class="tk-btn sm ${V.onlyTr ? 'on' : ''}" data-act="onlytr">Только треки</button>` +
           `<button class="tk-btn sm ${V.n === 14 ? 'on' : ''}" data-act="span" data-n="14">14 дн.</button><button class="tk-btn sm ${V.n === 28 ? 'on' : ''}" data-act="span" data-n="28">28 дн.</button><button class="tk-btn primary sm" data-act="add-open">+ Добавить</button></div>`;
+        if (V.hidOpen && hid.length) h += `<div class="tk-hid"><span class="tk-mut">Скрыты в таблице, нажмите, чтобы вернуть:</span>${hid.map(t => `<button class="tk-btn sm" data-act="unhide" data-t="${esc(t.id)}">${esc(t.name)}</button>`).join('')}</div>`;
         h += global.LifeTracksCard.addForm(ctx);
         h += `<div class="tk-gw"><table class="tk-g"><tr><th class="nmc"></th>${days.map((d, j) => `<th class="${offs[j] === 0 ? 'td' : ''}">${d.slice(8)}<br><span class="tk-mut" style="${offs[j] === 0 ? 'color:#fff;opacity:.85' : ''}">${M.weekday(d)}</span></th>`).join('')}<th>Итог</th></tr>`;
         if (E && SM && (E.D.marks.length || rows.length)) {
@@ -3802,7 +3817,7 @@ input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,t
           if (g !== lg) { lg = g; h += `<tr class="gh"><td colspan="${days.length + 2}">${M.GROUPS[g]}${g === 1 ? ` <span style="color:var(--cin);font-weight:400;font-size:12px">${M.fmt(tk('in'))}</span>` : g === 2 ? ` <span style="color:var(--cout);font-weight:400;font-size:12px">${M.fmt(tk('out'))}</span>` : ''}</td></tr>`; }
           const by = S.byDay(t.id), sums = days.map(d => (by[d] ? M.sumOf(by[d]) : null)), mx = Math.max(0, ...sums.filter(x => x != null)), col = colorOf(t), sm = M.summarize(t.summary_mode, days.map((d, j) => ({ day: d, sum: sums[j] })));
           const thr = t.kind === 'habit' && t.threshold_mode && t.threshold_mode !== 'none' ? t : null, ds = t.show_days_since ? M.daysSince(t, by, today) : null;
-          h += `<tr><td class="nmc ${V.card === t.id ? 'sel' : ''}" data-act="card" data-t="${esc(t.id)}" title="${esc(t.name)}">${t.kind === 'habit' ? `<span class="tk-sq" style="background:${col}"></span>` : t.kind === 'in' ? '＋ ' : '− '}<b>${esc(t.name)}</b>${t.kind === 'habit' ? ` <span class="tk-mut">${esc(t.unit || 'раз')}</span>` : ''}<span class="tk-ar"><a data-act="mv" data-t="${esc(t.id)}" data-d="-1">▲</a><a data-act="mv" data-t="${esc(t.id)}" data-d="1">▼</a></span></td>`;
+          h += `<tr><td class="nmc ${V.card === t.id ? 'sel' : ''}" data-act="hide" data-t="${esc(t.id)}" title="${esc(t.name)} · щелчок скрывает трек из таблицы">${t.kind === 'habit' ? `<span class="tk-sq" style="background:${col}"></span>` : t.kind === 'in' ? '＋ ' : '− '}<b>${esc(t.name)}</b>${t.kind === 'habit' ? ` <span class="tk-mut">${esc(t.unit || 'раз')}</span>` : ''}<span class="tk-ar"><a data-act="card" data-t="${esc(t.id)}" title="Карточка трека: правка, детали">≡</a><a data-act="mv" data-t="${esc(t.id)}" data-d="-1">▲</a><a data-act="mv" data-t="${esc(t.id)}" data-d="1">▼</a></span></td>`;
           days.forEach((d, j) => {
             const s = sums[j], has = s != null, cm = S.noteOf(t.id, d), on = V.cell && V.cell.t === t.id && V.cell.d === d; let bg = '';
             if (has) { if (thr) bg = `color-mix(in srgb,${M.okThreshold(thr.threshold_mode, thr.threshold_value, s) ? 'var(--ok)' : 'var(--bad)'} 55%,transparent)`; else if (s > 0) bg = `color-mix(in srgb,${col} ${Math.round(25 + s / (mx || 1) * 65)}%,transparent)`; }
@@ -3863,6 +3878,9 @@ input.tk-ci:focus{outline:none;background:color-mix(in srgb,var(--ui-card) 70%,t
       if (a === 'reload') { S.load(); if (E) E.load(); return; }
       if (a === 'sumcyc') { const tk = S.track(t.dataset.t); if (!tk) return; const cur = !tk.summary_mode || tk.summary_mode === 'auto' ? 'sum' : tk.summary_mode; S.editTrack(tk.id, { summary_mode: cur === 'sum' ? 'avg' : cur === 'avg' ? 'avgall' : cur === 'avgall' ? 'none' : 'sum' }); return; }
       if (a === 'mv') { ev.stopPropagation(); S.move(t.dataset.t, +t.dataset.d, rowsList().map(x => x.id)); render(); return; }
+      if (a === 'hide') { if (V.card === t.dataset.t) V.card = null; if (V.cell && V.cell.t === t.dataset.t) V.cell = null; setHid(t.dataset.t, true); render(); return; }
+      if (a === 'hidlist') { V.hidOpen = !V.hidOpen; render(); return; }
+      if (a === 'unhide') { setHid(t.dataset.t, false); render(); return; }
       if (a === 'card') { focusNext = null; V.card = V.card === t.dataset.t ? null : t.dataset.t; V.cell = null; V.delAsk = null; render(); return; }
       await global.LifeTracksCard.onClick(ctx, t, a, ev);
     });
