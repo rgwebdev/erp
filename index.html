@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=PT+Sans:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
-<script>window.LIFE_BUILD = "D105_M38_S22";</script>
+<script>window.LIFE_BUILD = "D107_M38_S23";</script>
 <div id="app"></div>
 <script>
 /* ---- core/core.js ---- */
@@ -817,7 +817,7 @@
         shade: (type !== 'task' && Number.isInteger(r.shade) && r.shade >= 0 && r.shade < 16) ? r.shade : null,
         actDays: +r.act_days > 0 ? +r.act_days : 0, actMin: +r.act_min > 0 ? +r.act_min : 0,
         timerStart: r.timer_start ? tsOf(r.timer_start) : null, created: tsOf(r.created_at),
-        planMin: 0, planMoney: 0, entries: [], thingId: null, dependsOn: null, dependsThing: null };
+        planMin: 0, planMoney: 0, entries: [], comments: [], thingId: null, dependsOn: null, dependsThing: null };
     });
     const idx = {}; items.forEach(i => { idx[i.id] = i; });
     (d.times || []).forEach(t => {
@@ -831,6 +831,8 @@
       if (m.kind === 'plan') { if (m.direction !== 'in') it.planMoney += +m.amount || 0; }
       else if (m.kind === 'fact') it.entries.push({ id: m.id, tbl: 'money_entries', n: +((m.meta || {}).n) || 0, kind: 'money', sec: 0, amount: (m.direction === 'in' ? -1 : 1) * (+m.amount || 0), ts: tsOf(m.created_at), start: null, comment: m.comment || '' });
     });
+    (d.comments || []).forEach(c => { const it = idx[c.item_id]; if (it) it.comments.push({ id: c.id, title: c.title || '', body: c.body || '', ts: tsOf(c.created_at), upd: tsOf(c.updated_at) }); });
+    items.forEach(i => i.comments.sort((a, b) => b.ts - a.ts));
     (d.links || []).forEach(l => {
       const it = idx[l.from_id]; if (!it) return;
       if (l.relation === 'depends_on' && l.to_module === 'spheres') it.dependsOn = l.to_id;
@@ -949,7 +951,7 @@
 .d-ct{display:flex;align-items:baseline;gap:4px}
 .d-tog{width:10px;height:10px;font-size:7px;line-height:1;border:0;background:transparent;padding:0;flex:none}
 .d-imp{flex:none;font-size:9px;user-select:none;margin-right:2px}.d-imp.i0{color:var(--ui-mut)}.d-imp.i1{color:var(--ui-bad);font-weight:600}.d-imp.i2{color:#ef6c00;font-weight:600}
-.d-title{font-weight:400;flex:1;min-width:0;white-space:nowrap}.d-title.proj{font-weight:600}.d-title.tlink{cursor:pointer}.d-title.tlink:hover{text-decoration:underline}.d-title.redkid{color:var(--ui-bad)}
+.d-title{font-weight:400;flex:1;min-width:0;white-space:nowrap}.d-title.proj{font-weight:600}.d-cml{font-size:11px;font-weight:400;color:var(--ui-mut);opacity:.8;margin-left:6px;white-space:nowrap}.d-cm{margin:0 0 12px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--ui-soft)}.d-cmh{font-weight:600;font-size:13px;margin-bottom:6px}.d-cmf{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}.d-cmf input,.d-cmf textarea{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--ui-card);color:var(--text);width:100%;resize:vertical}.d-cmbt{display:flex;gap:6px}.d-cme{border-top:1px solid var(--line);padding:6px 0}.d-cme.editing{background:color-mix(in srgb,var(--ui-main) 10%,transparent)}.d-cmm{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:13px}.d-cmm .d-muted{font-size:11px}.d-cmx{font-size:13px;white-space:pre-wrap;word-break:break-word;margin-top:3px}.d-title.tlink{cursor:pointer}.d-title.tlink:hover{text-decoration:underline}.d-title.redkid{color:var(--ui-bad)}
 .d-lnk{color:var(--ui-mut);font-weight:400}
 .d-sts{flex:none;text-align:right;font-size:9.4px;white-space:nowrap;margin-left:10px;opacity:.5}.d-sts .nw{display:block;line-height:1.2;white-space:nowrap}
 .d-sts .fact{color:#4a90e2}.d-sts .plan{color:#a66bd0}
@@ -1015,7 +1017,7 @@
     const { core, root, MOD, ui, uiSave } = env;
     const render = () => env.render();
       /* ---------- запись: полные строки в очередь ядра ---------- */
-      const TBL = { spheres: 'spheres', sphere_groups: 'groups', sphere_items: 'items', time_entries: 'times', money_entries: 'moneys', entity_links: 'links', things: 'things' };
+      const TBL = { spheres: 'spheres', sphere_groups: 'groups', sphere_items: 'items', time_entries: 'times', money_entries: 'moneys', entity_links: 'links', things: 'things', sphere_comments: 'comments' };
       const STEP = 1024, forms = [], hooks = {};
       const sortOf = (a, b) => (a.sort || 0) - (b.sort || 0) || tsOf(a.created_at) - tsOf(b.created_at);
       const rawRow = (table, id) => (env.raw[TBL[table]] || []).find(r => r.id === id);
@@ -1111,6 +1113,7 @@
       function removeItems(T, ids) {
         const set = new Set(ids); let ent = 0;
         (env.raw.items || []).filter(r => set.has(r.id)).forEach(r => T.del('sphere_items', r));
+        (env.raw.comments || []).filter(r => set.has(r.item_id)).forEach(r => T.del('sphere_comments', r));
         (env.raw.times || []).filter(r => set.has(r.subject_id)).forEach(r => { if (r.kind !== 'plan') ent++; T.del('time_entries', r); });
         (env.raw.moneys || []).filter(r => set.has(r.subject_id)).forEach(r => { if (r.kind !== 'plan') ent++; T.del('money_entries', r); });
         (env.raw.links || []).filter(l => (l.from_module === MOD && set.has(l.from_id)) || (l.to_module === MOD && set.has(l.to_id))).forEach(l => T.del('entity_links', l));
@@ -1652,6 +1655,73 @@
 
 </script>
 <script>
+/* ---- modules/spheres-comments.js ---- */
+/* «Сферы и дела»: комментарии к проекту и задаче (таблица sphere_comments, миграция 0014).
+   Каждый комментарий: название, текст, время создания и правки. Показываются в окне дела (по клику на название),
+   там же добавление, правка и удаление. Подключается из экрана: LifeSpheresComments.install(env, E). Доступ: window.LifeSpheresComments */
+(function (global) {
+  'use strict';
+  const M = global.LifeSpheresModel, { esc, fmtDT } = M;
+
+  function install(env, E) {
+    const { core, root, MOD } = env, { tx, rawRow, newId, getItem, pathOf } = E;
+    const draft = { id: null, item: null, title: '', body: '' };
+    const iso = ms => new Date(ms).toISOString();
+    const reset = id => { draft.id = null; draft.item = id; draft.title = ''; draft.body = ''; };
+    const mine = id => (env.raw.comments || []).find(r => r.id === id);
+
+    function html(it) {
+      if (draft.item !== it.id) reset(it.id);
+      const list = it.comments || [], editing = draft.id && list.find(c => c.id === draft.id);
+      if (draft.id && !editing) reset(it.id);
+      let h = `<div class="d-cm" data-cm-box><div class="d-cmh">Комментарии${list.length ? ' · ' + list.length : ''}</div>`
+        + `<div class="d-cmf"><input class="d-cmt" type="text" maxlength="200" placeholder="Название комментария" value="${esc(draft.title)}">`
+        + `<textarea class="d-cmb" rows="3" placeholder="Текст комментария">${esc(draft.body)}</textarea>`
+        + `<div class="d-cmbt"><button class="d-btn primary" data-act="cm-save" data-id="${esc(it.id)}">${draft.id ? 'Сохранить' : 'Добавить'}</button>${draft.id ? `<button class="d-btn" data-act="cm-cancel" data-id="${esc(it.id)}">Отмена</button>` : ''}</div></div>`;
+      list.forEach(c => {
+        const ed = c.upd && c.upd - c.ts > 60000;
+        h += `<div class="d-cme${draft.id === c.id ? ' editing' : ''}"><div class="d-cmm"><b>${esc(c.title) || '<i>без названия</i>'}</b><span class="d-muted">${esc(fmtDT(c.ts))}${ed ? ' · изменён ' + esc(fmtDT(c.upd)) : ''}</span><span class="d-grow"></span>`
+          + `<button class="d-sm" data-act="cm-edit" data-id="${esc(it.id)}" data-cid="${esc(c.id)}">изменить</button><button class="d-sm" data-act="cm-del" data-id="${esc(it.id)}" data-cid="${esc(c.id)}">удалить</button></div>`
+          + (c.body ? `<div class="d-cmx">${esc(c.body)}</div>` : '') + '</div>';
+      });
+      return h + '</div>';
+    }
+    /* введённое запоминается, чтобы перерисовка окна его не стирала */
+    root.addEventListener('input', e => {
+      const t = e.target; if (!t.classList) return;
+      if (t.classList.contains('d-cmt')) draft.title = t.value; else if (t.classList.contains('d-cmb')) draft.body = t.value;
+    });
+    function save(id) {
+      const it = getItem(id); if (!it) return;
+      const box = root.querySelector('[data-cm-box]'), title = (box ? box.querySelector('.d-cmt').value : draft.title).trim(), body = (box ? box.querySelector('.d-cmb').value : draft.body).trim();
+      if (!title && !body) { if (box) box.querySelector('.d-cmt').focus(); return; }
+      const T = tx(), w = pathOf(it);
+      if (draft.id) {
+        const r = mine(draft.id); if (!r) { reset(id); env.render(); return; }
+        T.put('sphere_comments', Object.assign({}, r, { title, body }));
+        T.log('change', 'item', id, 'Комментарий изменён', w, title || body.slice(0, 40));
+      } else {
+        const st = core.now();
+        T.put('sphere_comments', { id: newId('cm'), item_id: id, title, body, created_at: iso(Date.now()), updated_at: st, deleted_at: null });
+        T.log('create', 'item', id, 'Комментарий добавлен', w, title || body.slice(0, 40));
+      }
+      reset(id); T.commit();
+    }
+    function edit(id, cid) { const c = (getItem(id).comments || []).find(x => x.id === cid); if (!c) return; draft.id = cid; draft.item = id; draft.title = c.title; draft.body = c.body; env.render(); const t = root.querySelector('.d-cmt'); if (t) t.focus(); }
+    function cancel(id) { reset(id); env.render(); }
+    function del(id, cid, btn) {
+      if (!btn.dataset.armed) { btn.dataset.armed = '1'; btn.textContent = 'Точно?'; return; }
+      const r = mine(cid), it = getItem(id); if (!r || !it) return;
+      const T = tx(); T.del('sphere_comments', r); T.log('delete', 'item', id, 'Комментарий удалён', pathOf(it), r.title || ''); if (draft.id === cid) reset(id); T.commit();
+    }
+    function focusBox() { const b = root.querySelector('[data-cm-box]'); if (b) b.scrollIntoView({ block: 'start' }); }
+    return { html, save, edit, cancel, del, focusBox, reset };
+  }
+  global.LifeSpheresComments = { install };
+})(window);
+
+</script>
+<script>
 /* ---- modules/spheres.js ---- */
 /* Модуль «Сферы и дела» (СД): экран и загрузка данных. Остальное — в соседних файлах:
    spheres-model.js (расчёты и модель), spheres-css.js (стили), spheres-edit.js (правки, формы, перетаскивание).
@@ -1672,7 +1742,7 @@
     let ui = Object.assign({ showProj: true, showTask: true, zeroOnly: false, showDone: false, usd: false, imp: [true, true, true], col: {} }, store.get(UI_KEY, {}) || {});
     if (!Array.isArray(ui.imp) || ui.imp.length !== 3) ui.imp = [true, true, true];
     if (!ui.col || typeof ui.col !== 'object') ui.col = {};
-    let state = 'loading', note = '', errText = '', alive = true, loadedAt = 0, detailsId = null, ctx = null;
+    let state = 'loading', note = '', errText = '', alive = true, loadedAt = 0, detailsId = null, ctx = null, noComments = false;
     const offs = [];
     if (!document.getElementById('sp-css')) { const s = document.createElement('style'); s.id = 'sp-css'; s.textContent = CSS; document.head.appendChild(s); }
     el.innerHTML = '';
@@ -1685,6 +1755,7 @@
       get detailsId() { return detailsId; }, set detailsId(v) { detailsId = v; } };
     const E = global.LifeSpheresEdit.install(env);
     const En = global.LifeSpheresEntries.install(env, E);
+    const Cm = global.LifeSpheresComments.install(env, E);
     const { forms, getItem, itemForm, groupForm, sphereForm, deleteItem, deleteGroup, deleteSphere, toggleDone, cycleImp, openMenu, closeMenu } = E;
 
     /* ---------- данные ---------- */
@@ -1699,14 +1770,17 @@
       try {
         const nd = ['deleted_at=is.null'];
         const sub = ['subject_module=eq.spheres', 'deleted_at=is.null'];
-        const [spheres, groups, items, times, moneys, links, things, fx, thEntries] = await Promise.all([
+        const [spheres, groups, items, times, moneys, links, things, fx, thEntries, comments] = await Promise.all([
           core.select('spheres', { filters: nd }), core.select('sphere_groups', { filters: nd }), core.select('sphere_items', { filters: nd }),
           core.select('time_entries', { filters: sub }), core.select('money_entries', { filters: sub }),
           core.select('entity_links', { filters: ['from_module=eq.spheres', 'deleted_at=is.null'] }),
           core.select('things_view'), core.select('fx_rates', { filters: nd }),
-                    core.select('money_entries', { filters: ['subject_module=eq.things', 'kind=eq.estimate', 'deleted_at=is.null'] })
+                    core.select('money_entries', { filters: ['subject_module=eq.things', 'kind=eq.estimate', 'deleted_at=is.null'] }),
+          /* без миграции 0014 таблицы нет: остальное работает, комментариев просто не видно */
+          core.select('sphere_comments', { filters: nd }).catch(e => { if (e && (e.auth || e.net)) throw e; return null; })
         ]);
-        apply({ spheres, groups, items, times, moneys, links, things, fx, thEntries });
+        apply({ spheres, groups, items, times, moneys, links, things, fx, thEntries, comments: comments || (raw && raw.comments) || [] });
+        noComments = comments == null;
         core.cache.set(MOD, raw); state = 'ready'; note = ''; loadedAt = Date.now();
       } catch (e) {
         if (e.auth) { state = 'error'; errText = 'нужно войти'; if (ctxIn.onAuthLost) ctxIn.onAuthLost(); render(); return; }
@@ -1745,12 +1819,12 @@
     <div class="d-ct">
       ${kids.length ? `<button class="d-tog" data-act="toggle" data-id="${esc(it.id)}" title="Свернуть/развернуть">${isCol(it.id) ? '+' : '−'}</button>` : ''}
        ${isProj ? '' : timerBtn}<span class="d-imp i${it.imp || 0}" data-act="imp"  data-id="${eid}" title="Метка важности: клик меняет">${IMP[it.imp || 0]}</span>
-      <div class="d-title ${isProj ? 'proj' : 'tlink'}${c.hasRed(it.id) ? ' redkid' : ''}"${isProj ? '' : ` data-act="details" data-id="${esc(it.id)}" title="Записи времени и расходов"`}>${esc(it.title)}${(!isProj && it.thingId && c.thById[it.thingId]) ? ' <span class="d-lnk">(вещица)</span>' : ''}</div>
+      <div class="d-title ${isProj ? 'proj' : ''} tlink${c.hasRed(it.id) ? ' redkid' : ''}" data-act="details" data-id="${esc(it.id)}" title="Комментарии, записи времени и расходов">${esc(it.title)}${(it.comments || []).length ? ' <span class="d-cml">смотреть комментарии</span>' : ''}${(!isProj && it.thingId && c.thById[it.thingId]) ? ' <span class="d-lnk">(вещица)</span>' : ''}</div>
       <div class="d-sts"><span class="nw fact" title="Факт: время · деньги"><b data-live="time" data-id="${eid}">${fmtDur(t.sec)}</b> · <b>${fmtMoney(t.money)}</b></span><span class="nw plan" title="План: время · деньги">${fmtMin(t.planMin)} · ${fmtPlanMoney(t.planMoney)}</span></div>
       ${isProj ? '' : menuBtn('d-more d-more-t')}
     </div>
     ${it.note ? `<div class="d-note">${esc(it.note)}</div>` : ''}
-    ${isProj ? `<div class="d-btns">${timer}<button class="d-sm" data-act="details" data-id="${eid}" title="Записи времени и расходы">≡</button><button class="d-sm" data-act="addp" data-id="${eid}">+проект</button><button class="d-sm" data-act="addt" data-id="${eid}">+задача</button>${menuBtn('d-more')}</div>` : (timer ? `<div class="d-btns">${timer}</div>` : '')}
+    ${isProj ? `<div class="d-btns">${timer}<button class="d-sm" data-act="details" data-id="${eid}" title="Записи времени и расходы">≡</button><button class="d-sm" data-act="addp" data-id="${eid}">+проект</button><button class="d-sm" data-act="addt" data-id="${eid}">+задача</button>${menuBtn('d-more')}</div>` : ''}
     ${actLine}
     ${kids.length && !isCol(it.id) ? `<div class="d-kids">${flat(kids, c).map(k => cardHtml(k, c, sp)).join('')}</div>` : ''}
   </div>`;
@@ -1815,6 +1889,7 @@
         ${it.type === 'project' ? `<div><small>Только по самому проекту</small><b>${fmtDur(own.sec)} · ${fmtMoney(own.money)}</b></div>` : ''}<div><small>Статус</small><b>${esc(stTxt) || '—'}</b></div></div>
       ${it.note ? `<div class="d-note" style="max-width:none;margin-bottom:8px">${esc(it.note)}</div>` : ''}
       ${dep.length ? `<div class="d-muted" style="margin-bottom:8px">${dep.join('<br>')}</div>` : ''}
+      ${noComments ? '<div class="d-warn">Комментарии пока не сохраняются: примените в базе файл 0014_sphere_comments.sql.</div>' : ''}${Cm.html(it)}
       <div class="d-dbtns"><button class="d-btn ${it.timerStart ? 'danger' : 'primary'}" data-act="timer" data-id="${esc(it.id)}">${it.timerStart ? 'Стоп <span data-live="clock" data-id="' + esc(it.id) + '">' + fmtClock((c.now - it.timerStart) / 1000) + '</span>' : 'Запустить таймер'}</button>
               <button class="d-btn" data-act="det-exp" data-id="${esc(it.id)}">+ Расход</button><button class="d-btn" data-act="det-plus" data-id="${esc(it.id)}">+ Время</button><button class="d-btn" data-act="det-minus" data-id="${esc(it.id)}">− Время</button></div>
             ${entryRows(it)}</div></div></div>`;
@@ -1872,7 +1947,11 @@
         case 'f-done': ui.showDone = !ui.showDone; uiSave(); render(); break;
         case 'f-imp': ui.imp[+b.dataset.v] = !ui.imp[+b.dataset.v]; uiSave(); render(); break;
         case 'f-cur': ui.usd = !ui.usd; uiSave(); render(); break;
-        case 'details': detailsId = id; render(); break;
+        case 'details': detailsId = id; render(); if (b.classList.contains('tlink') && (getItem(id).comments || []).length) Cm.focusBox(); break;
+        case 'cm-save': Cm.save(id); break;
+        case 'cm-edit': Cm.edit(id, b.dataset.cid); break;
+        case 'cm-cancel': Cm.cancel(id); break;
+        case 'cm-del': Cm.del(id, b.dataset.cid, b); break;
         case 'reload': load(); break;
         case 'imp': cycleImp(id); break;
         case 'menu': openMenu(b); break;
@@ -6730,7 +6809,7 @@ window.LifePageStyleCss = `
   'use strict';
   const APP = 'lifeerp-backup', FORMAT = 1;
   /* родители раньше детей (внешние ключи); неизвестные таблицы идут в конце в порядке файла */
-  const ORDER = ['currencies', 'fx_rates', 'thing_groups', 'things', 'sphere_groups', 'spheres', 'sphere_items', 'shop_items', 'shop_receipts', 'shop_settings', 'shop_list_state', 'shop_purchases',
+  const ORDER = ['currencies', 'fx_rates', 'thing_groups', 'things', 'sphere_groups', 'spheres', 'sphere_items', 'sphere_comments', 'shop_items', 'shop_receipts', 'shop_settings', 'shop_list_state', 'shop_purchases',
     'timer_cards', 'timer_targets', 'timer_runs', 'time_entries', 'money_entries', 'entity_links', 'mood_tags', 'mood_marks', 'diaries', 'diary_entries', 'tracks', 'track_entries', 'track_day_notes',
     'activities', 'activity_cost_items', 'plan_slots'];
   /* служебные столбцы, которые сервер заполняет сам: при восстановлении не отправляются */
