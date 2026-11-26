@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=PT+Sans:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
-<script>window.LIFE_BUILD = "D110_M38_S24";</script>
+<script>window.LIFE_BUILD = "D111_M38_S24";</script>
 <div id="app"></div>
 <script>
 /* ---- core/core.js ---- */
@@ -4407,6 +4407,8 @@ window.LifePlanCss = `
 .xp-pn h3 button{border:0;background:none;color:var(--ui-mut);cursor:pointer;font-size:16px;line-height:1}
 .xp-ics{display:flex;flex-wrap:wrap;gap:8px}
 .xp-ic{display:flex;flex-direction:column;align-items:center;gap:2px;width:84px;padding:6px 4px;border:1px solid var(--ui-line);border-radius:8px;background:var(--ui-card);color:var(--ui-text);font:inherit;font-size:11px;line-height:1.2;text-align:center;cursor:pointer}
+.xp-ic{position:relative}.xp-dot{position:absolute;top:4px;right:4px;width:9px;height:9px;border-radius:50%;background:#2d9f5a;box-shadow:0 0 0 2px var(--ui-card)}
+.xp-db{display:block;margin:8px 0 0;padding:3px 10px;border:1px solid rgba(0,0,0,.25);border-radius:6px;background:rgba(0,0,0,.06);color:inherit;font:inherit;font-family:inherit;font-size:.95em;cursor:pointer;opacity:.75}.xp-db:hover{opacity:1}.xp-db.on{background:#2d9f5a;border-color:#2d9f5a;color:#fff;opacity:1;font-weight:600}.xp-note{color:var(--ui-bad);font-size:12px;margin-top:6px}
 .xp-ic svg{width:22px;height:26px;color:#2d9f5a}.xp-ic.on{border-color:#2d9f5a;box-shadow:0 0 0 1px #2d9f5a inset}
 .xp-paper{display:inline-block;margin-top:10px;max-width:100%;overflow-x:auto;box-sizing:border-box;padding:8px 12px 14px;background:var(--rc-bg,#fffdf5);color:var(--rc-ink,#222);font:var(--rc-fs,12px)/1.25 ui-monospace,Menlo,Consolas,monospace;white-space:nowrap;border:1px solid rgba(0,0,0,.18);border-radius:2px;box-shadow:0 2px 6px rgba(0,0,0,.15);
   -webkit-mask:conic-gradient(from -45deg at bottom,#0000,#000 1deg 89deg,#0000 90deg) 50%/10px 100%;mask:conic-gradient(from -45deg at bottom,#0000,#000 1deg 89deg,#0000 90deg) 50%/10px 100%}
@@ -4435,16 +4437,33 @@ window.LifePlanCss = `
 (function (global) {
   'use strict';
   function create(core) {
-    const S = { D: { receipts: [], lines: [] }, state: 'idle', note: '', onChange: null, receipts: [] };
+    const S = { D: { receipts: [], lines: [], tracks: [], rcEntries: [] }, state: 'idle', note: '', onChange: null, receipts: [] };
     const SM = global.LifeShopModel;
     S.load = async function () {
       S.state = 'loading'; S.note = ''; if (S.onChange) S.onChange();
       try {
         const nd = ['deleted_at=is.null'];
-        const [receipts, lines] = await Promise.all([core.select('shop_receipts', { filters: nd }), core.select('shop_purchases', { filters: nd })]);
-        S.D = { receipts, lines }; S.receipts = SM.receiptsOf(S.D); S.state = 'ready';
+        const [receipts, lines, tracks, rcEntries] = await Promise.all([core.select('shop_receipts', { filters: nd }), core.select('shop_purchases', { filters: nd }), core.select('tracks', { filters: nd.concat('kind=eq.out') }).catch(() => []), core.select('track_entries', { filters: nd.concat('id=like.te_rc_*') }).catch(() => [])]);
+        S.D = { receipts, lines, tracks, rcEntries }; S.receipts = SM.receiptsOf(S.D); S.state = 'ready';
       } catch (e) { if (e && e.auth) throw e; S.state = 'error'; S.note = (e && e.message) || 'Не удалось загрузить чеки'; }
       if (S.onChange) S.onChange();
+    };
+    /* «В базу»: те же правила и те же записи, что у карманных «Покупок» (id 'te_rc_<чек>_<трек>', сумма / 1000 до десятых, день чека) */
+    const RC = 'te_rc_', thousand = amount => Math.round(amount / 100) / 10;
+    S.outTracks = () => S.D.tracks.filter(t => t.kind === 'out' && !t.deleted_at).slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || String(a.name).localeCompare(String(b.name), 'ru'));
+    const rcRows = rid => S.D.rcEntries.filter(e => String(e.id).startsWith(RC + rid + '_') && !e.deleted_at);
+    S.receiptBase = rid => { const e = rcRows(rid).find(x => S.D.tracks.some(t => t.id === x.track_id)); return e ? { track: S.D.tracks.find(t => t.id === e.track_id), value: +e.value } : null; };
+    S.cycleReceipt = function (rid) {
+      const r = S.receipts.find(x => x.id === rid); if (!r) return { ok: false, msg: 'Чек не найден.' };
+      const outs = S.outTracks(); if (!outs.length) return { ok: false, msg: 'Нет треков расходов: создайте их во вкладке «Треки».' };
+      const cur = S.receiptBase(rid), i = cur ? outs.findIndex(t => t.id === cur.track.id) : -1, now = core.now(), out = [];
+      rcRows(rid).forEach(e => { const d = Object.assign({}, e, { deleted_at: now, updated_at: now }); out.push(d); });
+      const next = i + 1 < outs.length ? outs[i + 1] : null, v = thousand(r.amount);
+      if (next) out.push({ id: RC + rid + '_' + next.id, track_id: next.id, day: r.date, value: v, deleted_at: null, updated_at: now });
+      const send = out.map(x => { const o = Object.assign({}, x); delete o.user_id; delete o.updated_by; return o; });
+      try { core.commit({ writes: [{ table: 'track_entries', rows: send }], journal: [{ op: 'change', module: 'shop', entity_kind: 'receipt', entity_id: rid, summary: next ? `Чек ${r.date} (${r.amount} тг) в базу: «${next.name}» +${v}` : `Чек ${r.date} (${r.amount} тг): убран из базы` }] }); } catch (e) { return { ok: false, msg: 'Не сохранено: ' + (e.message || e) }; }
+      S.D.rcEntries = S.D.rcEntries.filter(e => !out.some(o => o.id === e.id)).concat(out.filter(o => !o.deleted_at));
+      if (S.onChange) S.onChange(); return { ok: true, track: next, value: v };
     };
     S.byDay = day => S.receipts.filter(r => r.date === day);
     return S;
@@ -4474,7 +4493,7 @@ window.LifePlanCss = `
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
     const u0 = core.store.get(UI_KEY, null) || {};
     const ui = { y: +today.slice(0, 4), m: +today.slice(5, 7), day: null, open: new Set(), item: null };
-    let alive = true, painted = false;
+    let alive = true, painted = false, note = '';
     el.innerHTML = '<div class="xp-app"></div>'; const root = el.firstChild;
     const hm = global.LifeTimersModel.hm;
 
@@ -4507,13 +4526,15 @@ window.LifePlanCss = `
       let h = '<div class="xp-paper"><div class="ph">ЧЕК ' + hm(r.first, TZ) + (r.first !== r.last ? '–' + hm(r.last, TZ) : '') + '</div><hr>';
       r.goods.forEach(p => { h += L(esc(p.name) + ', ' + esc(SM.fmtQ(+p.qty, p.unit)), X.num(+p.amount), ui.item === p.item_id ? ' on' : '', p.item_id); });
       if (r.bagS || r.bagL) h += L('Пакеты ' + (r.bagS ? 'М' + r.bagS : '') + (r.bagS && r.bagL ? ' ' : '') + (r.bagL ? 'Б' + r.bagL : ''), X.num(r.bagsAmount));
-      return h + '<hr>' + L('<b>ИТОГО</b>', '<b>' + X.num(r.amount) + ' тг</b>') + '<div class="hint">нажмите на товар — график цены</div></div>';
+      const bs = S.receiptBase(r.id);
+      return h + '<hr>' + L('<b>ИТОГО</b>', '<b>' + X.num(r.amount) + ' тг</b>') + '<div class="hint">нажмите на товар — график цены</div>'
+        + '<button type="button" class="xp-db' + (bs ? ' on' : '') + '" data-a="base" data-rc="' + esc(r.id) + '" title="' + (bs ? 'Чек записан в трек «' + esc(bs.track.name) + '». Нажмите: следующий трек, после последнего: убрать из базы.' : 'Записать сумму чека (тг / 1000) в трек расходов за день чека. Нажатие по кругу: треки, потом снова «не в базе».') + '">' + (bs ? esc(bs.track.name) + ' · ' + String(bs.value).replace('.', ',') : 'В базу') + '</button></div>';
     }
     function details() {
       const rs = S.byDay(ui.day);
       let h = '<div class="ui-card xp-pn"><h3><span>Чеки: ' + X.dayLabel(ui.day) + '</span><button data-a="close-day" aria-label="Закрыть">×</button></h3><div class="xp-ics">';
-      rs.forEach(r => { h += '<button type="button" class="xp-ic' + (ui.open.has(r.id) ? ' on' : '') + '" data-a="rc" data-rc="' + esc(r.id) + '">' + PAPER + '<span>чек на ' + X.num(r.amount) + ' тг</span></button>'; });
-      h += '</div>'; rs.forEach(r => { if (ui.open.has(r.id)) h += paper(r); });
+      rs.forEach(r => { h += '<button type="button" class="xp-ic' + (ui.open.has(r.id) ? ' on' : '') + '" data-a="rc" data-rc="' + esc(r.id) + '">' + (S.receiptBase(r.id) ? '<i class="xp-dot" title="Записан в трек"></i>' : '') + PAPER + '<span>чек на ' + X.num(r.amount) + ' тг</span></button>'; });
+      h += '</div>' + (note ? '<div class="xp-note">' + esc(note) + '</div>' : ''); rs.forEach(r => { if (ui.open.has(r.id)) h += paper(r); });
       return h + '</div>';
     }
     function chartPanel() {
@@ -4547,6 +4568,7 @@ window.LifePlanCss = `
       else if (a === 'reload') { S.load().catch(e => { if (e && e.auth && ctxIn.onAuthLost) ctxIn.onAuthLost(); }); return; }
       else if (a === 'day') { ui.day = ui.day === b.dataset.day ? null : b.dataset.day; ui.item = null; ui.rc = null; ui.open = new Set(); if (ui.day) { const rs = S.byDay(ui.day); if (rs.length === 1) ui.open.add(rs[0].id); } }
       else if (a === 'close-day') { ui.day = null; ui.item = null; }
+      else if (a === 'base') { const r = S.cycleReceipt(b.dataset.rc); if (!r.ok) { note = r.msg; } else note = ''; }
       else if (a === 'rc') { const id = b.dataset.rc; if (ui.open.has(id)) ui.open.delete(id); else ui.open.add(id); }
       else if (a === 'item') { ui.item = ui.item === b.dataset.item ? null : b.dataset.item; ui.rc = ui.item ? b.dataset.rc : null; }
       else if (a === 'close-item') { ui.item = null; ui.rc = null; }
