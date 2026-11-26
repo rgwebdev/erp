@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=PT+Sans:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
-<script>window.LIFE_BUILD = "D103_M38_S22";</script>
+<script>window.LIFE_BUILD = "D104_M38_S22";</script>
 <div id="app"></div>
 <script>
 /* ---- core/core.js ---- */
@@ -1954,7 +1954,8 @@
     { id: 'spheres', title: 'Сферы и дела', rail: 'Сферы', icon: 'grid' },
     { id: 'things', title: 'Вещицы', rail: 'Вещи', icon: 'box' },
     { id: 'tracks', title: 'Треки', rail: 'Треки', icon: 'bars' },
-    { id: 'plan', title: 'Моделирование финансов и времени', rail: 'Деньги', icon: 'coin' },
+    { id: 'plan', title: 'Деньги', rail: 'Деньги', icon: 'coin' },
+    { id: 'time', title: 'Время', rail: 'Время', icon: 'clock' },
     { id: 'diary', title: 'Дневник', rail: 'Дневник', icon: 'book' },
     { id: 'state', title: 'Состояние', rail: 'Состояние', icon: 'heart' }
   ];
@@ -4500,6 +4501,286 @@ window.LifePlanCss = `
 
 </script>
 <script>
+/* ---- modules/treport-model.js ---- */
+/* «Время»: чистые расчёты отчёта по таймерам (без экрана и базы). window.LifeTReportModel.
+   Таймер = карточка (timer_cards), тэг = дело карточки (timer_targets). Время = записи time_entries (сессии, ручные, поправки; план не считается).
+   Запуск через полночь относится целиком ко дню начала (local_date) — так хранится в базе. Неделя с понедельника. */
+(function (global) {
+  'use strict';
+  const pad = n => String(n).padStart(2, '0');
+  const dt = d => new Date(Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10), 12));
+  const key = x => x.getUTCFullYear() + '-' + pad(x.getUTCMonth() + 1) + '-' + pad(x.getUTCDate());
+  const shift = (d, n) => { const x = dt(d); x.setUTCDate(x.getUTCDate() + n); return key(x); };
+  const dow = d => (dt(d).getUTCDay() + 6) % 7;
+  const weekStart = d => shift(d, -dow(d)), weekEnd = d => shift(d, 6 - dow(d));
+  const between = (a, b) => Math.round((dt(b) - dt(a)) / 864e5) + 1;
+  const eachDay = (a, b) => { const o = []; for (let d = a; d <= b; d = shift(d, 1)) o.push(d); return o; };
+  const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+  const MG = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+  const dayLabel = d => +d.slice(8) + ' ' + MG[+d.slice(5, 7) - 1];
+  const shortDate = d => d.slice(8) + '.' + d.slice(5, 7) + '.' + d.slice(2, 4);
+  function rangeLabel(a, b) {
+    if (a === b) return dayLabel(a) + ' ' + a.slice(0, 4);
+    if (a.slice(0, 4) !== b.slice(0, 4)) return dayLabel(a) + ' ' + a.slice(0, 4) + ' – ' + dayLabel(b) + ' ' + b.slice(0, 4);
+    return (a.slice(5, 7) === b.slice(5, 7) ? +a.slice(8) : dayLabel(a)) + ' – ' + dayLabel(b) + ' ' + b.slice(0, 4);
+  }
+  /* «3 ч 20 м», «45 м», «0 м»; секунды округляются до минут */
+  function fmt(sec) {
+    const neg = sec < 0, m = Math.round(Math.abs(sec) / 60), h = Math.floor(m / 60);
+    return (neg && m ? '−' : '') + (h ? h + ' ч' + (m % 60 ? ' ' + (m % 60) + ' м' : '') : m + ' м');
+  }
+  const color = i => 'hsl(' + ((i * 67 + 150) % 360) + ' 48% 46%)';
+
+  /* Таймеры и тэги: [{id, name, color, tags:[{id, name, show}]}]. show — есть ли смысл показывать тэг кнопкой
+     (у карточки с единственным безымянным делом тэг совпадает с самим таймером) */
+  function build(D, entries) {
+    const cards = D.cards.filter(c => !c.deleted_at).slice().sort((a, b) => (a.sort - b.sort) || String(a.name).localeCompare(String(b.name), 'ru'));
+    const tname = t => (t.kind === 'item' ? ((D.items && D.items[t.item_id]) ? D.items[t.item_id].title : 'дело удалено') : (t.label || ''));
+    return cards.map((c, i) => {
+      const ts = D.targets.filter(t => t.card_id === c.id && !t.deleted_at).sort((a, b) => (a.sort - b.sort) || String(a.id).localeCompare(String(b.id)));
+      const tags = ts.map(t => ({ id: t.id, name: tname(t) || c.name, show: ts.length > 1 || t.kind === 'item' || !!t.label }));
+      const seen = new Set(tags.map(t => t.id));
+      entries.forEach(e => { if (e.card === c.id && !seen.has(e.tag)) { seen.add(e.tag); const dead = D.targets.find(t => t.id === e.tag); tags.push({ id: e.tag, name: dead ? (tname(dead) || c.name) : c.name, show: !!dead && !dead.label ? false : !!dead, gone: true }); } });
+      return { id: c.id, name: c.name, color: color(i), tags };
+    });
+  }
+  /* записи для отчёта: {id, card, tag, day, sec, start, end, comment, kind} */
+  function normalize(rows) {
+    return rows.filter(e => e.meta && e.meta.card && e.kind !== 'plan' && !e.deleted_at).map(e => ({
+      id: e.id, card: e.meta.card, tag: e.meta.target || '~' + e.meta.card, day: e.local_date, sec: +e.duration_sec || 0,
+      start: e.started_at ? Date.parse(e.started_at) : null, end: e.ended_at ? Date.parse(e.ended_at) : null, comment: e.comment || '', kind: e.kind
+    }));
+  }
+  /* фильтр: off — выключенные таймеры (Set id), offTags — выключенные тэги (Set id); тэги выключенного таймера не считаются */
+  const counted = (e, f) => !f.off.has(e.card) && !f.offTags.has(e.tag);
+  const inRange = (E, f, a, b) => E.filter(e => e.day >= a && e.day <= b && counted(e, f));
+  function perDay(list) { const m = {}; list.forEach(e => { m[e.day] = (m[e.day] || 0) + e.sec; }); return m; }
+  function perTag(list) { const m = new Map(); list.forEach(e => { const o = m.get(e.tag) || { tag: e.tag, card: e.card, sec: 0, days: new Set(), n: 0 }; o.sec += e.sec; o.n++; if (e.sec) o.days.add(e.day); m.set(e.tag, o); }); return m; }
+  function monthCells(y, m) {
+    const lead = dow(y + '-' + pad(m) + '-01'), dim = new Date(Date.UTC(y, m, 0, 12)).getUTCDate(), cells = [];
+    for (let i = -lead; cells.length % 7 || i < dim; i++) { const d = key(new Date(Date.UTC(y, m - 1, 1 + i, 12))); cells.push({ day: d, inMonth: i >= 0 && i < dim }); }
+    return cells;
+  }
+  /* столбцы графика: по дням, если период ≤ 62 дней, иначе по неделям; [{label, from, to, sec}] */
+  function buckets(list, a, b) {
+    const per = perDay(list), n = between(a, b), out = [];
+    if (n <= 62) eachDay(a, b).forEach(d => out.push({ label: d.slice(8) + '.' + d.slice(5, 7), from: d, to: d, sec: per[d] || 0 }));
+    else for (let s = weekStart(a); s <= b; s = shift(s, 7)) { const e = shift(s, 6); let sec = 0; eachDay(s < a ? a : s, e > b ? b : e).forEach(d => { sec += per[d] || 0; }); out.push({ label: s.slice(8) + '.' + s.slice(5, 7), from: s, to: e, sec }); }
+    return out;
+  }
+  global.LifeTReportModel = { shift, weekStart, weekEnd, between, eachDay, MONTHS, dayLabel, shortDate, rangeLabel, fmt, color, build, normalize, counted, inRange, perDay, perTag, monthCells, buckets, dow };
+})(window);
+
+</script>
+<script>
+/* ---- modules/treport-css.js ---- */
+/* «Время»: стили (общий стиль интерфейса, обе темы; префикс классов tq-, id стиля tq-css). window.LifeTReportCss */
+(function (global) {
+  'use strict';
+  global.LifeTReportCss = `
+.tq-app{display:flex;flex-direction:column;gap:var(--ui-gap,14px);color:var(--ui-text)}
+.tq-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.tq-head h2{margin:0;font-size:18px;font-weight:650}.tq-head .sp{flex:1}.tq-head small{color:var(--ui-mut);font-size:12px}
+.tq-flt{display:flex;flex-direction:column;gap:8px;margin:10px 0 4px}
+.tq-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px}.tq-row>small{color:var(--ui-mut);font-size:11px;min-width:70px}
+.tq-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--ui-line);background:var(--ui-card);color:var(--ui-mut);border-radius:999px;padding:3px 10px;font:inherit;font-size:12.5px;cursor:pointer}
+.tq-chip i{width:9px;height:9px;border-radius:50%;background:var(--c,#888);opacity:.45}
+.tq-chip.on{background:color-mix(in srgb,var(--c,#888) 16%,var(--ui-card));border-color:var(--c,#888);color:var(--ui-text)}.tq-chip.on i{opacity:1}
+.tq-chip.sm{padding:2px 8px;font-size:12px}
+.tq-months{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:10px}
+@media(max-width:1000px){.tq-months{grid-template-columns:minmax(0,1fr)}}
+.tq-mo h4{margin:0 0 4px;font-size:13px;font-weight:650;display:flex;justify-content:space-between;gap:6px;align-items:baseline}.tq-mo h4 small{font-weight:400;color:var(--ui-mut);font-size:11px;white-space:nowrap}
+.tq-cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
+.tq-wd{font-size:11px;color:var(--ui-mut);text-align:center}.tq-wd.we{color:var(--ui-bad)}
+.tq-c{min-height:40px;height:auto;width:100%;box-sizing:border-box;border-radius:6px;background:var(--ui-soft);border:1px solid transparent;box-shadow:none;padding:2px 4px;line-height:1.2;display:flex;flex-direction:column;align-items:flex-start;gap:1px;font:inherit;color:var(--ui-text);cursor:pointer;min-width:0;text-align:left;position:relative}
+.tq-c.out{background:transparent;cursor:default}.tq-c .n{display:block;font-size:10.5px;line-height:1.1;color:var(--ui-mut)}.tq-c b{font-size:10.5px;font-weight:650;white-space:nowrap;line-height:1.15}
+.tq-c.heat .n{color:var(--ui-text);opacity:.7}.tq-c.heat{background:color-mix(in srgb,var(--ui-main) calc(var(--h,0) * 1%),var(--ui-soft))}
+.tq-c.today{border-color:var(--ui-main);border-width:2px;padding:1px 3px}.tq-c.in{border-color:color-mix(in srgb,var(--ui-main) 35%,transparent)}.tq-c.in.sel{box-shadow:0 0 0 2px var(--ui-main) inset}
+.tq-sub{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:var(--ui-gap,14px);align-items:start}.tq-sub.one{grid-template-columns:minmax(0,1fr)}
+@media(max-width:1000px){.tq-sub{grid-template-columns:minmax(0,1fr)}}
+.tq-col{display:flex;flex-direction:column;gap:var(--ui-gap,14px);min-width:0}
+.tq-pn{padding:12px 14px}.tq-pn h3{margin:0 0 8px;font-size:14px;font-weight:650;display:flex;justify-content:space-between;gap:8px;align-items:center}
+.tq-pn h3 button.x{border:0;background:none;color:var(--ui-mut);cursor:pointer;font-size:16px;line-height:1}
+.tq-seg{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.tq-seg .ui-btn[aria-pressed=true]{background:var(--ui-main);border-color:var(--ui-main);color:var(--ui-on-main)}
+.tq-per{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;font-size:12px;color:var(--ui-mut)}.tq-per input{font:inherit;font-size:12px;border:1px solid var(--ui-line);border-radius:6px;padding:2px 4px;background:var(--ui-card);color:var(--ui-text)}
+.tq-tot{display:flex;gap:18px;flex-wrap:wrap;margin:2px 0 10px}.tq-tot div{font-size:11px;color:var(--ui-mut)}.tq-tot b{display:block;font-size:17px;color:var(--ui-text);font-weight:650;white-space:nowrap}
+.tq-grp{margin:8px 0 2px;font-size:12px;font-weight:650;display:flex;justify-content:space-between;gap:8px;align-items:center}.tq-grp i{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--c);margin-right:6px}
+.tq-tag{display:grid;grid-template-columns:minmax(80px,1.2fr) minmax(60px,2fr) auto auto;gap:8px;align-items:center;width:100%;border:0;background:none;color:inherit;font:inherit;font-size:12.5px;padding:3px 4px;border-radius:6px;cursor:pointer;text-align:left}
+.tq-tag:hover{background:var(--ui-soft)}.tq-tag.on{background:var(--ui-soft);box-shadow:0 0 0 1px var(--ui-main) inset}
+.tq-tag .bar{height:8px;border-radius:4px;background:var(--ui-soft);overflow:hidden}.tq-tag .bar i{display:block;height:100%;background:var(--c);border-radius:4px}.tq-tag .pc{color:var(--ui-mut);font-size:11px;min-width:34px;text-align:right}.tq-tag .t{white-space:nowrap;font-weight:600}
+.tq-dd{margin:8px 0 2px;font-size:12px;font-weight:650;display:flex;justify-content:space-between}
+.tq-ss{display:grid;grid-template-columns:78px minmax(0,1fr) auto;gap:8px;font-size:12px;padding:2px 0;border-top:1px solid var(--ui-line)}.tq-ss .m{color:var(--ui-mut)}.tq-ss .cm{color:var(--ui-mut);display:block;font-size:11px}
+.tq-st{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:2px 0 8px}.tq-st div{background:var(--ui-soft);border-radius:8px;padding:5px 8px;font-size:11px;color:var(--ui-mut)}.tq-st b{display:block;font-size:14px;color:var(--ui-text);font-weight:650;white-space:nowrap}
+.tq-svg{width:100%;max-width:560px;height:auto;display:block}.tq-svg text{fill:var(--ui-mut);font-size:10.5px}.tq-svg .gl{stroke:var(--ui-line);stroke-width:1}.tq-svg .ax{stroke:var(--ui-mut);stroke-width:1}.tq-svg rect.b{fill:var(--c)}
+.tq-empty{color:var(--ui-mut);font-size:13px;padding:8px 0}
+`;
+})(window);
+
+</script>
+<script>
+/* ---- modules/treport-store.js ---- */
+/* «Время»: данные (только чтение). LifeTReportStore.create(core) → S: S.D (cards, targets, items), S.E (записи для отчёта), S.load(). */
+(function (global) {
+  'use strict';
+  function create(core) {
+    const S = { D: { cards: [], targets: [], items: {} }, E: [], state: 'idle', note: '', onChange: null };
+    S.load = async function () {
+      S.state = S.state === 'ready' ? 'ready' : 'loading'; S.note = ''; if (S.onChange) S.onChange();
+      try {
+        const nd = ['deleted_at=is.null'];
+        const [cards, targets, entries, items] = await Promise.all([
+          core.select('timer_cards', { filters: nd }), core.select('timer_targets'),
+          core.select('time_entries', { filters: ['meta->>card=not.is.null', 'deleted_at=is.null'] }),
+          core.select('sphere_items', { filters: nd, columns: 'id,title' }).catch(() => [])
+        ]);
+        const map = {}; items.forEach(i => { map[i.id] = { title: i.title }; });
+        S.D = { cards, targets, items: map }; S.E = global.LifeTReportModel.normalize(entries); S.state = 'ready';
+      } catch (e) { if (e && e.auth) throw e; S.state = S.state === 'ready' ? 'ready' : 'error'; S.note = (e && e.message) || 'Не удалось загрузить время'; }
+      if (S.onChange) S.onChange();
+    };
+    return S;
+  }
+  global.LifeTReportStore = { create };
+})(window);
+
+</script>
+<script>
+/* ---- modules/treport.js ---- */
+/* «Время» (компьютер): сколько времени уходит на таймеры и их тэги (дела).
+   Кнопки включают и выключают таймеры и тэги (тэги видны, пока включён их таймер); календарь на 3 месяца с временем по дням;
+   сводка по тэгам за день / неделю / период; детали запусков; график по выбранному тэгу. Только чтение.
+   Данные — treport-store.js, расчёты — treport-model.js, стили — treport-css.js. LifeModules.treport.mount(el, {core, onAuthLost}) → {unmount, reload}. */
+(function (global) {
+  'use strict';
+  const T = global.LifeTReportModel;
+  global.LifeModules = global.LifeModules || {};
+  const UI_KEY = 'lifeerp-time-ui';
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  function mount(el, ctxIn) {
+    ctxIn = ctxIn || {};
+    const core = ctxIn.core || global.LifeCore, S = global.LifeTReportStore.create(core), TZ = core.TZ;
+    if (!document.getElementById('tq-css')) { const s = document.createElement('style'); s.id = 'tq-css'; s.textContent = global.LifeTReportCss; document.head.appendChild(s); }
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    const u0 = core.store.get(UI_KEY, null) || {};
+    const ui = {
+      y: +today.slice(0, 4), m: +today.slice(5, 7), mode: ['day', 'week', 'period'].includes(u0.mode) ? u0.mode : 'week', day: today,
+      from: T.shift(today, -29), to: today, pick: 0, tag: null,
+      off: new Set(u0.off || []), offTags: new Set(u0.offTags || [])
+    };
+    const save = () => core.store.set(UI_KEY, { mode: ui.mode, off: [...ui.off], offTags: [...ui.offTags] });
+    let alive = true, painted = false;
+    el.innerHTML = '<div class="tq-app"></div>'; const root = el.firstChild;
+    const hm = global.LifeTimersModel.hm;
+    const flt = () => ({ off: ui.off, offTags: ui.offTags });
+    const range = () => ui.mode === 'day' ? [ui.day, ui.day] : ui.mode === 'week' ? [T.weekStart(ui.day), T.weekEnd(ui.day)] : (ui.from <= ui.to ? [ui.from, ui.to] : [ui.to, ui.from]);
+
+    function filters(cards) {
+      let h = '<div class="tq-flt"><div class="tq-row"><small>Таймеры</small>' + (cards.length ? cards.map(c => '<button type="button" class="tq-chip' + (ui.off.has(c.id) ? '' : ' on') + '" style="--c:' + c.color + '" data-a="card" data-id="' + esc(c.id) + '"><i></i>' + esc(c.name) + '</button>').join('') : '<span class="tq-empty">таймеров пока нет</span>') + '</div>';
+      cards.filter(c => !ui.off.has(c.id) && c.tags.some(t => t.show)).forEach(c => {
+        h += '<div class="tq-row"><small>' + esc(c.name) + '</small>' + c.tags.filter(t => t.show).map(t => '<button type="button" class="tq-chip sm' + (ui.offTags.has(t.id) ? '' : ' on') + '" style="--c:' + c.color + '" data-a="tag" data-id="' + esc(t.id) + '"><i></i>' + esc(t.name) + '</button>').join('') + '</div>';
+      });
+      return h + '</div>';
+    }
+    function calendar(cards) {
+      const per = T.perDay(T.inRange(S.E, flt(), '0000-01-01', '9999-12-31')), [ra, rb] = range();
+      const ms = []; for (let k = 2; k >= 0; k--) { const d = new Date(Date.UTC(ui.y, ui.m - 1 - k, 1)); ms.push([d.getUTCFullYear(), d.getUTCMonth() + 1]); }
+      const win = ms.flatMap(([y, m]) => T.monthCells(y, m).filter(c => c.inMonth).map(c => per[c.day] || 0)), max = Math.max(1, ...win);
+      const f = { y: ms[0][0], m: ms[0][1] }, l = { y: ms[2][0], m: ms[2][1] }, wd = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+      let h = '<div class="tq-head"><h2>Время</h2><button class="ui-btn" data-a="prev" aria-label="Раньше">‹</button><b>' + (f.y === l.y ? T.MONTHS[f.m - 1] + ' – ' + T.MONTHS[l.m - 1] + ' ' + l.y : T.MONTHS[f.m - 1] + ' ' + f.y + ' – ' + T.MONTHS[l.m - 1] + ' ' + l.y) + '</b><button class="ui-btn" data-a="next" aria-label="Позже">›</button><button class="ui-btn" data-a="now">Сегодня</button><span class="sp"></span><button class="ui-btn" data-a="reload">Обновить</button></div>' + filters(cards) + '<div class="tq-months">';
+      ms.forEach(([y, m]) => {
+        const cells = T.monthCells(y, m), tot = cells.filter(c => c.inMonth).reduce((a, c) => a + (per[c.day] || 0), 0);
+        h += '<div class="tq-mo"><h4><span>' + T.MONTHS[m - 1] + ' ' + y + '</span><small>' + (tot ? T.fmt(tot) : '') + '</small></h4><div class="tq-cal">' + wd.map((d, i) => '<div class="tq-wd' + (i > 4 ? ' we' : '') + '">' + d + '</div>').join('');
+        cells.forEach(c => {
+          if (!c.inMonth) { h += '<div class="tq-c out"></div>'; return; }
+          const s = per[c.day] || 0;
+          h += '<button type="button" class="tq-c' + (s > 0 ? ' heat' : '') + (c.day === today ? ' today' : '') + (c.day >= ra && c.day <= rb ? (ra === rb ? ' in sel' : ' in') : '') + '" style="--h:' + Math.round(Math.max(0, s) / max * 38) + '" data-a="day" data-day="' + c.day + '"><span class="n">' + +c.day.slice(8) + '</span>' + (s ? '<b>' + T.fmt(s) + '</b>' : '') + '</button>';
+        });
+        h += '</div></div>';
+      });
+      return h + '</div>' + (S.state === 'error' ? '<div class="tq-empty">' + esc(S.note) + '</div>' : S.state === 'loading' && !painted ? '<div class="tq-empty">Загрузка…</div>' : '');
+    }
+    function summary(cards) {
+      const [a, b] = range(), list = T.inRange(S.E, flt(), a, b), pt = T.perTag(list), total = list.reduce((x, e) => x + e.sec, 0), n = T.between(a, b);
+      const modes = [['day', 'День'], ['week', 'Неделя'], ['period', 'Период']];
+      let h = '<div class="ui-card tq-pn"><h3><span>Время по тэгам</span></h3><div class="tq-seg">' + modes.map(m => '<button type="button" class="ui-btn" data-a="mode" data-m="' + m[0] + '" aria-pressed="' + (ui.mode === m[0]) + '">' + m[1] + '</button>').join('') +
+        (ui.mode !== 'period' ? '<button class="ui-btn" data-a="step" data-d="-1" aria-label="Назад">‹</button><button class="ui-btn" data-a="step" data-d="1" aria-label="Вперёд">›</button>' : '') + '<span class="tq-per">' + T.rangeLabel(a, b) + '</span></div>';
+      if (ui.mode === 'period') h += '<div class="tq-per"><input type="date" data-a="from" value="' + ui.from + '"> — <input type="date" data-a="to" value="' + ui.to + '"><button class="ui-btn" data-a="preset" data-n="7">7 дней</button><button class="ui-btn" data-a="preset" data-n="30">30 дней</button><button class="ui-btn" data-a="preset" data-n="90">3 месяца</button><span>или два клика по календарю</span></div>';
+      h += '<div class="tq-tot"><div>всего<b>' + T.fmt(total) + '</b></div>' + (n > 1 ? '<div>в среднем в день<b>' + T.fmt(total / n) + '</b></div><div>дней в периоде<b>' + n + '</b></div>' : '') + '</div>';
+      let any = false;
+      cards.forEach(c => {
+        const rows = c.tags.map(t => ({ t, o: pt.get(t.id) })).filter(x => x.o && x.o.sec !== 0).sort((x, y) => y.o.sec - x.o.sec); if (!rows.length) return; any = true;
+        const csum = rows.reduce((s, x) => s + x.o.sec, 0), mx = Math.max(...rows.map(x => Math.abs(x.o.sec)));
+        h += '<div class="tq-grp" style="--c:' + c.color + '"><span><i></i>' + esc(c.name) + '</span><span>' + T.fmt(csum) + '</span></div>';
+        rows.forEach(({ t, o }) => { h += '<button type="button" class="tq-tag' + (ui.tag === t.id ? ' on' : '') + '" style="--c:' + c.color + '" data-a="tg" data-id="' + esc(t.id) + '"><span>' + esc(t.name) + '</span><span class="bar"><i style="width:' + Math.max(2, Math.round(Math.abs(o.sec) / mx * 100)) + '%"></i></span><span class="t">' + T.fmt(o.sec) + '</span><span class="pc">' + (total ? Math.round(o.sec / total * 100) : 0) + '%</span></button>'; });
+      });
+      if (!any) h += '<div class="tq-empty">' + (S.state === 'ready' ? 'За выбранный период времени нет (проверьте включённые таймеры и тэги).' : '') + '</div>';
+      return h + '</div>';
+    }
+    function details(cards) {
+      const [a, b] = range(), list = T.inRange(S.E, flt(), a, b).slice().sort((x, y) => y.day.localeCompare(x.day) || (y.start || 0) - (x.start || 0));
+      const info = {}; cards.forEach(c => c.tags.forEach(t => { info[t.id] = [c.name, t.name]; }));
+      let h = '<div class="ui-card tq-pn"><h3><span>Детали: ' + T.rangeLabel(a, b) + '</span></h3>';
+      if (!list.length) return h + '<div class="tq-empty">Запусков нет.</div></div>';
+      let cur = null, shown = 0;
+      for (const e of list) {
+        if (shown >= 300) { h += '<div class="tq-empty">…показаны первые 300 записей</div>'; break; }
+        if (e.day !== cur) { cur = e.day; const dsum = list.filter(x => x.day === cur).reduce((s, x) => s + x.sec, 0); h += '<div class="tq-dd"><span>' + T.dayLabel(cur) + '</span><span>' + T.fmt(dsum) + '</span></div>'; }
+        const [cn, tn] = info[e.tag] || ['?', '?'], when = e.start && e.end ? hm(e.start, TZ) + '–' + hm(e.end, TZ) : e.kind === 'correction' ? 'поправка' : 'вручную';
+        h += '<div class="tq-ss"><span class="m">' + when + '</span><span>' + esc(cn) + (tn && tn !== cn ? ' · ' + esc(tn) : '') + (e.comment ? '<span class="cm">' + esc(e.comment) + '</span>' : '') + '</span><span>' + T.fmt(e.sec) + '</span></div>'; shown++;
+      }
+      return h + '</div>';
+    }
+    function chart(cards) {
+      const [a, b] = range(), list = S.E.filter(e => e.tag === ui.tag && T.counted({ card: e.card, tag: '' }, flt()) && e.day >= a && e.day <= b);
+      let card = null, tag = null; cards.forEach(c => c.tags.forEach(t => { if (t.id === ui.tag) { card = c; tag = t; } }));
+      let h = '<div class="ui-card tq-pn"><h3><span>' + (card ? esc(card.name) + (tag.name !== card.name ? ' · ' + esc(tag.name) : '') : 'Тэг') + '</span><button class="x" data-a="close-tag" aria-label="Закрыть">×</button></h3>';
+      const bk = T.buckets(list, a, b), tot = list.reduce((s, e) => s + e.sec, 0), n = T.between(a, b), act = new Set(list.filter(e => e.sec).map(e => e.day)).size, mxd = Math.max(0, ...bk.map(x => x.sec));
+      h += '<div class="tq-st"><div>всего<b>' + T.fmt(tot) + '</b></div><div>в среднем в день<b>' + T.fmt(tot / n) + '</b></div><div>дней с делом<b>' + act + ' из ' + n + '</b></div><div>максимум ' + (n <= 62 ? 'за день' : 'за неделю') + '<b>' + T.fmt(mxd) + '</b></div></div>';
+      if (!bk.length || mxd <= 0) return h + '<div class="tq-empty">В этом периоде по тэгу времени нет.</div></div>';
+      const W = 520, H = 220, P = { l: 46, r: 10, t: 12, b: 30 }, iw = W - P.l - P.r, ih = H - P.t - P.b, step = iw / bk.length, bw = Math.max(2, Math.min(28, step * 0.7));
+      const hrs = mxd / 3600, tk = []; const raw = hrs / 4, p = Math.pow(10, Math.floor(Math.log10(raw || 1))), f = raw / p, st = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p; for (let v = 0; v < hrs; v += st) tk.push(v);
+      const Y = sec => P.t + ih - sec / mxd * ih;
+      h += '<svg class="tq-svg" style="--c:' + (card ? card.color : '#888') + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Время по тэгу">';
+      tk.concat([hrs]).forEach((v, i, arr) => { if (i === arr.length - 1 && i > 0 && hrs - arr[i - 1] < st * 0.5) return; const y = Y(v * 3600); h += '<line class="gl" x1="' + P.l + '" x2="' + (W - P.r) + '" y1="' + y.toFixed(1) + '" y2="' + y.toFixed(1) + '"/><text x="' + (P.l - 5) + '" y="' + (y + 3.5).toFixed(1) + '" text-anchor="end">' + (i === arr.length - 1 ? T.fmt(mxd) : v === 0 ? '0' : T.fmt(v * 3600)) + '</text>'; });
+      h += '<line class="ax" x1="' + P.l + '" x2="' + P.l + '" y1="' + P.t + '" y2="' + (H - P.b) + '"/><line class="ax" x1="' + P.l + '" x2="' + (W - P.r) + '" y1="' + (H - P.b) + '" y2="' + (H - P.b) + '"/>';
+      const every = Math.max(1, Math.ceil(bk.length / 12));
+      bk.forEach((x, i) => { const cx = P.l + step * i + step / 2; if (x.sec > 0) h += '<rect class="b" x="' + (cx - bw / 2).toFixed(1) + '" y="' + Y(x.sec).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (H - P.b - Y(x.sec)).toFixed(1) + '" rx="2"><title>' + (x.from === x.to ? T.shortDate(x.from) : T.shortDate(x.from) + ' – ' + T.shortDate(x.to)) + ': ' + T.fmt(x.sec) + '</title></rect>'; if (i % every === 0) h += '<text x="' + cx.toFixed(1) + '" y="' + (H - P.b + 14) + '" text-anchor="middle">' + x.label + '</text>'; });
+      return h + '</svg><div style="font-size:11px;color:var(--ui-mut)">Столбцы — ' + (n <= 62 ? 'дни' : 'недели (с понедельника)') + ', высота от 0 до максимума.</div></div>';
+    }
+    function render() {
+      painted = painted || S.state === 'ready';
+      const cards = T.build(S.D, S.E);
+      root.innerHTML = '<div class="ui-card">' + calendar(cards) + '</div><div class="tq-sub' + (ui.tag ? '' : ' one') + '"><div class="tq-col">' + summary(cards) + details(cards) + '</div>' + (ui.tag ? chart(cards) : '') + '</div>';
+    }
+    S.onChange = () => { if (alive) render(); };
+    root.addEventListener('click', ev => {
+      const b = ev.target.closest('[data-a]'); if (!b || b.tagName === 'INPUT') return; const a = b.dataset.a;
+      if (a === 'prev' || a === 'next') { const d = new Date(Date.UTC(ui.y, ui.m - 1 + (a === 'next' ? 1 : -1), 1)); ui.y = d.getUTCFullYear(); ui.m = d.getUTCMonth() + 1; }
+      else if (a === 'now') { ui.y = +today.slice(0, 4); ui.m = +today.slice(5, 7); ui.day = today; }
+      else if (a === 'reload') { S.load().catch(e => { if (e && e.auth && ctxIn.onAuthLost) ctxIn.onAuthLost(); }); return; }
+      else if (a === 'card') { const id = b.dataset.id; if (ui.off.has(id)) ui.off.delete(id); else ui.off.add(id); save(); }
+      else if (a === 'tag') { const id = b.dataset.id; if (ui.offTags.has(id)) ui.offTags.delete(id); else ui.offTags.add(id); save(); }
+      else if (a === 'mode') { ui.mode = b.dataset.m; if (ui.mode === 'period') { ui.pick = 0; } save(); }
+      else if (a === 'step') { const d = +b.dataset.d; ui.day = T.shift(ui.day, d * (ui.mode === 'week' ? 7 : 1)); }
+      else if (a === 'preset') { ui.to = today; ui.from = T.shift(today, -(+b.dataset.n - 1)); ui.pick = 0; }
+      else if (a === 'day') {
+        const d = b.dataset.day;
+        if (ui.mode === 'period') { if (ui.pick === 0) { ui.from = d; ui.to = d; ui.pick = 1; } else { ui.to = d; if (ui.to < ui.from) { const x = ui.from; ui.from = ui.to; ui.to = x; } ui.pick = 0; } } else ui.day = d;
+      }
+      else if (a === 'tg') { ui.tag = ui.tag === b.dataset.id ? null : b.dataset.id; }
+      else if (a === 'close-tag') { ui.tag = null; }
+      render();
+    });
+    root.addEventListener('change', ev => { const i = ev.target.closest('input[data-a]'); if (!i || !i.value) return; if (i.dataset.a === 'from') ui.from = i.value; else if (i.dataset.a === 'to') ui.to = i.value; else return; ui.pick = 0; render(); });
+    render(); S.load().catch(e => { if (e && e.auth && ctxIn.onAuthLost) ctxIn.onAuthLost(); });
+    return { reload: () => S.load(), unmount() { alive = false; S.onChange = null; el.innerHTML = ''; } };
+  }
+  global.LifeModules.treport = { mount };
+})(window);
+
+</script>
+<script>
 /* ---- modules/state-model.js ---- */
 /* «Состояние» (компьютер): чистые расчёты без экрана и без базы. window.LifeStateModel.
    Данные те же, что у телефонной вкладки «Эмоции»: отметка (mood_marks) = момент, сила −5…5, комментарий, чувства (mood_tags).
@@ -6779,6 +7060,7 @@ html,body{margin:0;background:var(--ui-bg);color:var(--ui-text);font:14px/1.4 va
     box: svg('<path d="M4 8l8-4 8 4v8l-8 4-8-4z"/><path d="M4 8l8 4 8-4"/><path d="M12 12v8"/>'),
     bars: svg('<path d="M6 20V11"/><path d="M12 20V5"/><path d="M18 20v-6"/>'),
     coin: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v9"/><path d="M14.5 9.5c-.6-.8-1.5-1.2-2.5-1.2-1.4 0-2.5.7-2.5 1.8 0 2.3 5 1.2 5 3.6 0 1.1-1.1 1.8-2.5 1.8-1 0-2-.4-2.6-1.200"/>'),
+    clock: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
     book: svg('<path d="M5 4.5h11a3 3 0 013 3V20H8a3 3 0 01-3-3z"/><path d="M5 17a3 3 0 013-3h11"/>'),
     heart: svg('<path d="M12 20s-7.5-4.500-7.5-10A4.3 4.3 0 0112 7.5 4.3 4.3 0 0119.500 10c0 5.5-7.5 10-7.5 10z"/>'),
     settings: svg('<circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.500V21M3 12h2.5M18.500 12H21M5.600 5.600l1.8 1.8M16.600 16.600l1.8 1.8M5.600 18.400l1.8-1.8M16.600 7.400l1.8-1.8"/>')
@@ -6855,6 +7137,7 @@ html,body{margin:0;background:var(--ui-bg);color:var(--ui-text);font:14px/1.4 va
       { id: 'things', title: 'Вещицы', rail: 'Вещи', icon: 'box', mount: (box, ctx) => global.LifeModules.things.mount(box, ctx) },
       { id: 'tracks', title: 'Треки', rail: 'Треки', icon: 'bars', mount: (box, ctx) => global.LifeModules.tracks.mount(box, ctx) },
       { id: 'plan', title: 'Деньги', rail: 'Деньги', icon: 'coin', mount: (box, ctx) => global.LifeModules.money.mount(box, ctx) },
+      { id: 'time', title: 'Время', rail: 'Время', icon: 'clock', mount: (box, ctx) => global.LifeModules.treport.mount(box, ctx) },
       { id: 'diary', title: 'Дневник', rail: 'Дневник', icon: 'book', mount: (box, ctx) => global.LifeModules.diary.mount(box, ctx) },
       { id: 'state', title: 'Состояние', rail: 'Состояние', icon: 'heart', mount: (box, ctx) => global.LifeModules.state.mount(box, ctx) },
       { id: 'settings', title: 'Настройки', menu: true, mount: (box, ctx) => global.LifeModules.settings.mount(box, ctx) },
