@@ -11,7 +11,7 @@
 <title>LifeERP: телефон</title>
 </head>
 <body>
-<script>window.LIFE_BUILD = "D97_M38_S21";</script>
+<script>window.LIFE_BUILD = "D112_M39_S24";</script>
 <div id="app"></div>
 <script>
 /* ---- core/core.js ---- */
@@ -1472,9 +1472,10 @@ input[type="date"].field, input[type="time"].field{ min-height: 44px; }
       const first = new Map(); if (animate) els.forEach((e, id) => first.set(id, e.getBoundingClientRect().top));
       const vis = M.ordered(D, viewDay, today, TZ, now), ids = {}; vis.forEach(c => { ids[c.id] = true; });
       els.forEach((e, id) => { if (!ids[id]) { e.remove(); els.delete(id); } });
+      let slot = listEl.firstElementChild;
       vis.forEach(c => {
         const e = els.get(c.id) || create(c), run = act.find(r => r.card_id === c.id) || null, sel = M.selTarget(D, c.id), list = M.targetsOf(D, c.id), q = s => e.querySelector(s);
-        listEl.appendChild(e); q('.name').textContent = c.name;
+        if (e === slot) slot = slot.nextElementSibling; else listEl.insertBefore(e, slot); if (q('.name').textContent !== c.name) q('.name').textContent = c.name;
         e.classList.toggle('active', !!run); e.classList.toggle('readonly', !today); e.classList.toggle('locked', !!run && !!run.locked); e.setAttribute('aria-pressed', run ? 'true' : 'false'); e.setAttribute('aria-label', c.name);
         const lb = q('.lockbtn'); lb.hidden = !(run && act.length === 1); lb.setAttribute('aria-pressed', run && run.locked ? 'true' : 'false'); lb.setAttribute('aria-label', run && run.locked ? 'Снять замок' : 'Поставить на замок');
         q('.mid').hidden = !(run || list.length > 1);
@@ -2406,7 +2407,8 @@ window.LifeShopCss = `
       const lastIn = new Map(), isCard = n => n && n.nodeType === 1 && n.classList.contains('item');
       const place = (cont, e) => {
         const prev = lastIn.get(cont) || null; lastIn.set(cont, e);
-        if (e.contains(document.activeElement)) { if (e.parentNode !== cont) cont.appendChild(e); return; }
+        const ae = document.activeElement; /* держим на месте только карточку с полем ввода: галочка и кнопки фокус не требуют, такая карточка должна уйти на своё место сразу */
+        if (e.contains(ae) && ae.matches('input:not([type=checkbox]):not([type=radio]),textarea,select')) { if (e.parentNode !== cont) cont.appendChild(e); return; }
         let okPos = e.parentNode === cont;
         if (okPos) { let p = e.previousElementSibling; while (p && !isCard(p)) p = p.previousElementSibling; okPos = p === prev; }
         if (!okPos) cont.appendChild(e);
