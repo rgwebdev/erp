@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=PT+Sans:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
-<script>window.LIFE_BUILD = "D116_M39_S25";</script>
+<script>window.LIFE_BUILD = "D117_M39_S25";</script>
 <div id="app"></div>
 <script>
 /* ---- core/core.js ---- */
@@ -2386,14 +2386,16 @@
     if (p.length > 140) p = p.slice(0, 140).trim(); return p.length < t.length ? p + '…' : p;
   }
   const byTsAsc = (a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0);
-  /* Страницы «тетрадки»: на странице ровно столько знаков текста, сколько задано (limit); запись переносится на следующую страницу,
+  /* Страницы «тетрадки»: на странице фиксированный объём (limit знаков; метка времени каждой записи «стоит» STAMP знаков); запись переносится на следующую страницу,
      разрез — по пробелу/переносу (если он не слишком далеко), иначе по знаку. Сегмент: {e, text, first, last}. Пустой дневник → []. */
+  const STAMP = 50;
   function pages(entries, limit) {
     const es = entries.slice().sort(byTsAsc), out = []; let cur = [], room = limit;
     const flush = () => { out.push(cur); cur = []; room = limit; };
     es.forEach(e => {
       let rest = String(e.body || ''), first = true;
-      if (cur.length && room < Math.min(40, limit / 4)) flush();
+      if (cur.length && room < Math.min(STAMP + 40, limit / 3)) flush();
+      room -= STAMP;                                  /* метка времени и разделитель занимают место на странице */
       for (;;) {
         if (room <= 0) flush();
         if (rest.length <= room) { cur.push({ e, text: rest.replace(/\s+$/, ''), first, last: true }); room -= rest.length; break; }
@@ -2454,12 +2456,12 @@ window.LifeDiaryCss = `
 .dy-chip.on{font-weight:600}
 .dy-mut{font-size:12px;opacity:.7}
 .dy-nav{display:flex;gap:10px;align-items:center;margin:6px 0}
-.dy-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
-.dy-h{font-size:11px;text-align:center;opacity:.6}
-.dy-c{min-height:54px;border:1px solid var(--line);border-radius:6px;background:var(--ui-card);padding:3px 4px;display:flex;flex-direction:column;gap:2px;cursor:pointer;text-align:left}
+.dy-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;max-width:460px}
+.dy-h{font-size:9px;text-align:center;opacity:.6}
+.dy-c{min-height:27px;border:1px solid var(--line);border-radius:4px;background:var(--ui-card);padding:1px 3px;display:flex;flex-direction:column;gap:0;cursor:pointer;text-align:left}
 .dy-c:hover{background:var(--ui-soft)}.dy-c.t{outline:2px solid var(--ui-main);outline-offset:-2px}.dy-c.em{background:color-mix(in srgb,var(--ui-card) 55%,transparent)}
-.dy-c .n{font-size:12px;opacity:.75}.dy-w{display:flex;gap:4px;flex-wrap:wrap}
-.dy-w b{font-size:13px;border-radius:4px;padding:0 4px;background:color-mix(in srgb,var(--ui-text) 9%,transparent);cursor:pointer}
+.dy-c .n{font-size:9px;line-height:1.1;opacity:.75}.dy-w{display:flex;gap:2px;flex-wrap:wrap}
+.dy-w b{font-size:9px;line-height:1.25;border-radius:3px;padding:0 3px;background:color-mix(in srgb,var(--ui-text) 9%,transparent);cursor:pointer}
 .dy-box{background:var(--ui-card);border:1px solid var(--line);border-radius:8px;margin-top:10px;padding:8px 10px}
 .dy-top{display:flex;gap:8px;align-items:baseline;margin-bottom:6px;flex-wrap:wrap}.dy-top b{font-size:15px}.dy-top .dy-mut{flex:1}
 .dy-e{padding:6px 4px;border-top:1px dashed var(--ui-line);cursor:pointer}.dy-e:first-of-type{border-top:0}
@@ -2478,7 +2480,7 @@ window.LifeDiaryCss = `
 .dy-tab:hover{opacity:.85}.dy-tab.on{opacity:1;height:32px;transform:none;box-shadow:0 -2px 0 rgba(0,0,0,.08)}
 .dy-bn{margin-left:10px;align-self:center;font-weight:600;font-size:14px}
 .dy-spread{position:relative;display:grid;grid-template-columns:1fr 1fr;border:2px solid var(--ui-line);border-radius:8px;background:var(--ui-card);padding-bottom:34px;box-shadow:0 2px 8px rgba(0,0,0,.08);overflow:hidden}
-.dy-pg{padding:10px 18px 8px;min-width:0;min-height:260px}
+.dy-spread{--pgh:260px}.dy-pg{padding:10px 18px 8px;min-width:0;min-height:var(--pgh)}
 .dy-pg.l{background:linear-gradient(to right,transparent 92%,color-mix(in srgb,var(--ui-text) 7%,transparent));border-right:1px solid var(--ui-line)}
 .dy-pg.r{background:linear-gradient(to left,transparent 92%,color-mix(in srgb,var(--ui-text) 7%,transparent))}
 .dy-ph{text-align:center;font-size:12px;color:#8a8a8a;border-bottom:1px solid var(--ui-line);padding-bottom:4px;margin-bottom:6px;letter-spacing:.03em}
@@ -2487,7 +2489,7 @@ window.LifeDiaryCss = `
 .dy-flip.l{left:6px}.dy-flip.r{right:6px}.dy-flip:hover:not(:disabled){background:var(--ui-soft)}.dy-flip:disabled{opacity:.3;cursor:default}
 .dy-pn{position:absolute;bottom:10px;left:0;right:0;text-align:center;font-size:11px;opacity:.55;pointer-events:none}
 @media (max-width:640px){.dy-spread{grid-template-columns:1fr}.dy-pg.l{border-right:0;border-bottom:1px solid var(--ui-line)}.dy-pg.blank{display:none}}
-@media (max-width:560px){.dy-c{min-height:44px}}
+@media (max-width:560px){.dy-c{min-height:27px}}
 `;
 
 
@@ -2721,7 +2723,16 @@ window.LifeDiaryCss = `
     }
     const pageChars = () => { const v = +SS.get('modules.diary.opt.pageChars'); return v >= 100 ? Math.min(6000, Math.round(v)) : 500; };
     chars0 = pageChars();
-    const offSS = SS.subscribe(() => { if (!alive) return; if (pageChars() !== chars0) { chars0 = pageChars(); render(); } else applyType(); });
+/* высота страницы тетради не зависит от числа записей: по пробному тексту нужного объёма тем же шрифтом */
+    function fitBook() {
+      const sp = root.querySelector('.dy-spread'), pg = sp && sp.querySelector('.dy-pg'); if (!pg) return;
+      const dd = root.querySelector('.dy-book').dataset.ddBook, d = D.diaries.find(x => x.id === dd), st = global.LifeDiaryPanel.textStyle(SS, dd, diaryColor(d));
+      const pr = document.createElement('div'); pr.className = 'dy-x'; pr.style.cssText = 'visibility:hidden;margin:0;font-family:' + st.fontFamily + ';font-size:' + st.fontSize + ';line-height:' + st.lineHeight;
+      pr.textContent = 'съешь ещё этих мягких французских булок да выпей же чаю '.repeat(Math.ceil(chars0 / 57)).slice(0, chars0);
+      pg.appendChild(pr); const h = pr.offsetHeight, head = (pg.querySelector('.dy-ph') || { offsetHeight: 24 }).offsetHeight + 6; pr.remove();
+      sp.style.setProperty('--pgh', Math.ceil(h + head + 90) + 'px');
+    }
+    const offSS = SS.subscribe(() => { if (!alive) return; if (pageChars() !== chars0) { chars0 = pageChars(); render(); } else { applyType(); fitBook(); } });
 
     function entryHtml(e, dr, withDate, book) {
       const c = diaryColor(dr), ed = editing && editing.id === e.id, ts = Date.parse(e.ts), stamp = withDate ? M.fmtDM(ts, TZ) : M.hm(ts, TZ);
@@ -2780,7 +2791,7 @@ window.LifeDiaryCss = `
       }
       root.innerHTML = h;
       if (focusF) { const n = root.querySelector('[data-f="' + focusF + '"]'); if (n) { n.focus(); try { n.setSelectionRange(n.value.length, n.value.length); } catch (e) { /* поле без выделения */ } } }
-      applyType(); window.scrollTo(0, keep.y);
+      applyType(); fitBook(); window.scrollTo(0, keep.y);
     }
 
     S.onChange = () => { if (alive) { render(); panelSubs.slice().forEach(f => f()); } };
@@ -2833,7 +2844,8 @@ window.LifeDiaryCss = `
     const onAuth = setInterval(() => { if (S.authLost && ctxIn.onAuthLost) { S.authLost = false; ctxIn.onAuthLost(); } }, 800);
     render(); S.load();
     const panel = global.LifeDiaryPanel.create({ S, SS, current: () => (form && form.dy) || '', color: diaryColor, onDiaries: f => { panelSubs.push(f); return () => { const i = panelSubs.indexOf(f); if (i >= 0) panelSubs.splice(i, 1); }; } });
-    return { reload: () => S.load(), panel, unmount() { alive = false; offSS(); clearInterval(onAuth); S.onChange = null; el.innerHTML = ''; } };
+    const onRs = () => { if (alive) fitBook(); }; window.addEventListener('resize', onRs);
+    return { reload: () => S.load(), panel, unmount() { alive = false; window.removeEventListener('resize', onRs); offSS(); clearInterval(onAuth); S.onChange = null; el.innerHTML = ''; } };
   }
   global.LifeModules.diary = { mount };
 })(window);
