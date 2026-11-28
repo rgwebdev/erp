@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=PT+Sans:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
-<script>window.LIFE_BUILD = "D114_M39_S25";</script>
+<script>window.LIFE_BUILD = "D115_M39_S25";</script>
 <div id="app"></div>
 <script>
 /* ---- core/core.js ---- */
@@ -2103,6 +2103,7 @@
   /* Параметры отдельных модулей (раздел «Настройки модуля» в панели страницы): modules.<модуль>.opt.<имя>.
      nullable: нет строки = «как задано по умолчанию в самом модуле/теме». */
   const MODULE_OPTS = {
+    diary: { pageChars: { type: 'int', def: null, nullable: true, min: 100, max: 6000, step: 50, unit: '', label: 'Знаков на странице тетради' } },
     state: {
       colPos: { type: 'color', def: '#2d9f5a', label: 'Цвет приятных отметок' }, colNeg: { type: 'color', def: '#d33b3b', label: 'Цвет неприятных отметок' }, colZero: { type: 'color', def: '#8c8c8c', label: 'Цвет нулевых отметок' },
       range: { type: 'enum', def: 'day', opts: [['day', 'День'], ['3d', 'Последние 3 дня'], ['week', 'Последняя неделя'], ['month', 'Месяц']], label: 'График при открытии' }
@@ -2384,6 +2385,21 @@
     const t = String(x).replace(/\s+/g, ' ').trim(), m = t.match(/^[^.!?…]*[.!?…]+(\s+[^.!?…]*[.!?…]+)?/); let p = m ? m[0] : t;
     if (p.length > 140) p = p.slice(0, 140).trim(); return p.length < t.length ? p + '…' : p;
   }
+  const byTsAsc = (a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0);
+  /* Страницы «тетрадки»: записи по возрастанию времени, страница набирается, пока знаков меньше limit; запись берётся целиком,
+     поэтому последняя может не уместиться «по норме» — страница растягивается. Пустой дневник → []. */
+  function pages(entries, limit) {
+    const es = entries.slice().sort(byTsAsc), out = []; let cur = [], n = 0;
+    es.forEach(e => { if (cur.length && n >= limit) { out.push(cur); cur = []; n = 0; } cur.push(e); n += String(e.body || '').length; });
+    if (cur.length) out.push(cur); return out;
+  }
+  const fmtDMY = d => d.slice(8, 10) + '.' + d.slice(5, 7) + '.' + d.slice(0, 4);
+  /* шапка страницы: «дата — дата» или одна дата, если все записи страницы за один день */
+  function pageHead(pg) { if (!pg || !pg.length) return ''; const a = pg[0].day, b = pg[pg.length - 1].day; return a === b ? fmtDMY(a) : fmtDMY(a) + ' - ' + fmtDMY(b); }
+  /* индекс страницы, где лежит первая запись дня (или последняя страница, если записей дня нет) */
+  function pageOfDay(pgs, day) { const i = pgs.findIndex(pg => pg.some(e => e.day === day)); return i >= 0 ? i : Math.max(0, pgs.length - 1); }
+  /* цвет надписи на закладке: белый на тёмном, чёрный на светлом */
+  function inkOn(hex) { const h = String(hex || '').replace('#', ''); if (h.length !== 6) return '#fff'; const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16); return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? '#000' : '#fff'; }
   const validColor = c => /^#[0-9a-fA-F]{6}$/.test(String(c || ''));
 
   /* Выгрузка старой системы: {app:'life-system', diary:{diaries:[{id,name,c}], entries:[{id,dy,d,t,cr,ed,x}]}} или сам объект diary.
@@ -2405,7 +2421,7 @@
     return { diaries, entries, skipped };
   }
 
-  global.LifeDiaryModel = { MONTHS, MON_GEN, DOW, PALETTE, hsl, dayKey, zonedTs, hms, hm, isDay, dayParts, fmtDay, fmtDM, fmtShort, monthGrid, counts, byTsDesc, preview, validColor, legacyRows };
+  global.LifeDiaryModel = { MONTHS, MON_GEN, DOW, PALETTE, hsl, dayKey, zonedTs, hms, hm, isDay, dayParts, fmtDay, fmtDM, fmtShort, monthGrid, counts, byTsDesc, byTsAsc, pages, pageHead, pageOfDay, fmtDMY, inkOn, preview, validColor, legacyRows };
 })(window);
 
 
@@ -2445,6 +2461,21 @@ window.LifeDiaryCss = `
 .dy-sw{display:flex;gap:5px;flex-wrap:wrap;margin:6px 0}.dy-sw i{width:22px;height:22px;border-radius:50%;border:2px solid transparent;cursor:pointer}.dy-sw i.on{border-color:var(--ui-text);box-shadow:0 0 0 2px var(--ui-card) inset}
 .dy-det{margin-top:16px;font-size:13px}.dy-det summary{cursor:pointer;opacity:.8}
 .dy-empty{padding:24px;text-align:center;opacity:.75}
+.dy-book{margin-top:12px}
+.dy-tabs{display:flex;gap:3px;align-items:flex-end;padding-left:14px;flex-wrap:wrap}
+.dy-tab{border:1px solid rgba(0,0,0,.25);border-bottom:0;border-radius:8px 8px 0 0;min-width:34px;height:26px;padding:0 10px;font-weight:700;font-size:14px;opacity:.6;transform:translateY(2px)}
+.dy-tab:hover{opacity:.85}.dy-tab.on{opacity:1;height:32px;transform:none;box-shadow:0 -2px 0 rgba(0,0,0,.08)}
+.dy-bn{margin-left:10px;align-self:center;font-weight:600;font-size:14px}
+.dy-spread{position:relative;display:grid;grid-template-columns:1fr 1fr;border:2px solid var(--ui-line);border-radius:8px;background:var(--ui-card);padding-bottom:34px;box-shadow:0 2px 8px rgba(0,0,0,.08);overflow:hidden}
+.dy-pg{padding:10px 18px 8px;min-width:0;min-height:260px}
+.dy-pg.l{background:linear-gradient(to right,transparent 92%,color-mix(in srgb,var(--ui-text) 7%,transparent));border-right:1px solid var(--ui-line)}
+.dy-pg.r{background:linear-gradient(to left,transparent 92%,color-mix(in srgb,var(--ui-text) 7%,transparent))}
+.dy-ph{text-align:center;font-size:12px;opacity:.65;border-bottom:1px solid var(--ui-line);padding-bottom:4px;margin-bottom:6px;letter-spacing:.03em}
+.dy-pg .dy-e{border-top:1px dashed var(--ui-line);padding:6px 0}.dy-pg .dy-e:first-of-type{border-top:0}
+.dy-flip{position:absolute;bottom:4px;width:36px;height:28px;border:1px solid var(--ui-line);background:var(--ui-card);border-radius:6px;font-size:20px;line-height:1;padding:0}
+.dy-flip.l{left:6px}.dy-flip.r{right:6px}.dy-flip:hover:not(:disabled){background:var(--ui-soft)}.dy-flip:disabled{opacity:.3;cursor:default}
+.dy-pn{position:absolute;bottom:10px;left:0;right:0;text-align:center;font-size:11px;opacity:.55;pointer-events:none}
+@media (max-width:640px){.dy-spread{grid-template-columns:1fr}.dy-pg.l{border-right:0;border-bottom:1px solid var(--ui-line)}.dy-pg.blank{display:none}}
 @media (max-width:560px){.dy-c{min-height:44px}}
 `;
 
@@ -2600,11 +2631,12 @@ window.LifeDiaryCss = `
         const ds = sorted(); shownIds = ds.map(d => d.id).join(',');
         if (!ds.length) { box.innerHTML = '<div class="ui-mut" style="font-size:12px">Дневников пока нет. Создайте первый кнопкой «+ Запись».</div>'; return; }
         const openId = o.current() || ds[0].id;
-        box.innerHTML = ds.map(d => `<details class="pg-dy" data-d="${esc(d.id)}" ${d.id === openId ? 'open' : ''}><summary><i class="pg-dot" style="background:${esc(o.color(d))}"></i><span data-nm>${esc(d.name)}</span></summary><div>
+        box.innerHTML = '<div class="pg-book"></div>' + ds.map(d => `<details class="pg-dy" data-d="${esc(d.id)}" ${d.id === openId ? 'open' : ''}><summary><i class="pg-dot" style="background:${esc(o.color(d))}"></i><span data-nm>${esc(d.name)}</span></summary><div>
           <div class="pg-row"><label>Название</label><span class="pg-ctl"><input class="ui-in" data-dn maxlength="80" value="${esc(d.name)}" style="flex:1;min-width:0"></span></div>
           <div class="pg-row"><label>Цвет</label><span class="pg-ctl"><span class="pg-swatches">${SWATCHES.map(c => `<button type="button" data-sw="${c}" style="background:${c}" aria-label="Цвет ${c}"></button>`).join('')}</span><input type="color" data-dc value="${esc(o.color(d))}" aria-label="Свой цвет дневника"></span></div>
           <div class="pg-fields"></div><div class="pg-msg" role="status" style="color:var(--ui-bad);font-size:12px"></div>
           <div class="pg-sample" data-sample>Так выглядит текст записи в этом дневнике: съешь ещё этих мягких французских булок, 0123456789.</div></div></details>`).join('');
+        handles.push(ctx.fields(box.querySelector('.pg-book'), [{ title: 'Тетрадка' }, { key: 'modules.diary.opt.pageChars', fallback: 500, label: 'Знаков на странице' }]));
         ds.forEach(d => {
           const blk = box.querySelector(`[data-d="${CSS.escape(d.id)}"]`), K = p => SM.diaryKey(d.id, p);
           handles.push(ctx.fields(blk.querySelector('.pg-fields'), [{ key: K('font'), fallback: SM.entry(K('font')).opts[0][0], label: 'Шрифт записей' }, { key: K('size'), fallback: 14 }, { key: K('lh'), fallback: 140 }, { key: K('ink'), fallback: 'diary' }]));
@@ -2662,7 +2694,7 @@ window.LifeDiaryCss = `
     const ui = (() => { const u = core.store.get(UI_KEY, null) || {}; return { on: Array.isArray(u.on) ? u.on : null }; })();
     const saveUi = () => core.store.set(UI_KEY, { on: ui.on });
     const t0 = S.today(), p0 = M.dayParts(t0);
-    let y = p0.y, mo = p0.m, sel = null, form = null, editing = null, delAsk = null, open = {}, mk = null, alive = true, imp = { text: '', busy: false, confirm: false };
+    let y = p0.y, mo = p0.m, bk = { dy: null, sp: null }, chars0 = 0, form = null, editing = null, delAsk = null, open = {}, mk = null, alive = true, imp = { text: '', busy: false, confirm: false };
     const visible = id => ui.on === null ? true : ui.on.indexOf(id) >= 0;
     const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const diaryColor = d => (d && M.validColor(d.color) ? d.color : '#404040');
@@ -2676,15 +2708,30 @@ window.LifeDiaryCss = `
         n.style.fontFamily = st.fontFamily; n.style.fontSize = st.fontSize; n.style.lineHeight = st.lineHeight; n.style.color = st.color;
       });
     }
-    const offSS = SS.subscribe(() => { if (alive) applyType(); });
+    const pageChars = () => { const v = +SS.get('modules.diary.opt.pageChars'); return v >= 100 ? Math.min(6000, Math.round(v)) : 500; };
+    chars0 = pageChars();
+    const offSS = SS.subscribe(() => { if (!alive) return; if (pageChars() !== chars0) { chars0 = pageChars(); render(); } else applyType(); });
 
-    function entryHtml(e, dr, withDate) {
+    function entryHtml(e, dr, withDate, book) {
       const c = diaryColor(dr), ed = editing && editing.id === e.id, ts = Date.parse(e.ts), stamp = withDate ? M.fmtDM(ts, TZ) : M.hm(ts, TZ);
       let body;
       if (ed) body = `<textarea class="dy-ta" data-f="edit" data-dd="${esc(dr && dr.id)}" style="color:${c}">${esc(editing.tx)}</textarea>${editing.err ? `<div class="dy-warn">${esc(editing.err)}</div>` : ''}<div class="dy-row"><button class="dy-btn primary" data-act="edit-save">Сохранить</button><button class="dy-btn" data-act="edit-cancel">Отмена</button></div>`;
+      else if (book) body = `<div class="dy-x" data-dd="${esc(dr && dr.id)}" style="color:${c}">${esc(e.body)}</div>${open[e.id] ? `<div class="dy-row"><button class="dy-btn sm" data-act="edit" data-id="${esc(e.id)}">Исправить</button><button class="dy-btn sm" data-act="del" data-id="${esc(e.id)}">${delAsk === e.id ? 'Точно удалить?' : 'Удалить'}</button></div>` : ''}`;
       else if (open[e.id]) body = `<div class="dy-x" data-dd="${esc(dr && dr.id)}" style="color:${c}">${esc(e.body)}</div><div class="dy-row"><button class="dy-btn sm" data-act="edit" data-id="${esc(e.id)}">Исправить</button><button class="dy-btn sm" data-act="del" data-id="${esc(e.id)}">${delAsk === e.id ? 'Точно удалить?' : 'Удалить'}</button></div>`;
       else body = `<div class="dy-x" data-dd="${esc(dr && dr.id)}" style="color:${c}">${esc(M.preview(e.body))}</div>`;
       return `<div class="dy-e" ${ed ? '' : `data-act="tog" data-id="${esc(e.id)}"`}><span class="dy-stamp" style="color:${c}">${esc(stamp)}</span>${e.edited_at ? `<span class="dy-badge" title="Запись исправлена">Редакция · ${esc(M.fmtShort(Date.parse(e.edited_at), TZ))}</span>` : ''}${body}</div>`;
+    }
+
+    /* «Тетрадка»: вкладки видимых дневников, разворот из двух страниц, листание стрелками в нижних углах */
+    function book(vis) {
+      if (!vis.length) return '';
+      const cur = vis.find(d => d.id === bk.dy) || vis[0]; bk.dy = cur.id;
+      const pgs = M.pages(D.entries.filter(e => e.diary_id === cur.id), chars0), nsp = Math.max(1, Math.ceil(pgs.length / 2));
+      let sp = bk.sp == null ? nsp - 1 : Math.max(0, Math.min(nsp - 1, bk.sp)); bk.sp = sp === nsp - 1 && bk.sp == null ? null : sp;
+      const tabs = vis.map(d => { const c = diaryColor(d), on = d.id === cur.id; return `<button class="dy-tab ${on ? 'on' : ''}" data-act="tab" data-id="${esc(d.id)}" style="background:${c};color:${M.inkOn(c)}" title="${esc(d.name)}" aria-label="Дневник ${esc(d.name)}" aria-pressed="${on}">${esc((String(d.name).trim()[0] || '?').toUpperCase())}</button>`; }).join('');
+      const page = (pg, cls) => pg ? `<div class="dy-pg ${cls}"><div class="dy-ph">${esc(M.pageHead(pg))}</div>${pg.map(e => entryHtml(e, cur, true, true)).join('')}</div>` : `<div class="dy-pg ${cls} blank">${!pgs.length && cls === 'l' ? '<div class="dy-mut">Записей пока нет.</div>' : ''}</div>`;
+      const c = diaryColor(cur);
+      return `<div class="dy-book" data-dd-book="${esc(cur.id)}"><div class="dy-tabs" role="tablist">${tabs}<span class="dy-bn" style="color:${c}">${esc(cur.name)}</span></div><div class="dy-spread" style="border-color:${c}">${page(pgs[sp * 2], 'l')}${page(pgs[sp * 2 + 1], 'r')}<button class="dy-flip l" data-act="flip" data-d="-1" ${sp <= 0 ? 'disabled' : ''} aria-label="Назад к более ранним записям">‹</button><span class="dy-pn">${pgs.length ? 'стр. ' + (sp * 2 + 1) + (pgs[sp * 2 + 1] ? '–' + (sp * 2 + 2) : '') + ' из ' + pgs.length : ''}</span><button class="dy-flip r" data-act="flip" data-d="1" ${sp >= nsp - 1 ? 'disabled' : ''} aria-label="Вперёд к более новым записям">›</button></div></div>`;
     }
 
     function render() {
@@ -2695,7 +2742,7 @@ window.LifeDiaryCss = `
       let h = `<div class="dy-bar"><span class="dy-note ${noteBad ? 'warn' : ''}" role="status">${S.state === 'loading' ? 'Загрузка…' : esc(S.note)}</span><button class="dy-btn" data-act="new">+ Запись</button><button class="dy-btn" data-act="reload">Обновить</button></div>`;
       if (S.state === 'error' && !D.diaries.length && !D.entries.length) h += `<div class="dy-empty">${esc(S.note)}</div>`;
       else {
-        h += ds.length ? `<div class="dy-chips"><span class="dy-mut">Дневники:</span>${ds.map(d => { const on = visible(d.id); return `<button class="dy-chip ${on ? 'on' : ''}" data-act="chip" data-id="${esc(d.id)}" style="border-color:${on ? diaryColor(d) : 'var(--line)'};color:${on ? diaryColor(d) : '#777'}" title="${on ? 'Скрыть' : 'Показать'} записи дневника">${esc(d.name)}</button>`; }).join('')}<button class="dy-btn sm" data-act="all-on">Показать все</button><button class="dy-btn sm" data-act="all-off">Скрыть все</button></div>${vis.length ? '' : '<div class="dy-mut">Выберите дневник, чтобы увидеть его записи на календаре и последние 5 записей.</div>'}`
+        h += ds.length ? `<div class="dy-chips"><span class="dy-mut">Дневники:</span>${ds.map(d => { const on = visible(d.id); return `<button class="dy-chip ${on ? 'on' : ''}" data-act="chip" data-id="${esc(d.id)}" style="border-color:${on ? diaryColor(d) : 'var(--line)'};color:${on ? diaryColor(d) : '#777'}" title="${on ? 'Скрыть' : 'Показать'} записи дневника">${esc(d.name)}</button>`; }).join('')}<button class="dy-btn sm" data-act="all-on">Показать все</button><button class="dy-btn sm" data-act="all-off">Скрыть все</button></div>${vis.length ? '' : '<div class="dy-mut">Выберите дневник, чтобы увидеть его записи на календаре и в тетради.</div>'}`
           : '<div class="dy-empty">Дневников пока нет. Нажмите «+ Запись», там же можно создать первый дневник.</div>';
         const g = M.monthGrid(y, mo), cnt = M.counts(D.entries, visible, g.prefix);
         h += `<div class="dy-nav"><button class="dy-btn sm" data-act="prev" aria-label="Предыдущий месяц">‹</button><b>${M.MONTHS[mo]} ${y}</b><button class="dy-btn sm" data-act="next" aria-label="Следующий месяц">›</button><button class="dy-btn sm" data-act="cur">Сегодня</button></div><div class="dy-grid">${M.DOW.map(x => `<div class="dy-h">${x}</div>`).join('')}${'<div></div>'.repeat(g.lead)}`;
@@ -2710,13 +2757,7 @@ window.LifeDiaryCss = `
           if (mk) h += `<div class="dy-box"><input class="dy-in" data-f="mkname" maxlength="80" placeholder="Название дневника" value="${esc(mk.name)}"><div class="dy-sw">${M.PALETTE.map(p => `<i data-act="mk-col" data-c="${p}" style="background:${p}" class="${mk.color === p ? 'on' : ''}"></i>`).join('')}</div>${mk.err ? `<div class="dy-warn">${esc(mk.err)}</div>` : ''}<div class="dy-row"><button class="dy-btn primary" data-act="mk-save">Создать</button><button class="dy-btn" data-act="mk-cancel">Отмена</button></div></div>`;
           h += `<div class="dy-mut">Время фиксируется при записи (пояс ${esc(TZ)}).</div><textarea class="dy-ta" data-f="text" data-dd="${esc(cur && cur.id)}" placeholder="Текст записи" style="color:${c}">${esc(form.tx)}</textarea>${form.err ? `<div class="dy-warn">${esc(form.err)}</div>` : ''}<div class="dy-row"><button class="dy-btn primary" data-act="form-save">Записать</button></div></div>`;
         }
-        vis.forEach(dr => {
-          const es = D.entries.filter(e => e.diary_id === dr.id).sort(M.byTsDesc), top = es.slice(0, 5);
-          h += `<div class="dy-box" style="border-left:6px solid ${diaryColor(dr)}"><div class="dy-top"><b style="color:${diaryColor(dr)}">${esc(dr.name)}</b><span class="dy-mut">последние записи: ${top.length} из ${es.length}</span><button class="dy-btn sm" data-act="chip" data-id="${esc(dr.id)}">Скрыть</button></div>${top.length ? top.map(e => entryHtml(e, dr, true)).join('') : '<div class="dy-mut">Записей пока нет.</div>'}</div>`;
-        });
-        const sd = sel && D.diaries.find(x => x.id === sel.dy);
-        if (sd) { const es = D.entries.filter(e => e.diary_id === sd.id && e.day === sel.day).sort(M.byTsDesc);
-          h += `<div class="dy-box" style="border-left:6px solid ${diaryColor(sd)}"><div class="dy-top"><b style="color:${diaryColor(sd)}">${esc(sd.name)}</b><span class="dy-mut">${esc(M.fmtDay(sel.day))} · записей: ${es.length}</span><button class="dy-btn sm" data-act="show" data-id="${esc(sd.id)}" data-day="${sel.day}">Закрыть</button></div>${es.map(e => entryHtml(e, sd, false)).join('')}</div>`; }
+        h += book(vis);
         h += `<details class="dy-det"><summary>Перенос из старой системы</summary><div class="dy-row"><span class="dy-mut">Вставьте файл «Данные браузера» (JSON) или выберите его. Уже существующие записи не перезаписываются, повторный перенос безопасен.</span></div><div class="dy-row"><input type="file" accept=".json,application/json" data-f="impfile"></div><textarea class="dy-ta" data-f="imp" style="min-height:70px" placeholder="JSON выгрузки">${esc(imp.text)}</textarea><div class="dy-row"><button class="dy-btn" data-act="imp-go" ${imp.busy ? 'disabled' : ''}>${imp.confirm ? 'Точно перенести?' : 'Перенести'}</button></div><div class="dy-mut" data-f="impinfo" role="status">${esc(imp.info || '')}</div></details>`;
       }
       root.innerHTML = h;
@@ -2739,11 +2780,13 @@ window.LifeDiaryCss = `
     });
     root.addEventListener('click', async ev => {
       const t = ev.target.closest('[data-act]'); if (!t) return; const a = t.dataset.act, id = t.dataset.id;
-      if (a === 'show') { ev.stopPropagation(); sel = sel && sel.dy === id && sel.day === t.dataset.day ? null : { dy: id, day: t.dataset.day }; render(); return; }
+      if (a === 'show') { ev.stopPropagation(); const pgs = M.pages(D.entries.filter(e => e.diary_id === id), chars0); bk = { dy: id, sp: Math.floor(M.pageOfDay(pgs, t.dataset.day) / 2) }; render(); const b = root.querySelector('.dy-book'); if (b) b.scrollIntoView({ block: 'nearest' }); return; }
+      if (a === 'tab') { bk = { dy: id, sp: null }; editing = null; render(); return; }
+      if (a === 'flip') { const pgs = M.pages(D.entries.filter(e => e.diary_id === bk.dy), chars0), nsp = Math.max(1, Math.ceil(pgs.length / 2)), cur = bk.sp == null ? nsp - 1 : bk.sp; bk.sp = Math.max(0, Math.min(nsp - 1, cur + (+t.dataset.d))); editing = null; render(); return; }
       if (a === 'tog') { if (ev.target.closest('button,textarea')) return; delAsk = null; open[id] = !open[id]; render(); return; }
-      if (a === 'chip') { const on = (ui.on === null ? allIds() : ui.on.slice()), k = on.indexOf(id); if (k >= 0) { on.splice(k, 1); if (sel && sel.dy === id) sel = null; } else on.push(id); setUi(on); render(); return; }
+      if (a === 'chip') { const on = (ui.on === null ? allIds() : ui.on.slice()), k = on.indexOf(id); if (k >= 0) { on.splice(k, 1); } else on.push(id); setUi(on); render(); return; }
       if (a === 'all-on') { setUi(allIds()); render(); return; }
-      if (a === 'all-off') { setUi([]); sel = null; render(); return; }
+      if (a === 'all-off') { setUi([]); render(); return; }
       if (a === 'prev' || a === 'next') { mo += a === 'next' ? 1 : -1; if (mo < 0) { mo = 11; y--; } if (mo > 11) { mo = 0; y++; } render(); return; }
       if (a === 'cur') { y = p0.y; mo = p0.m; render(); return; }
       if (a === 'reload') { S.load(); return; }
@@ -2753,7 +2796,7 @@ window.LifeDiaryCss = `
       if (a === 'mk-cancel') { mk = null; render(); return; }
       if (a === 'mk-col') { mk.color = t.dataset.c; render(); return; }
       if (a === 'mk-save') { const r = S.addDiary(mk.name, mk.color); if (!r.ok) { mk.err = r.msg; render(); return; } form.dy = r.id; if (ui.on !== null && ui.on.indexOf(r.id) < 0) setUi(ui.on.concat(r.id)); mk = null; render(); return; }
-      if (a === 'form-save') { const r = S.addEntry(form.dy, form.day, form.tx); if (!r.ok) { form.err = r.msg; render(); return; } if (!visible(form.dy)) setUi((ui.on || []).concat(form.dy)); sel = { dy: form.dy, day: form.day }; { const p = M.dayParts(form.day); y = p.y; mo = p.m; } form = null; mk = null; render(); return; }
+      if (a === 'form-save') { const r = S.addEntry(form.dy, form.day, form.tx); if (!r.ok) { form.err = r.msg; render(); return; } if (!visible(form.dy)) setUi((ui.on || []).concat(form.dy)); bk = { dy: form.dy, sp: null }; { const p = M.dayParts(form.day); y = p.y; mo = p.m; } form = null; mk = null; render(); return; }
       if (a === 'edit') { const e = D.entries.find(x => x.id === id); if (e) { editing = { id, tx: e.body, err: '' }; delAsk = null; render(); } return; }
       if (a === 'edit-cancel') { editing = null; render(); return; }
       if (a === 'edit-save') { const r = S.editEntry(editing.id, editing.tx); if (!r.ok) { editing.err = r.msg; render(); return; } editing = null; render(); return; }
@@ -4476,6 +4519,7 @@ window.LifePlanCss = `
 .xp-c .n{font-size:10.5px;line-height:1.1;color:var(--ui-mut);padding-left:2px}
 .xp-day{display:flex;flex-direction:column;align-items:flex-start;gap:1px;border:0;background:var(--ui-card);color:var(--ui-text);border-radius:6px;padding:3px 5px;font:inherit;font-size:12px;line-height:1.25;cursor:pointer;text-align:left;width:100%;border:1px solid var(--ui-line)}
 .xp-day:hover{border-color:var(--ui-main)}.xp-day{font-size:10px;padding:1px 3px;line-height:1.2;border-radius:5px}.xp-day b{font-weight:650;white-space:nowrap}.xp-day span{color:var(--ui-mut);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.xp-day{position:relative}.xp-day .xp-dot{top:2px;right:2px;width:7px;height:7px;box-shadow:0 0 0 1px var(--ui-card)}
 .xp-c.sel .xp-day{border-color:var(--ui-main)}
 .xp-pn{padding:12px 14px}.xp-pn h3{margin:0 0 8px;font-size:14px;font-weight:650;display:flex;justify-content:space-between;gap:8px}
 .xp-pn h3 button{border:0;background:none;color:var(--ui-mut);cursor:pointer;font-size:16px;line-height:1}
@@ -4579,6 +4623,7 @@ window.LifePlanCss = `
 
     /* три месяца в ряд: выбранный и два предыдущих (чеки — в прошлом, свежий месяц справа) */
     function months3() { const out = []; for (let k = 2; k >= 0; k--) { const d = new Date(Date.UTC(ui.y, ui.m - 1 - k, 1)); out.push([d.getUTCFullYear(), d.getUTCMonth() + 1]); } return out; }
+    const dayBased = day => { const rs = S.byDay(day); return rs.length > 0 && rs.every(r => S.receiptBase(r.id)); };
     function calendar() {
       const ms = months3().map(([y, m]) => ({ y, m, mo: X.month(S.receipts, y, m) })), wd = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
       const cnt = ms.reduce((a, x) => a + x.mo.count, 0), amt = ms.reduce((a, x) => a + x.mo.amount, 0), f = ms[0], l = ms[2];
@@ -4589,7 +4634,7 @@ window.LifePlanCss = `
         x.mo.weeks.forEach(w => w.forEach(c => {
           if (!c.inMonth) { h += '<div class="xp-c out"></div>'; return; }
           h += '<div class="xp-c' + (c.day === today ? ' today' : '') + (c.day === ui.day ? ' sel' : '') + '" data-day="' + c.day + '"><span class="n">' + +c.day.slice(8) + '</span>' +
-            (c.count ? '<button type="button" class="xp-day" data-a="day" data-day="' + c.day + '"><b>' + X.checks(c.count) + '</b><span>' + X.tg(c.amount) + '</span></button>' : '') + '</div>';
+            (c.count ? '<button type="button" class="xp-day" data-a="day" data-day="' + c.day + '">' + (dayBased(c.day) ? '<i class="xp-dot" title="Все чеки дня записаны в трек"></i>' : '') + '<b>' + X.checks(c.count) + '</b><span>' + X.tg(c.amount) + '</span></button>' : '') + '</div>';
         }));
         h += '</div></div>';
       });
